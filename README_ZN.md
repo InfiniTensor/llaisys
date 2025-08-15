@@ -201,7 +201,7 @@ void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps);
 为每一行计算以下内容：
 
 $$
-Y_i = \frac{W_i \times  X_i}{\sqrt{(\sum_{j=1}^n X_j^2) + \epsilon}}
+Y_i = W_i \cdot \frac{X_i}{\sqrt{\frac{\sum_{j=0}^{n}{X_{i, j}}}{n}} + \epsilon}
 $$
 
 - `out`：输出$Y$。你暂时可以假设输出是一个2D连续张量，不涉及广播。
