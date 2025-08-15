@@ -198,7 +198,7 @@ $$
 void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps);
 ```
 
-为每一行计算以下内容：
+输出矩阵中第$i$行第$j$列的值$Y_{i,j}$按照如下计算：
 
 $$
 Y_{i,j} = \frac{W_j \cdot X_{i,j}}{RMS(X_i) + \epsilon}
