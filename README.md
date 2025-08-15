@@ -191,6 +191,8 @@ $$
 - `weight`: weight $W$ . 2D contiguous tensor. Note that weight tensor is not transposed. You need to deal with this during your calculation.
 - `bias` (optional): bias $b$ . 1D tensor. You need to support the situation where bias is not provided.
 
+You should be able to pass the test cases in `test/ops/linear.py` after you finish the implementation.
+
 ### Task-2.4 rms normalization
 
 ```c++
@@ -208,7 +210,7 @@ $$
 - `weight`: weight $W$ . 1D tensor, same length as a row of input tensor.
 - `eps`: small value $\epsilon$ to avoid division by zero.
 
-You should be able to pass the test cases in `test/ops/linear.py` after you finish the implementation.
+You should be able to pass the test cases in `test/ops/rms_norm.py` after you finish the implementation.
 
 ### Task-2.5 rope
 
