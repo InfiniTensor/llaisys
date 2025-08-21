@@ -25,7 +25,7 @@ def test_op_embedding(
     torch_embedding(out, idx, embd)
     llaisys.Ops.embedding(out_, idx_, embd_)
 
-    check_equal(out_, out, strict=True)
+    assert check_equal(out_, out, strict=True)
 
     if profile:
         benchmark(
