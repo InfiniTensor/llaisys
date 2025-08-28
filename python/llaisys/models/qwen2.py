@@ -8,7 +8,7 @@ import safetensors
 # 统一从这里拿句柄和结构体
 from ..libllaisys import LIB_LLAISYS, DeviceType               # 复用已加载的 DLL 句柄
 from ..libllaisys.qwen2 import LlaisysQwen2Meta                # 你的 ctypes 结构体
-from ..libllaisys.llaisys_types import DataType as DType       # <<< 改这里！
+from ..libllaisys.llaisys_types import DataType as DType       
 
 HF2LLA = {"float32": DType.F32, "float16": DType.F16, "bfloat16": DType.BF16}
 
