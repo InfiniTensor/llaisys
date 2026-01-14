@@ -25,7 +25,7 @@ def load_hf_model(model_path=None, device_name="cpu"):
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
         device_map=torch_device(device_name),
         trust_remote_code=True,
     )
@@ -82,7 +82,8 @@ def llaisys_infer(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia"], type=str)
-    parser.add_argument("--model", default=None, type=str)
+    # parser.add_argument("--model", default=None, type=str)
+    parser.add_argument("--model", default="../models/models--deepseek-ai--DeepSeek-R1-Distill-Qwen-1.5B/snapshots/ad9f0ae0864d7fbcd1cd905e3c6c5b069cc8b562/", type=str)
     parser.add_argument("--prompt", default="Who are you?", type=str)
     parser.add_argument("--max_steps", default=128, type=int)
     parser.add_argument("--top_p", default=0.8, type=float)
