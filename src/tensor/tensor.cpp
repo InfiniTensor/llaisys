@@ -1,7 +1,5 @@
 #include "tensor.hpp"
-
 #include "../utils.hpp"
-
 #include <cstring>
 #include <numeric>
 #include <sstream>
@@ -9,8 +7,14 @@
 namespace llaisys {
 
 // 私有构造函数：初始化 _meta, _storage, _offset, 
+// 私有构造函数：只能通过工厂方法创建，确保对象创建可控
+// 初始化列表：在构造函数体执行前初始化成员变量
+// std::move：转移所有权，避免不必要的拷贝
 Tensor::Tensor(TensorMeta meta, core::storage_t storage, size_t offset)
-    : _meta(std::move(meta)), _storage(std::move(storage)), _offset(offset) {}
+    : _meta(std::move(meta)),
+    _storage(std::move(storage)),
+    _offset(offset) {}
+
 // create() 工厂方法:
 // 计算步长（strides）- 用于行主序（row-major）内存布局
 // 判断设备类型：若请求CPU但当前运行时是GPU，分配主机内存；否则根据设备类型分配存储
@@ -21,6 +25,7 @@ tensor_t Tensor::create(const std::vector<size_t> &shape,
     size_t ndim_ = shape.size();
     std::vector<ptrdiff_t> strides(ndim_);
     size_t stride = 1;
+    // 计算行主序步长 - 跳步函数 strides-记录每一个维度要跳的大小
     for (size_t i = 1; i <= ndim_; i++) {
         strides[ndim_ - i] = stride;
         stride *= shape[ndim_ - i];
@@ -193,28 +198,30 @@ tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
 }
 
 /// *********************************************** ///
+// load() 函数：将主机内存数据加载到张量
+// 计算字节数,切换到张量所在设备
+// CPU设备：直接 memcpy,其他设备：异步 H2D（主机→设备）复制，然后同步等待
 void Tensor::load(const void *src_) {
     // 计算需要复制的字节数
     size_t bytes = numel() * elementSize();
-    
-    // 获取当前设备的上下文
-    core::context().setDevice(this->deviceType(), this->deviceId());
-    
-    // 根据张量所在的设备类型选择复制方向
-    if (this->deviceType() == LLAISYS_DEVICE_CPU) {
-        // 如果张量在 CPU 上，直接使用 memcpy
-        std::memcpy(this->data(), src_, bytes);
-    } else {
-        // 如果张量在其他设备上（如 GPU），使用异步内存复制 H2D（主机到设备）
-        core::context().runtime().api()->memcpy_async(
-            this->data(),
-            src_,
-            bytes,
-            LLAISYS_MEMCPY_H2D,
-            core::context().runtime().stream());
-        // 等待异步操作完成
-        core::context().runtime().stream_synchronize(core::context().runtime().stream());
+
+    // 如果 src_ 为 nullptr，直接返回
+    if (src_ == nullptr || bytes == 0) {
+        return;
     }
+
+    // 切换到张量所在设备上下文（确保 runtime/api 是对应设备的）
+    core::context().setDevice(this->deviceType(), this->deviceId());
+
+    // 如果底层存储是主机内存（或张量在 CPU 上），直接 memcpy
+    if (_storage->isHost() || this->deviceType() == LLAISYS_DEVICE_CPU) {
+        std::memcpy(this->data(), src_, bytes);
+        return;
+    }
+
+    // 否则使用运行时提供的同步主机->设备拷贝（H2D）
+    const auto *api = core::context().runtime().api();
+    api->memcpy_sync(this->data(), src_, bytes, LLAISYS_MEMCPY_H2D);
 }
 
 // contiguous()：转为连续内存布局
