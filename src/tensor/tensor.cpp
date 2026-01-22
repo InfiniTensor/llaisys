@@ -6,7 +6,7 @@
 
 namespace llaisys {
 
-// 私有构造函数：初始化 _meta, _storage, _offset, 
+// 私有构造函数：初始化 _meta, _storage-存储, _offset-偏移量, 
 // 私有构造函数：只能通过工厂方法创建，确保对象创建可控
 // 初始化列表：在构造函数体执行前初始化成员变量
 // std::move：转移所有权，避免不必要的拷贝
@@ -34,16 +34,22 @@ tensor_t Tensor::create(const std::vector<size_t> &shape,
     size_t total_elems = stride;
     size_t dtype_size = utils::dsize(dtype);
 
+
+    // 2. 内存分配
+    // 如果请求 CPU 但当前环境不是 CPU，强制分配 Host 内存
     if (device_type == LLAISYS_DEVICE_CPU && core::context().runtime().deviceType() != LLAISYS_DEVICE_CPU) {
         auto storage = core::context().runtime().allocateHostStorage(total_elems * dtype_size);
         return std::shared_ptr<Tensor>(new Tensor(meta, storage));
     } else {
+        // 否则在指定设备上分配内存
         core::context().setDevice(device_type, device);
         auto storage = core::context().runtime().allocateDeviceStorage(total_elems * dtype_size);
         return std::shared_ptr<Tensor>(new Tensor(meta, storage));
     }
 }
-//data()     获取指向数据的指针
+// 3.2 数据访问 (data 函数)
+// 这里体现了 _offset 的作用。如果这个张量是另一个大张量的一部分（切片），
+// _storage->memory() 指向大张量的开头，而 + _offset 让指针正确指向切片的开始位置
 std::byte *Tensor::data() {
     return _storage->memory() + _offset;
 }
@@ -158,21 +164,29 @@ void debug_print(const std::byte *data, const std::vector<size_t> &shape, const 
     }
 }
 
-// debug()：打印张量完整信息
-// 若在CPU上直接打印,若在GPU上先复制到CPU再打印
+// 3.3 调试与打印 (debug 和 print_data)
+// 递归打印 (print_data): 这是一个模板函数，
+// 通过递归方式处理任意维度的张量打印。
+// 当 dim 到达最后一维时打印数值，否则递归调用下一维
 void Tensor::debug() const {
     core::context().setDevice(this->deviceType(), this->deviceId());
     core::context().runtime().api()->device_synchronize();
     std::cout << this->info() << std::endl;
+    // ... 打印元信息 ...
     if (this->deviceType() == LLAISYS_DEVICE_CPU) {
+        // 如果是 CPU 张量，直接读取内存打印
         debug_print(this->data(), this->shape(), this->strides(), this->dtype());
     } else {
+        // 如果是 GPU 张量，不能直接读取！
+        // 1. 创建一个临时的 CPU 张量
         auto tmp_tensor = create({this->_storage->size()}, this->dtype());
+        // 2. 将数据从设备拷贝到主机 (D2H)
         core::context().runtime().api()->memcpy_sync(
             tmp_tensor->data(),
             this->data(),
             this->numel() * this->elementSize(),
             LLAISYS_MEMCPY_D2H);
+        // 3. 打印临时张量的数据
         debug_print(tmp_tensor->data(), this->shape(), this->strides(), this->dtype());
     }
 }
