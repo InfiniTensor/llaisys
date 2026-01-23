@@ -209,10 +209,24 @@ void Tensor::debug() const {
 }
 
 // isContiguous()：检查内存连续性
+// 什么是内存连续？ 在一个多维张量中，如果逻辑上相邻的元素在物理内存中也是相邻存储的，
+// 我们就称它是连续的。在你的框架中，默认使用的是 行主序（Row-Major） 布局。
+
 bool Tensor::isContiguous() const {
-    TO_BE_IMPLEMENTED();
+    size_t expected_stride = 1;
+    // 从最后一维向第一维反向检查 --（从 ndim-1 到 0）
+    for (int i = static_cast<int>(ndim()) - 1; i >= 0; --i) {
+        size_t dim_size = _meta.shape[i];
+        if (dim_size > 1) {
+            if (static_cast<size_t>(_meta.strides[i]) != expected_stride) {
+                return false;
+            }
+            expected_stride *= dim_size;
+        }
+    }
     return true;
 }
+
 // permute()：维度重排
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
     TO_BE_IMPLEMENTED();
@@ -255,12 +269,12 @@ void Tensor::load(const void *src_) {
     // 目标是设备内存（如 GPU）。此时 CPU 无法直接通过 memcpy 访问显存。
     // 需要通过 core::context().runtime().api() 获取当前设备的 API 对象，并调用其 memcpy_sync 方法。
     const auto *api = core::context().runtime().api();
-    
+
     // 在调用 API 时，必须指定方向为 LLAISYS_MEMCPY_H2D（Host to Device，主机到设备
     api->memcpy_sync(this->data(), src_, bytes, LLAISYS_MEMCPY_H2D);
 }
 
-// contiguous()：转为连续内存布局
+// isContiguous()：检查内存连续性
 tensor_t Tensor::contiguous() const {
     TO_BE_IMPLEMENTED();
     return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
