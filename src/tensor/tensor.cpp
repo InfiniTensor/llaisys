@@ -230,29 +230,33 @@ tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
 }
 
 /// *********************************************** ///
-// load() 函数：将主机内存数据加载到张量
+// load() 函数：将主机内存数据加载到张量 cpu-> cpu or gpu
 // 计算字节数,切换到张量所在设备
 // CPU设备：直接 memcpy,其他设备：异步 H2D（主机→设备）复制，然后同步等待
 void Tensor::load(const void *src_) {
-    // 计算需要复制的字节数
+    // 计算需要复制的字节数-numel()（总元素个数）乘以 elementSize()（单个元素的字节大小）计算出总字节数 bytes。
     size_t bytes = numel() * elementSize();
 
-    // 如果 src_ 为 nullptr，直接返回
+    // 检查源指针 src 是否为空，以及计算出的 bytes 是否为 0，以防止非法内存访问。
     if (src_ == nullptr || bytes == 0) {
         return;
     }
 
+    // 设备上下文切换：确保了当前线程关联的运行时（Runtime）和 API 是针对该张量所在硬件的
     // 切换到张量所在设备上下文（确保 runtime/api 是对应设备的）
     core::context().setDevice(this->deviceType(), this->deviceId());
 
-    // 如果底层存储是主机内存（或张量在 CPU 上），直接 memcpy
+    // 目标是 CPU 内存。如果张量本身就在 CPU 上，或者其底层存储 _storage 被标记为 isHost（例如锁页内存）
     if (_storage->isHost() || this->deviceType() == LLAISYS_DEVICE_CPU) {
         std::memcpy(this->data(), src_, bytes);
         return;
     }
 
-    // 否则使用运行时提供的同步主机->设备拷贝（H2D）
+    // 目标是设备内存（如 GPU）。此时 CPU 无法直接通过 memcpy 访问显存。
+    // 需要通过 core::context().runtime().api() 获取当前设备的 API 对象，并调用其 memcpy_sync 方法。
     const auto *api = core::context().runtime().api();
+    
+    // 在调用 API 时，必须指定方向为 LLAISYS_MEMCPY_H2D（Host to Device，主机到设备
     api->memcpy_sync(this->data(), src_, bytes, LLAISYS_MEMCPY_H2D);
 }
 
