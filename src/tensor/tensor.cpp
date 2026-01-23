@@ -36,7 +36,8 @@ tensor_t Tensor::create(const std::vector<size_t> &shape,
 
 
     // 2. 内存分配
-    // 如果请求 CPU 但当前环境不是 CPU，强制分配 Host 内存
+    // 触发条件： 用户想要创建一个 CPU 张量 (device_type == CPU)。 <- and
+    //       ->  但是，当前线程的上下文环境是 非 CPU 设备（例如当前正处于 GPU 运行时环境）
     if (device_type == LLAISYS_DEVICE_CPU && core::context().runtime().deviceType() != LLAISYS_DEVICE_CPU) {
         auto storage = core::context().runtime().allocateHostStorage(total_elems * dtype_size);
         return std::shared_ptr<Tensor>(new Tensor(meta, storage));
@@ -50,10 +51,12 @@ tensor_t Tensor::create(const std::vector<size_t> &shape,
 // 3.2 数据访问 (data 函数)
 // 这里体现了 _offset 的作用。如果这个张量是另一个大张量的一部分（切片），
 // _storage->memory() 指向大张量的开头，而 + _offset 让指针正确指向切片的开始位置
-std::byte *Tensor::data() {
+
+// 无const修饰 对返回值可读可写
+std::byte * Tensor::data() {
     return _storage->memory() + _offset;
 }
-
+// 有const修饰 对返回值只读不可写
 const std::byte *Tensor::data() const {
     return _storage->memory() + _offset;
 }
@@ -63,14 +66,18 @@ size_t Tensor::ndim() const {
     return _meta.shape.size();
 }
 // shape()   形状向量
-const std::vector<size_t> &Tensor::shape() const {
+// 第1个const修饰返回值，第2个const修饰函数本身-this指针：不会修改 Tensor 对象内部的任何成员变量
+// const std::vector<size_t> &：这是返回值类型
+const std::vector<size_t>& Tensor::shape() const {
     return _meta.shape;
 }
 // strides()   步长向量
-const std::vector<ptrdiff_t> &Tensor::strides() const {
+const std::vector<ptrdiff_t>& Tensor::strides() const {
     return _meta.strides;
 }
 // dtype()     数据类型
+// 如果函数返回 LLAISYS_DEVICE_CPU (0)，说明数据在内存条里。
+// 如果函数返回 LLAISYS_DEVICE_NVIDIA (1)，说明数据在显存里
 llaisysDataType_t Tensor::dtype() const {
     return _meta.dtype;
 }
@@ -92,6 +99,7 @@ size_t Tensor::elementSize() const {
 }
 // info()：返回张量信息的字符串表示
 std::string Tensor::info() const {
+    // 这里使用了 std::stringstream（字符串流）来构建字符串
     std::stringstream ss;
 
     ss << "Tensor: "
@@ -114,6 +122,8 @@ template <typename T>
 void print_data(const T *data, const std::vector<size_t> &shape, const std::vector<ptrdiff_t> &strides, size_t dim) {
     if (dim == shape.size() - 1) {
         for (size_t i = 0; i < shape[dim]; i++) {
+            // 这里使用了 C++17 的 if constexpr。因为 std::cout 默认不支持半精度浮点数（bf16 或 fp16）的输出，
+            // 所以代码在编译期检测类型。如果是这些特殊类型，先将其转换为 float 再打印。这种方式不会引入运行时开销。
             if constexpr (std::is_same_v<T, bf16_t> || std::is_same_v<T, fp16_t>) {
                 std::cout << utils::cast<float>(data[i * strides[dim]]) << " ";
             } else {
@@ -129,6 +139,8 @@ void print_data(const T *data, const std::vector<size_t> &shape, const std::vect
 }
 
 // debug_print()：根据数据类型转发到 print_data()
+// 在 C++ 中，模板函数（如 print_data<T>）必须在编译时确定类型 T。然而，张量的类型 dtype 是在程序运行时才确定的。 
+// debug_print 通过一个巨大的 switch-case 语句，根据 dtype 的值，手动映射到对应的 C++ 原生类型（如 float, int32_t 等），并触发相应的模板实例化。
 void debug_print(const std::byte *data, const std::vector<size_t> &shape, const std::vector<ptrdiff_t> &strides, llaisysDataType_t dtype) {
     switch (dtype) {
     case LLAISYS_DTYPE_BYTE:
@@ -169,10 +181,15 @@ void debug_print(const std::byte *data, const std::vector<size_t> &shape, const 
 // 通过递归方式处理任意维度的张量打印。
 // 当 dim 到达最后一维时打印数值，否则递归调用下一维
 void Tensor::debug() const {
+    // 切换上下文：首先确保全局上下文切换到当前张量所在的设备。如果你在操作 GPU 1 上的张量，必须先通知驱动程序。
+    // 硬件同步：这是最关键的一步。GPU 是异步执行的，当你调用打印时，之前的计算任务可能还在显卡里跑。device_synchronize() 会阻塞 CPU，直到显卡完成所有任务，确保我们打印的是最新的、正确计算完的数据。
     core::context().setDevice(this->deviceType(), this->deviceId());
     core::context().runtime().api()->device_synchronize();
-    std::cout << this->info() << std::endl;
-    // ... 打印元信息 ...
+    
+    // 打印元信息 (Meta-info)
+    std::cout << this->info() << std::endl; // 打印出张量的形状（Shape）、步长（Strides）和数据类型（Dtype
+    
+    // 异构数据处理 (CPU vs GPU)
     if (this->deviceType() == LLAISYS_DEVICE_CPU) {
         // 如果是 CPU 张量，直接读取内存打印
         debug_print(this->data(), this->shape(), this->strides(), this->dtype());
@@ -190,6 +207,7 @@ void Tensor::debug() const {
         debug_print(tmp_tensor->data(), this->shape(), this->strides(), this->dtype());
     }
 }
+
 // isContiguous()：检查内存连续性
 bool Tensor::isContiguous() const {
     TO_BE_IMPLEMENTED();
