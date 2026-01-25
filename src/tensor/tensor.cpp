@@ -193,7 +193,7 @@ tensor_t Tensor::permute(const std::vector<size_t> &order) const {
         new_shape[i]=old_shape[order_index];
         new_strides[i]=old_strides[order_index];
     }
-    TensorMeta _meta{this->dtype(),new_shape,new_strides};
+    TensorMeta _meta{this->dtype(),std::move(new_shape),std::move(new_strides)};
     return std::shared_ptr<Tensor>(new Tensor(_meta, _storage,this->_offset));
 }
 
@@ -251,7 +251,7 @@ tensor_t Tensor::view(const std::vector<size_t> &shape) const {
         }
         new_strides.emplace_back(old_strides[old_dim_index-1]);
     }
-    TensorMeta _meta{this->dtype(),shape,new_strides};
+    TensorMeta _meta{this->dtype(),shape,std::move(new_strides)};
     return std::shared_ptr<Tensor>(new Tensor(_meta, _storage,this->_offset));
 }
 
@@ -262,7 +262,7 @@ tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
     auto new_shape=this->shape();
     new_shape[dim]=end-start;
     auto new_offset=this->_offset+start*this->strides()[dim]*this->elementSize();
-    TensorMeta _meta{this->dtype(),new_shape,this->strides()};
+    TensorMeta _meta{this->dtype(),std::move(new_shape),this->strides()};
     return std::shared_ptr<Tensor>(new Tensor(_meta, _storage,new_offset));
 }
 
