@@ -30,6 +30,7 @@ tensor_t Tensor::create(const std::vector<size_t> &shape,
         strides[ndim_ - i] = stride;
         stride *= shape[ndim_ - i];
     }
+    
     TensorMeta meta{dtype, shape, strides};
     size_t total_elems = stride;
     size_t dtype_size = utils::dsize(dtype);
@@ -208,42 +209,204 @@ void Tensor::debug() const {
     }
 }
 
-// isContiguous()：检查内存连续性
-// 什么是内存连续？ 在一个多维张量中，如果逻辑上相邻的元素在物理内存中也是相邻存储的，
-// 我们就称它是连续的。在你的框架中，默认使用的是 行主序（Row-Major） 布局。
+/// *********************************************************************************** ///
+/// *********************************************************************************** ///
+/// *********************************************************************************** ///
 
-bool Tensor::isContiguous() const {
-    size_t expected_stride = 1;
-    // 从最后一维向第一维反向检查 --（从 ndim-1 到 0）
-    for (int i = static_cast<int>(ndim()) - 1; i >= 0; --i) {
-        size_t dim_size = _meta.shape[i];
-        if (dim_size > 1) {
-            if (static_cast<size_t>(_meta.strides[i]) != expected_stride) {
-                return false;
-            }
-            expected_stride *= dim_size;
-        }
-    }
-    return true;
-}
+
 
 // permute()：维度重排
+// 例子： 假设有一个形状为 (2, 3) 的张量，标准行主序步长为 (3, 1)。
+// 维度 0 (大小 2): 步长 3，维度 1 (大小 3): 步长 1
+// 如果你执行 permute({1, 0})（即转置）：
+// 新维度 0 对应原维度 1: 大小变为 3，步长变为 1
+// 新维度 1 对应原维度 0: 大小变为 2，步长变为 3
+// 结果张量形状为 (3, 2)，步长为 (1, 3)。访问元素时，逻辑索引的映射关系改变了，但底层数据完全没动。
+
+
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
-}
-// view()：改变形状（不复制数据）
-tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
-}
-// slice()：切片操作
-tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    size_t n = ndim();
+    // 1. 合法性检查，输入的 order（调换维度） 向量的大小必须等于张量的维度数 ndim()
+    CHECK_ARGUMENT(order.size() == n, "Permute order size mismatch");
+
+    std::vector<size_t> new_shape(n);
+    std::vector<ptrdiff_t> new_strides(n);
+    std::vector<bool> seen(n, false);
+
+    for (size_t i = 0; i < n; ++i) {
+        size_t axis = order[i];
+        CHECK_ARGUMENT(axis < n, "Permute axis out of bounds");
+        CHECK_ARGUMENT(!seen[axis], "Duplicate axis in permute");
+        seen[axis] = true;
+
+        // 2. 根据索引直接映射形状和步长 
+        new_shape[i] = _meta.shape[axis];
+        new_strides[i] = _meta.strides[axis];
+    }
+
+    // 3. 创建并返回共享存储的新张量
+    TensorMeta meta{_meta.dtype, std::move(new_shape), std::move(new_strides)};
+
+
+    return std::shared_ptr<Tensor>(new Tensor(meta, _storage, _offset));
 }
 
-/// *********************************************** ///
+
+// view()：如何在不复制数据的情况下，计算出新形状对应的步长（strides），并验证这种重塑在物理内存上是否可行。   
+// 1. 基本检查：新形状的总元素数必须与原张量一致   
+// 2. 步长推导：我们需要遍历新形状的每一维，确定它对应原张量的哪些维度，并计算步长。
+//       拆分 (Split)：如果原维度 (10) 被拆分为 (2, 5)，则新步长分别为 原步长 * 5 和 原步长。  
+//       合并 (Merge)：如果原维度 (2, 5) 被合并为 (10)，只有当这两个维度在内存中是连续的   
+//         （即 stride_0 == stride_1 * size_1），才能合并。合并后的步长等于最内层维度的步长   
+
+tensor_t Tensor::view(const std::vector<size_t> &shape) const {
+    // 1. 验证元素总数一致性
+    // 使用 std::accumulate 计算新形状 shape 中所有维度的乘积（即新张量的总元素数
+    size_t new_numel = std::accumulate(shape.begin(), shape.end(), size_t(1), std::multiplies<size_t>());
+
+    if (new_numel != numel()) {
+        // 新形状和原形状的元素总量不同表示，在元素总数上就不一致形状肯定就不一致
+        EXCEPTION_INVALID_SHAPE(shape, "Numel mismatch in view");
+    }
+
+    // 2. 初始化步长推导的状态变量
+    std::vector<ptrdiff_t> new_strides(shape.size()); // 用于存放计算出的新步长
+    size_t i = 0;           // 指向原张量当前正在处理的维度索引
+    size_t d_old = 1;       // 当前原维度中“剩余可用”的大小
+    ptrdiff_t s_old = 0;    // 当前原维度的步长
+
+    // 初始化 d_old 和 s_old
+    if (ndim() > 0) {
+        d_old = _meta.shape[0];
+        s_old = _meta.strides[0];
+    }
+
+    // 2. 遍历新形状，计算每一维的步长
+    for (size_t j = 0; j < shape.size(); ++j) {
+        size_t new_dim = shape[j];
+
+        // 如果新维度是 1，步长设为 1（通常不影响，但在某些计算中为了规范设为1）
+        if (new_dim == 1) {
+            // 设为当前旧维度的步长，保持逻辑上的连续性
+            new_strides[j] = s_old;
+            continue;
+        }
+
+        // 跳过原形状中大小为 1 的维度（Squeeze）
+        while (i < ndim() && d_old == 1) {
+            i++;
+            if (i < ndim()) {
+                d_old = _meta.shape[i];
+                s_old = _meta.strides[i];
+            }
+        }
+
+        if (i >= ndim()) 
+            // 理论上 numel 检查通过后不应到达这里
+            EXCEPTION_INVALID_SHAPE(shape, "Unexpected error in view");
+
+        if (d_old >= new_dim) {
+            // Case 1: 拆分 (Split) 或 精确匹配
+            // 例如：原 (10) -> 新 (2, 5)。处理 2 时，d_old=10 >= 2。
+            if (d_old % new_dim != 0) 
+                EXCEPTION_INVALID_SHAPE(shape, "View split mismatch");
+            
+            // 计算新步长：
+            // 如果是拆分，外层维度的步长 = 原步长 * (剩余部分 / 当前切分部分) ? 
+            // 不，应该是 原步长 * (d_old / new_dim)。
+            // 例：(10) stride 1 -> (2, 5)。
+            // dim 2: stride = 1 * (10/2) = 5。正确
+            new_strides[j] = s_old * (d_old / new_dim);
+            d_old /= new_dim;
+
+            // s_old 保持不变，因为我们还在同一个原维度内部
+        } else {
+            // Case 2: 合并 (Merge)
+            // 例如：原 (2, 5) -> 新 (10)。处理 10 时，d_old=2 < 10。
+            size_t needed = new_dim;
+
+            // 必须整除才能合并（简化逻辑，不支持错位合并）
+            if (needed % d_old != 0) 
+                EXCEPTION_INVALID_SHAPE(shape, "View merge mismatch");
+            
+            // 记录上一个维度的步长，用于连续性检查
+            ptrdiff_t last_stride = s_old;
+            needed /= d_old;
+            
+            // 循环消耗后续的原维度
+            while (needed > 1) {
+                i++;
+                // 跳过中间的 1
+                while (i < ndim() && _meta.shape[i] == 1) 
+                    i++;
+                if (i >= ndim()) 
+                    EXCEPTION_INVALID_SHAPE(shape, "Size mismatch during merge");
+
+                size_t next_size = _meta.shape[i];
+                ptrdiff_t next_stride = _meta.strides[i];
+
+                // 核心检查：连续性
+                // 要合并两个维度，前一个维度的步长必须等于 后一个维度的步长 * 后一个维度的大小
+                if (last_stride != (ptrdiff_t)(next_stride * next_size)) {
+                    // 这就是题目中 (2, 3, 5) stride (30, 10, 1) -> (2, 15) 会失败的地方
+                     // 合并 3 和 5：期望 stride 3 是 5 * 1 = 5，但实际是 10。报错。
+                    EXCEPTION_INVALID_SHAPE(shape, "View is not contiguous in memory");
+                }
+
+                if (needed % next_size != 0) 
+                    EXCEPTION_INVALID_SHAPE(shape, "Merge mismatch");
+                needed /= next_size;
+                last_stride = next_stride;
+            }
+
+            // 合并后的新维度步长，等于最内层维度的步长
+            new_strides[j] = last_stride;
+
+            // 标记当前原维度已完全消耗
+            d_old = 1; 
+            s_old = last_stride;
+        }
+    }
+
+    TensorMeta meta{_meta.dtype, shape, new_strides};
+    // 创建新 Tensor，共享 _storage 和 _offset
+    return std::shared_ptr<Tensor>(new Tensor(meta, _storage, _offset));
+}
+
+// slice()：切片操作
+// 通过修改张量的起始偏移量（Offset）和形状（Shape），
+// 来“截取”原始数据块中的一部分，而不需要移动底层内存中的任何数据。
+tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
+    // 1. 合法性检查 维度检查：确保你切片的维度（dim）在张量的实际维度范围内
+    size_t n = ndim();
+    CHECK_ARGUMENT(dim < n, "Slice dimension out of bounds");
+    // 范围检查：遵循编程中常见的“左闭右开”原则（[start, end)）。end 不能超过该维度的原始大小，且 start 必须小于 end，确保切出来的张量不是空的。
+    size_t dim_size = _meta.shape[dim];
+    CHECK_ARGUMENT(start < end && end <= dim_size, "Invalid slice range");
+
+    // 2. 计算新形状 (只有指定的 dim 大小改变)
+    // 例如：原形状是 (3, 4, 5)，你在 dim=1（大小为 4 的那一维）做 slice(1, 1, 3)，新形状就变成了 (3, 2, 5)
+    std::vector<size_t> new_shape = _meta.shape;
+    new_shape[dim] = end - start;
+
+    // 3. 步长保持不变
+    std::vector<ptrdiff_t> new_strides = _meta.strides;
+
+    // 4. 计算新的字节偏移量
+    // 偏移量增加 = 起始索引 * 该维度的步长 * 每个元素的字节大小
+    // _offset 是原张量的起点。start * _meta.strides[dim] 计算出在逻辑维度上跳过了多少个元素。
+    // 乘以 elementSize() 将元素个数转换为字节数。结果：新张量的指针将指向原始内存块中 start 索引对应的位置。
+    size_t new_offset = _offset + start * _meta.strides[dim] * elementSize();
+
+    // 5. 最后，我们把新计算的 shape、原封不动的 strides 和新的 offset 封装进 TensorMeta。
+    TensorMeta meta{_meta.dtype, std::move(new_shape), std::move(new_strides)};
+
+    // 返回一个新的 Tensor 对象，它和原张量共享同一个 _storage
+    return std::shared_ptr<Tensor>(new Tensor(meta, _storage, new_offset));
+}
+
+
+
 // load() 函数：将主机内存数据加载到张量 cpu-> cpu or gpu
 // 计算字节数,切换到张量所在设备
 // CPU设备：直接 memcpy,其他设备：异步 H2D（主机→设备）复制，然后同步等待
@@ -275,10 +438,34 @@ void Tensor::load(const void *src_) {
 }
 
 // isContiguous()：检查内存连续性
-tensor_t Tensor::contiguous() const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+// 什么是内存连续？ 在默认的 行主序 (Row-Major) 布局中，连续意味着：
+// 最后一维（最内层）的元素在内存中是紧挨着的，步长（Stride）应为 1。
+// 倒数第二维的元素，其内存间隔应该是“最后一维的大小”。
+// 第 i 维的步长，应该是 第 i+1 维的步长 × 第 i+1 维的大小。
+bool Tensor::isContiguous() const {
+    // 期望步长 expected_stride 初始为 1
+    size_t expected_stride = 1;
+
+    // 步骤二：从最后一维向第一维反向遍历
+    // 将 ndim() 函数返回的无符号整数（size_t），强制转换为有符号整数（int）防止无符号下溢问题
+    for (int i = static_cast<int>(ndim()) - 1; i >= 0; --i) {
+        size_t dim_size = _meta.shape[i];
+
+        // 步骤三：只有当维度大小 > 1 时，步长才对连续性有严格要求
+        if (dim_size > 1) {
+            // 检查：当前维度的真实步长是否等于期望步长
+            if (static_cast<size_t>(_meta.strides[i]) != expected_stride) {
+                return false; // 不匹配，不连续
+            }
+            // 更新：下一维（外层）的步长应该是 当前期望步长 * 当前维度大小
+            expected_stride *= dim_size;
+        }
+        // 如果 dim_size == 1，直接跳过，不更新 expected_stride
+    }
+
+    return true;
 }
+
 
 tensor_t Tensor::reshape(const std::vector<size_t> &shape) const {
     TO_BE_IMPLEMENTED();
