@@ -2,7 +2,7 @@
 #include <cstring>
 namespace llaisys::ops {
 template<typename T>
-void embedding_cpu_kernal(tensor_t out, tensor_t index, tensor_t weight){
+void embedding_cpu_kernel(tensor_t out, tensor_t index, tensor_t weight){
     const T*weight_val=reinterpret_cast<T*>(weight->data());
     T*out_val=reinterpret_cast<T*>(out->data());
     const int64_t*index_val=reinterpret_cast<int64_t*>(index->data());
@@ -18,13 +18,13 @@ void embedding_cpu_kernal(tensor_t out, tensor_t index, tensor_t weight){
 void embedding(tensor_t out, tensor_t index, tensor_t weight) {
     switch (weight->dtype()) {
         case LLAISYS_DTYPE_F16:
-            embedding_cpu_kernal<llaisys::fp16_t>(out,index,weight);
+            embedding_cpu_kernel<llaisys::fp16_t>(out,index,weight);
             break;
         case LLAISYS_DTYPE_BF16:
-            embedding_cpu_kernal<llaisys::bf16_t>(out,index,weight);
+            embedding_cpu_kernel<llaisys::bf16_t>(out,index,weight);
             break;
         case LLAISYS_DTYPE_F32:
-            embedding_cpu_kernal<float>(out,index,weight);
+            embedding_cpu_kernel<float>(out,index,weight);
             break;
         default:
             throw std::runtime_error("Not support this dtype!");

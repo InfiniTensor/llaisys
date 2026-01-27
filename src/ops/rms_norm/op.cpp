@@ -2,7 +2,7 @@
 #include <cmath>
 namespace llaisys::ops {
 template<typename T>
-void rms_norm_cpu_kernal(tensor_t out, tensor_t in, tensor_t weight, float eps){
+void rms_norm_cpu_kernel(tensor_t out, tensor_t in, tensor_t weight, float eps){
     T*out_ptr=reinterpret_cast<T*>(out->data());
     const T*in_ptr=reinterpret_cast<T*>(in->data());
     const T*weight_ptr=reinterpret_cast<T*>(weight->data());
@@ -27,13 +27,13 @@ void rms_norm_cpu_kernal(tensor_t out, tensor_t in, tensor_t weight, float eps){
 void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps) {
     switch (in->dtype()) {
         case LLAISYS_DTYPE_F16:
-            rms_norm_cpu_kernal<llaisys::fp16_t>(out,in,weight,eps);
+            rms_norm_cpu_kernel<llaisys::fp16_t>(out,in,weight,eps);
             break;
         case LLAISYS_DTYPE_BF16:
-            rms_norm_cpu_kernal<llaisys::bf16_t>(out,in,weight,eps);
+            rms_norm_cpu_kernel<llaisys::bf16_t>(out,in,weight,eps);
             break;
         case LLAISYS_DTYPE_F32:
-            rms_norm_cpu_kernal<float>(out,in,weight,eps);
+            rms_norm_cpu_kernel<float>(out,in,weight,eps);
             break;
         default:
             throw std::runtime_error("Not support this dtype!");
