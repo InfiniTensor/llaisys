@@ -231,7 +231,7 @@ tensor_t Tensor::permute(const std::vector<size_t> &order) const {
         new_shape[i] = old_shape[old_dim];
         new_strides[i] = old_strides[old_dim];
     }
-    
+
     TensorMeta new_meta{this->dtype(), new_shape, new_strides};
     return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, _offset));
 }
@@ -272,8 +272,31 @@ tensor_t Tensor::view(const std::vector<size_t> &shape) const {
 }
 
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    size_t ndim = this->ndim();
+    const auto &shape = this->shape();
+    const auto &strides = this->strides();
+
+    ASSERT(
+        dim < ndim,
+        "dim ( " + std::to_string(dim) +
+            " ) out of range for tensor ndim ( " + std::to_string(ndim) + " )"
+    );
+
+    ASSERT(
+        start <= end && end <= shape[dim],
+        "range [ " + std::to_string(start) + ", " + std::to_string(end) +
+            " ) out of bounds for dimension size ( " + std::to_string(shape[dim]) + " )"
+    );
+
+    std::vector<size_t> new_shape = shape;
+    new_shape[dim] = end - start;
+
+    std::vector<ptrdiff_t> new_strides = strides;
+
+    size_t new_offset = _offset + (start * strides[dim]);
+
+    TensorMeta new_meta{this->dtype(), new_shape, new_strides};
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, new_offset));
 }
 
 void Tensor::load(const void *src_) {
