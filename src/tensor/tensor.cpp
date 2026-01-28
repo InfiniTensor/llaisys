@@ -173,8 +173,7 @@ bool Tensor::isContiguous() const {
     const auto &strides = this->strides();
     const auto &shape = this->shape();
 
-    size_t elem_size = this->elementSize();
-    if(strides[ndim - 1] != (ptrdiff_t)elem_size) {
+    if(strides[ndim - 1] != 1) {
         return false;
     }
 
@@ -249,10 +248,6 @@ tensor_t Tensor::view(const std::vector<size_t> &shape) const {
             " ) does not match original numel ( " + std::to_string(this->numel()) + " )"
     );
 
-    const auto &old_shape = this->shape();
-    const auto &old_strides = this->strides();
-    size_t elem_size = this->elementSize();
-    size_t old_ndim = this->ndim();
     size_t new_ndim = shape.size();
 
     ASSERT(
@@ -261,7 +256,7 @@ tensor_t Tensor::view(const std::vector<size_t> &shape) const {
     );
 
     std::vector<ptrdiff_t> new_strides(new_ndim);
-    ptrdiff_t stride = elem_size;
+    ptrdiff_t stride = 1;
     for(int i = new_ndim - 1; i >= 0; i--) {
         new_strides[i] = stride;
         stride *= shape[i];
@@ -293,7 +288,7 @@ tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
 
     std::vector<ptrdiff_t> new_strides = strides;
 
-    size_t new_offset = _offset + (start * strides[dim]);
+    size_t new_offset = _offset + (start * strides[dim] * this->elementSize());
 
     TensorMeta new_meta{this->dtype(), new_shape, new_strides};
     return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, new_offset));
