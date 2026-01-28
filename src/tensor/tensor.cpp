@@ -184,7 +184,20 @@ tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
 }
 
 void Tensor::load(const void *src_) {
-    TO_BE_IMPLEMENTED();
+    core::context().setDevice(this->deviceType(), this->deviceId());
+
+    const LlaisysRuntimeAPI *api = core::context().runtime().api();
+
+    llaisysMemcpyKind_t kind;
+    if (this->deviceType() == LLAISYS_DEVICE_CPU) {
+        kind = LLAISYS_MEMCPY_H2H;
+    } else {
+        kind = LLAISYS_MEMCPY_H2D;
+    }
+
+    size_t copy_size = this->numel() * this->elementSize();
+
+    api->memcpy_sync(this->data(), src_, copy_size, kind);
 }
 
 tensor_t Tensor::contiguous() const {
