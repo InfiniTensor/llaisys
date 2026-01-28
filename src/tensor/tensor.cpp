@@ -194,8 +194,38 @@ tensor_t Tensor::permute(const std::vector<size_t> &order) const {
 }
 
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    if (shape == this->shape()) {
+        return std::shared_ptr<Tensor>(new Tensor(_meta, _storage, _offset));
+    }
+
+    size_t new_mumel = std::accumulate(shape.begin(), shape.end(), size_t(1), std::multiplies<size_t>());
+
+    ASSERT(
+        new_mumel == this->numel(),
+         "new shape numel ( " + std::to_string(new_mumel) +
+            " ) does not match original numel ( " + std::to_string(this->numel()) + " )"
+    );
+
+    const auto &old_shape = this->shape();
+    const auto &old_strides = this->strides();
+    size_t elem_size = this->elementSize();
+    size_t old_ndim = this->ndim();
+    size_t new_ndim = shape.size();
+
+    ASSERT(
+        this->isContiguous(),
+        "only contiguous tensor can be viewed"
+    );
+
+    std::vector<ptrdiff_t> new_strides(new_ndim);
+    ptrdiff_t stride = elem_size;
+    for(int i = new_ndim - 1; i >= 0; i--) {
+        new_strides[i] = stride;
+        stride *= shape[i];
+    }
+
+    TensorMeta new_meta{this->dtype(), shape, new_strides};
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, _offset));
 }
 
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
