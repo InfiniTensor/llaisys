@@ -189,8 +189,51 @@ bool Tensor::isContiguous() const {
 }
 
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    size_t ndim = this->ndim();
+
+    ASSERT(
+        order.size() == ndim,
+        "order size ( " + std::to_string(order.size()) +
+            " ) does not match tensor ndim ( " + std::to_string(ndim) + " )"
+    );
+
+    std::vector<bool> visited(ndim, false);
+    for (size_t idx : order){
+        ASSERT(
+            idx < ndim,
+            "order contains invalid  index ( " + std::to_string(idx) + " )"
+        );
+        ASSERT(
+            !visited[idx],
+            "order contains duplicate index ( " + std::to_string(idx) + " )"
+        );
+        visited[idx] = true;
+    }
+
+    bool is_identity = true;
+    for (size_t i = 0; i < ndim; i++) {
+        if (order[i] != i) {
+            is_identity = false;
+            break;
+        }
+    }
+    if(is_identity) {
+        return std::shared_ptr<Tensor>(new Tensor(_meta, _storage, _offset));
+    }
+
+    const auto &old_shape = this->shape();
+    const auto &old_strides = this->strides();
+
+    std::vector<size_t> new_shape(ndim);
+    std::vector<ptrdiff_t> new_strides(ndim);
+    for (size_t i = 0; i < ndim; i++) {
+        size_t old_dim = order[i];
+        new_shape[i] = old_shape[old_dim];
+        new_strides[i] = old_strides[old_dim];
+    }
+    
+    TensorMeta new_meta{this->dtype(), new_shape, new_strides};
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, _offset));
 }
 
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
