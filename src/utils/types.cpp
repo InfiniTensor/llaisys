@@ -1,8 +1,12 @@
 #include "types.hpp"
 
 #include <cstring>
-
+// 核心功能是
+// 实现 32位单精度浮点数 (float) 与两种 16位浮点数格式（fp16_t即IEEE754 Half-precision，
+// 和 bf16_t 即 Brain Floating Point）之间的底层位级转换。
 namespace llaisys::utils {
+    
+// 这个函数将 16 位的 fp16 扩展为 32 位的 float。
 float _f16_to_f32(fp16_t val) {
     uint16_t h = val._v;
     uint32_t sign = (h & 0x8000) << 16;
