@@ -260,117 +260,8 @@ tensor_t Tensor::permute(const std::vector<size_t> &order) const {
 //         （即 stride_0 == stride_1 * size_1），才能合并。合并后的步长等于最内层维度的步长   
 
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    // 1. 验证元素总数一致性
-    // 使用 std::accumulate 计算新形状 shape 中所有维度的乘积（即新张量的总元素数
-    size_t new_numel = std::accumulate(shape.begin(), shape.end(), size_t(1), std::multiplies<size_t>());
-
-    if (new_numel != numel()) {
-        // 新形状和原形状的元素总量不同表示，在元素总数上就不一致形状肯定就不一致
-        EXCEPTION_INVALID_SHAPE(shape, "Numel mismatch in view");
-    }
-
-    // 2. 初始化步长推导的状态变量
-    std::vector<ptrdiff_t> new_strides(shape.size()); // 用于存放计算出的新步长
-    size_t i = 0;           // 指向原张量当前正在处理的维度索引
-    size_t d_old = 1;       // 当前原维度中“剩余可用”的大小
-    ptrdiff_t s_old = 0;    // 当前原维度的步长
-
-    // 初始化 d_old 和 s_old
-    if (ndim() > 0) {
-        d_old = _meta.shape[0];
-        s_old = _meta.strides[0];
-    }
-
-    // 2. 遍历新形状，计算每一维的步长
-    for (size_t j = 0; j < shape.size(); ++j) {
-        size_t new_dim = shape[j];
-
-        // 如果新维度是 1，步长设为 1（通常不影响，但在某些计算中为了规范设为1）
-        if (new_dim == 1) {
-            // 设为当前旧维度的步长，保持逻辑上的连续性
-            new_strides[j] = s_old;
-            continue;
-        }
-
-        // 跳过原形状中大小为 1 的维度（Squeeze）
-        while (i < ndim() && d_old == 1) {
-            i++;
-            if (i < ndim()) {
-                d_old = _meta.shape[i];
-                s_old = _meta.strides[i];
-            }
-        }
-
-        if (i >= ndim()) 
-            // 理论上 numel 检查通过后不应到达这里
-            EXCEPTION_INVALID_SHAPE(shape, "Unexpected error in view");
-
-        if (d_old >= new_dim) {
-            // Case 1: 拆分 (Split) 或 精确匹配
-            // 例如：原 (10) -> 新 (2, 5)。处理 2 时，d_old=10 >= 2。
-            if (d_old % new_dim != 0) 
-                EXCEPTION_INVALID_SHAPE(shape, "View split mismatch");
-            
-            // 计算新步长：
-            // 如果是拆分，外层维度的步长 = 原步长 * (剩余部分 / 当前切分部分) ? 
-            // 不，应该是 原步长 * (d_old / new_dim)。
-            // 例：(10) stride 1 -> (2, 5)。
-            // dim 2: stride = 1 * (10/2) = 5。正确
-            new_strides[j] = s_old * (d_old / new_dim);
-            d_old /= new_dim;
-
-            // s_old 保持不变，因为我们还在同一个原维度内部
-        } else {
-            // Case 2: 合并 (Merge)
-            // 例如：原 (2, 5) -> 新 (10)。处理 10 时，d_old=2 < 10。
-            size_t needed = new_dim;
-
-            // 必须整除才能合并（简化逻辑，不支持错位合并）
-            if (needed % d_old != 0) 
-                EXCEPTION_INVALID_SHAPE(shape, "View merge mismatch");
-            
-            // 记录上一个维度的步长，用于连续性检查
-            ptrdiff_t last_stride = s_old;
-            needed /= d_old;
-            
-            // 循环消耗后续的原维度
-            while (needed > 1) {
-                i++;
-                // 跳过中间的 1
-                while (i < ndim() && _meta.shape[i] == 1) 
-                    i++;
-                if (i >= ndim()) 
-                    EXCEPTION_INVALID_SHAPE(shape, "Size mismatch during merge");
-
-                size_t next_size = _meta.shape[i];
-                ptrdiff_t next_stride = _meta.strides[i];
-
-                // 核心检查：连续性
-                // 要合并两个维度，前一个维度的步长必须等于 后一个维度的步长 * 后一个维度的大小
-                if (last_stride != (ptrdiff_t)(next_stride * next_size)) {
-                    // 这就是题目中 (2, 3, 5) stride (30, 10, 1) -> (2, 15) 会失败的地方
-                     // 合并 3 和 5：期望 stride 3 是 5 * 1 = 5，但实际是 10。报错。
-                    EXCEPTION_INVALID_SHAPE(shape, "View is not contiguous in memory");
-                }
-
-                if (needed % next_size != 0) 
-                    EXCEPTION_INVALID_SHAPE(shape, "Merge mismatch");
-                needed /= next_size;
-                last_stride = next_stride;
-            }
-
-            // 合并后的新维度步长，等于最内层维度的步长
-            new_strides[j] = last_stride;
-
-            // 标记当前原维度已完全消耗
-            d_old = 1; 
-            s_old = last_stride;
-        }
-    }
-
-    TensorMeta meta{_meta.dtype, shape, new_strides};
-    // 创建新 Tensor，共享 _storage 和 _offset
-    return std::shared_ptr<Tensor>(new Tensor(meta, _storage, _offset));
+    TO_BE_IMPLEMENTED();
+    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
 }
 
 // slice()：切片操作
@@ -437,44 +328,59 @@ void Tensor::load(const void *src_) {
     api->memcpy_sync(this->data(), src_, bytes, LLAISYS_MEMCPY_H2D);
 }
 
-// isContiguous()：检查内存连续性
-// 什么是内存连续？ 在默认的 行主序 (Row-Major) 布局中，连续意味着：
-// 最后一维（最内层）的元素在内存中是紧挨着的，步长（Stride）应为 1。
-// 倒数第二维的元素，其内存间隔应该是“最后一维的大小”。
-// 第 i 维的步长，应该是 第 i+1 维的步长 × 第 i+1 维的大小。
-bool Tensor::isContiguous() const {
-    // 期望步长 expected_stride 初始为 1
-    size_t expected_stride = 1;
-
-    // 步骤二：从最后一维向第一维反向遍历
-    // 将 ndim() 函数返回的无符号整数（size_t），强制转换为有符号整数（int）防止无符号下溢问题
-    for (int i = static_cast<int>(ndim()) - 1; i >= 0; --i) {
-        size_t dim_size = _meta.shape[i];
-
-        // 步骤三：只有当维度大小 > 1 时，步长才对连续性有严格要求
-        if (dim_size > 1) {
-            // 检查：当前维度的真实步长是否等于期望步长
-            if (static_cast<size_t>(_meta.strides[i]) != expected_stride) {
-                return false; // 不匹配，不连续
-            }
-            // 更新：下一维（外层）的步长应该是 当前期望步长 * 当前维度大小
-            expected_stride *= dim_size;
-        }
-        // 如果 dim_size == 1，直接跳过，不更新 expected_stride
-    }
-
-    return true;
+// contiguous()：转为连续内存布局
+tensor_t Tensor::contiguous() const {
+    TO_BE_IMPLEMENTED();
+    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
 }
 
 
 tensor_t Tensor::reshape(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    try {
+        return view(shape);
+    } catch (...) {
+        // 如果 view 失败（通常是因为内存不连续），则先转为连续内存再 view
+        return contiguous()->view(shape);
+    }
 }
 
 tensor_t Tensor::to(llaisysDeviceType_t device_type, int device) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    if (device == -1) device = 0;
+
+    // 1. 确保源数据连续 (方便拷贝)
+    tensor_t src_tensor;
+    const void* src_data = nullptr;
+    
+    if (isContiguous()) {
+        src_data = this->data();
+    } else {
+        src_tensor = contiguous();
+        src_data = src_tensor->data();
+    }
+    
+    // 2. 创建目标张量
+    auto dst_tensor = Tensor::create(_meta.shape, _meta.dtype, device_type, device);
+    void* dst_data = dst_tensor->data();
+    size_t bytes = numel() * elementSize();
+    
+    // 3. 执行拷贝
+    bool is_src_cpu = (this->deviceType() == LLAISYS_DEVICE_CPU);
+    bool is_dst_cpu = (device_type == LLAISYS_DEVICE_CPU);
+    
+    if (is_src_cpu && is_dst_cpu) {
+        std::memcpy(dst_data, src_data, bytes);
+    } else if (is_dst_cpu) {
+        core::context().setDevice(this->deviceType(), this->deviceId());
+        core::context().runtime().api()->memcpy_sync(dst_data, src_data, bytes, LLAISYS_MEMCPY_D2H);
+    } else if (is_src_cpu) {
+        core::context().setDevice(device_type, device);
+        core::context().runtime().api()->memcpy_sync(dst_data, src_data, bytes, LLAISYS_MEMCPY_H2D);
+    } else {
+        core::context().setDevice(device_type, device);
+        core::context().runtime().api()->memcpy_sync(dst_data, src_data, bytes, LLAISYS_MEMCPY_D2D);
+    }
+    
+    return dst_tensor;
 }
 
 } // namespace llaisys

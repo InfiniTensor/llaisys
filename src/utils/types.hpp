@@ -4,6 +4,11 @@
 #include <stdexcept>
 
 namespace llaisys {
+// 自定义半精度浮点类型 fp16_t (Float16) 和 bf16_t (BFloat16)。
+// BF16: 1位符号 | 8位指数 | 7位尾数
+// FP32: 1位符号 | 8位指数 | 23位尾数
+// 限制：由于它们本质上是结构体包裹的整数，不能直接进行数学运算（如 a + b）。
+// 必须先转换为 float 才能计算。
 struct CustomFloat16 {
     uint16_t _v;
 };
@@ -15,6 +20,9 @@ struct CustomBFloat16 {
 typedef struct CustomBFloat16 bf16_t;
 
 namespace utils {
+// dsize(dtype)：
+// 功能：返回指定数据类型占用的字节数。用途：在分配张量内存（malloc）或计算偏移量时使用。
+// 例如，LLAISYS_DTYPE_F16 返回 2，LLAISYS_DTYPE_F32 返回 4
 inline size_t dsize(llaisysDataType_t dtype) {
     switch (dtype) {
     case LLAISYS_DTYPE_BYTE:
@@ -60,7 +68,9 @@ inline size_t dsize(llaisysDataType_t dtype) {
         throw std::invalid_argument("Unsupported or invalid data type.");
     }
 }
-
+// dtype_to_str(dtype)：
+// 功能：返回数据类型的字符串名称。
+// 用途：主要用于调试打印（Debug）和错误信息的生成。
 inline const char *dtype_to_str(llaisysDataType_t dtype) {
     switch (dtype) {
     case LLAISYS_DTYPE_BYTE:
@@ -106,19 +116,21 @@ inline const char *dtype_to_str(llaisysDataType_t dtype) {
         throw std::invalid_argument("Unsupported or invalid data type.");
     }
 }
-
+// 声明了 16 位浮点数与标准 32 位 float 之间的转换逻辑。
 float _f16_to_f32(fp16_t val);
 fp16_t _f32_to_f16(float val);
 
 float _bf16_to_f32(bf16_t val);
 bf16_t _f32_to_bf16(float val);
 
+// 它提供了一个统一的接口 utils::cast<目标类型>(源数据)。
 template <typename TypeTo, typename TypeFrom>
 TypeTo cast(TypeFrom val) {
+    // 使用 C++17 的 if constexpr 进行编译期分支选择
     if constexpr (std::is_same<TypeTo, TypeFrom>::value) {
-        return val;
+        return val; // 类型相同，直接返回
     } else if constexpr (std::is_same<TypeTo, fp16_t>::value && std::is_same<TypeFrom, float>::value) {
-        return _f32_to_f16(val);
+        return _f32_to_f16(val);// float -> fp16
     } else if constexpr (std::is_same<TypeTo, fp16_t>::value && !std::is_same<TypeFrom, float>::value) {
         return _f32_to_f16(static_cast<float>(val));
     } else if constexpr (std::is_same<TypeFrom, fp16_t>::value && std::is_same<TypeTo, float>::value) {
@@ -134,7 +146,7 @@ TypeTo cast(TypeFrom val) {
     } else if constexpr (std::is_same<TypeFrom, bf16_t>::value && !std::is_same<TypeTo, float>::value) {
         return static_cast<TypeTo>(_bf16_to_f32(val));
     } else {
-        return static_cast<TypeTo>(val);
+        return static_cast<TypeTo>(val); // 普通类型（如 int -> float）使用原生转换
     }
 }
 
