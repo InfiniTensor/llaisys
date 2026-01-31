@@ -1,5 +1,4 @@
 #pragma once
-
 #include "../../tensor/tensor.hpp"
 
 namespace llaisys::ops {
