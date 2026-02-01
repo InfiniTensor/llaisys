@@ -12,24 +12,35 @@ void rope_kernel(T *out, const T *in, const int64_t *pos_ids,
     // 优化：预计算 inv_freq 以避免在循环中重复调用昂贵的 std::pow
     std::vector<float> inv_freq_vec(half_d);
     for (size_t j = 0; j < half_d; ++j) {
+        // RoPE的角度频率计算公式 1/sita^(2j/d)
         inv_freq_vec[j] = 1.0f / std::pow(theta, static_cast<float>(2 * j) / static_cast<float>(d));
+    }
+
+    // 优化：预计算当前所有位置的 cos 和 sin 值
+    // 因为 cos/sin 只与位置 i 和维度 j 有关，与 head 无关
+    std::vector<float> cos_table(seqlen * half_d);
+    std::vector<float> sin_table(seqlen * half_d);
+    #pragma omp parallel for
+    for (size_t i = 0; i < seqlen; ++i) {
+        float pos = static_cast<float>(pos_ids[i]);
+        for (size_t j = 0; j < half_d; ++j) {
+            float phi = pos * inv_freq_vec[j];
+            cos_table[i * half_d + j] = std::cos(phi);
+            sin_table[i * half_d + j] = std::sin(phi);
+        }
     }
 
     #pragma omp parallel for collapse(2)
     for (size_t i = 0; i < seqlen; ++i) {
         for (size_t h = 0; h < num_heads; ++h) {
-            float pos = static_cast<float>(pos_ids[i]);
-            
             // 定位当前 head 的起始位置
             const T *head_in = in + (i * num_heads * d) + (h * d);
             T *head_out = out + (i * num_heads * d) + (h * d);
             
             for (size_t j = 0; j < half_d; ++j) {
-                // 计算频率和角度 phi
-                // 使用预计算的值
-                float phi = pos * inv_freq_vec[j];
-                float cos_phi = std::cos(phi);
-                float sin_phi = std::sin(phi);
+                // 使用预计算的三角函数值，避免在 head 循环中重复计算
+                float cos_phi = cos_table[i * half_d + j];
+                float sin_phi = sin_table[i * half_d + j];
 
                 // 提取 a 和 b 的值 (a 在前半部分，b 在后半部分)
                 float a = llaisys::utils::cast<float>(head_in[j]);
