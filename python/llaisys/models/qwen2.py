@@ -10,57 +10,24 @@ import struct
 import json
 import mmap
 
-class LlaisysQwen2Meta(ctypes.Structure):
-    _fields_ = [
-        ("dtype",ctypes.c_int),
-        ("nlayer",ctypes.c_size_t),
-        ("hs",ctypes.c_size_t),
-        ("nh",ctypes.c_size_t),
-        ("nkvh",ctypes.c_size_t),
-        ("dh",ctypes.c_size_t),
-        ("di",ctypes.c_size_t),
-        ("maxseq",ctypes.c_size_t),
-        ("voc",ctypes.c_size_t),
-        ("epsilon",ctypes.c_float),
-        ("theta",ctypes.c_float),
-        ("end_token",ctypes.c_int64,)
-    ]
+from ..libllaisys import(
+     DeviceType,
+     LlaisysQwen2Meta,
+     llaisys_qwen2_create,
+     llaisys_qwen2_load_weight
+)
 
 class Qwen2:
 
     def __init__(self, model_path, device: DeviceType = DeviceType.CPU):
         print("DEBUG:Loading NEW Qwen code ...")
-        LIB_LLAISYS.llaisysQwen2ModelCreate.argtypes=[
-            ctypes.POINTER(LlaisysQwen2Meta),
-            ctypes.c_int,
-            ctypes.POINTER(ctypes.c_int),
-            ctypes.c_int
-        ]
-        LIB_LLAISYS.llaisysQwen2ModelCreate.restype=ctypes.c_void_p
-
-        LIB_LLAISYS.llaisysQwen2LoadWeight.argtypes=[
-            ctypes.c_void_p,
-            ctypes.c_char_p,
-            ctypes.c_void_p,
-            ctypes.POINTER(ctypes.c_int),
-            ctypes.c_int,
-            ctypes.c_int
-        ]
-        LIB_LLAISYS.llaisysQwen2LoadWeight.restype=None
 
         meta=LlaisysQwen2Meta()
         meta.nlayer=28
         meta.hs=1536
 
-        model_path = Path(model_path)
-
         print("Python:calling the cpp to create model ...")
-        self.model=LIB_LLAISYS.llaisysQwen2ModelCreate(
-            ctypes.byref(meta),
-            device.value,
-            None,
-            0
-        )
+        self.model=llaisys_qwen2_create(meta,device.value)
         print("Python: Model handle received:",self.model)
 
         model_path = Path(model_path)
@@ -102,18 +69,17 @@ class Qwen2:
 
                             c_name=name_.encode('utf-8')
                             ndim=len(shape)
-                            ShapeArrayType=ctypes.c_int*ndim
+                            ShapeArrayType=ctypes.c_size_t*ndim
                             c_shape=ShapeArrayType(*shape)
 
                             c_data_ptr=ctypes.c_void_p(tensor_np.ctypes.data)
-
-                            LIB_LLAISYS.llaisysQwen2LoadWeight(
-                                self.model,
-                                c_name,
-                                c_data_ptr,
-                                c_shape,
-                                ndim,
-                                dtype
+                            llaisys_qwen2_load_weight(
+                                 self.model,
+                                 c_name,
+                                 c_data_ptr,
+                                 c_shape,
+                                 ndim,
+                                 dtype
                             )
                             del tensor_np
                     print("Python: All weights loaded")

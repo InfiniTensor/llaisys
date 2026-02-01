@@ -61,3 +61,20 @@ __all__ = [
     "MemcpyKind",
     "llaisysStream_t",
 ]
+
+
+class LlaisysQwen2Meta(ctypes.Structure):
+    _fields_ = [
+        ("dtype",ctypes.c_int),
+        ("nlayer",ctypes.c_size_t),
+        ("hs",ctypes.c_size_t),
+        ("nh",ctypes.c_size_t),
+        ("nkvh",ctypes.c_size_t),
+        ("dh",ctypes.c_size_t),
+        ("di",ctypes.c_size_t),
+        ("maxseq",ctypes.c_size_t),
+        ("voc",ctypes.c_size_t),
+        ("epsilon",ctypes.c_float),
+        ("theta",ctypes.c_float),
+        ("end_token",ctypes.c_int64,)
+    ]
