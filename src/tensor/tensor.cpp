@@ -3,6 +3,7 @@
 #include <cstring>
 #include <numeric>
 #include <sstream>
+#include <stdexcept>
 
 namespace llaisys {
 
@@ -260,8 +261,23 @@ tensor_t Tensor::permute(const std::vector<size_t> &order) const {
 //         （即 stride_0 == stride_1 * size_1），才能合并。合并后的步长等于最内层维度的步长   
 
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    if (!isContiguous()) {
+        throw std::runtime_error("Tensor::view requires contiguous tensor");
+    }
+
+    size_t new_numel = 1;
+    for (size_t s : shape) new_numel *= s;
+    CHECK_ARGUMENT(new_numel == numel(), "View shape mismatch");
+
+    std::vector<ptrdiff_t> new_strides(shape.size());
+    size_t stride = 1;
+    for (int i = (int)shape.size() - 1; i >= 0; --i) {
+        new_strides[i] = stride;
+        stride *= shape[i];
+    }
+
+    TensorMeta meta{_meta.dtype, shape, new_strides};
+    return std::shared_ptr<Tensor>(new Tensor(std::move(meta), _storage, _offset));
 }
 
 // slice()：切片操作
@@ -330,8 +346,14 @@ void Tensor::load(const void *src_) {
 
 // contiguous()：转为连续内存布局
 tensor_t Tensor::contiguous() const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    if (isContiguous()) {
+        return std::shared_ptr<Tensor>(new Tensor(_meta, _storage, _offset));
+    }
+    
+    // 1. 创建一个新的连续张量
+    auto res = Tensor::create(_meta.shape, _meta.dtype, deviceType(), deviceId());
+    
+    throw std::runtime_error("Tensor::contiguous() for non-contiguous tensor is not fully implemented yet.");
 }
 
 
@@ -343,7 +365,22 @@ tensor_t Tensor::reshape(const std::vector<size_t> &shape) const {
         return contiguous()->view(shape);
     }
 }
+bool Tensor::isContiguous() const {
+    if (this->ndim() == 0) return true; // 标量通常视为连续
 
+    size_t z = 1;
+    // 从最后一个维度向前遍历
+    for (int i = static_cast<int>(this->ndim()) - 1; i >= 0; --i) {
+        // 获取当前维度的 shape 和 stride
+        // 注意：这里假设你有 shape() 和 strides() 方法或者成员变量
+        // 如果是成员变量，可能是 _shape[i] 和 _strides[i]
+        if (this->strides()[i] != z) {
+            return false;
+        }
+        z *= this->shape()[i];
+    }
+    return true;
+}
 tensor_t Tensor::to(llaisysDeviceType_t device_type, int device) const {
     if (device == -1) device = 0;
 

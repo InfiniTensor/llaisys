@@ -1,6 +1,7 @@
 #include "rope_cpu.hpp"
 #include "../../../utils.hpp"
 #include <cmath>
+#include <vector>
 
 namespace llaisys::ops::cpu {
 
@@ -10,10 +11,10 @@ void rope_kernel(T *out, const T *in, const int64_t *pos_ids,
     size_t half_d = d / 2;  // j=0,1,…,d/2−1。
     
     // 优化：预计算 inv_freq 以避免在循环中重复调用昂贵的 std::pow
-    std::vector<float> inv_freq_vec(half_d);
+    std::vector<double> inv_freq_vec(half_d);
     for (size_t j = 0; j < half_d; ++j) {
         // RoPE的角度频率计算公式 1/sita^(2j/d)
-        inv_freq_vec[j] = 1.0f / std::pow( theta, static_cast<float>(2 * j) / static_cast<float>(d));
+        inv_freq_vec[j] = 1.0 / std::pow(static_cast<double>(theta), static_cast<double>(2 * j) / static_cast<double>(d));
     }
 
     // 优化：预计算当前所有位置的 cos 和 sin 值
@@ -23,12 +24,12 @@ void rope_kernel(T *out, const T *in, const int64_t *pos_ids,
 
     #pragma omp parallel for
     for (size_t i = 0; i < seqlen; ++i) { 
-        float pos = static_cast<float>(pos_ids[i]);
+        double pos = static_cast<double>(pos_ids[i]);
         for (size_t j = 0; j < half_d; ++j) { // 
             // 因为所有 num_heads 个头在相同位置使用的旋转角度是一模一样的，所以我们只算一份，存入这张表，让所有头共享
-            float phi = pos * inv_freq_vec[j];
-            cos_table[i * half_d + j] = std::cos(phi);
-            sin_table[i * half_d + j] = std::sin(phi);
+            double phi = pos * inv_freq_vec[j];
+            cos_table[i * half_d + j] = static_cast<float>(std::cos(phi));
+            sin_table[i * half_d + j] = static_cast<float>(std::sin(phi));
         }
     }
 

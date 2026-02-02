@@ -1,7 +1,5 @@
 #include "argmax_cpu.hpp"
 #include "../../../utils.hpp"
-#include "../../../utils/types.hpp"
-#include "../../../utils/check.hpp"
 #include <limits>
 
 
