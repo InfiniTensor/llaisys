@@ -31,7 +31,7 @@ __C {
 
     struct LlaisysQwen2Model;
 
-    __export struct LlaisysQwen2Model *llaisysQwen2ModelCreate(const LlaisysQwen2Meta *meta, llaisysDeviceType_t device, int *device_ids, int ndevice);
+    __export struct LlaisysQwen2Model *llaisysQwen2ModelCreate(const LlaisysQwen2Meta *meta, llaisysDeviceType_t device, int *device_ids, int ndevice,llaisysDataType_t dtype);
 
     __export void llaisysQwen2ModelDestroy(struct LlaisysQwen2Model * model);
 

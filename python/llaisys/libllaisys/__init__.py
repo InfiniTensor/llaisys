@@ -41,6 +41,7 @@ def load_qwen2_api(lib):
                 ctypes.POINTER(LlaisysQwen2Meta),
                 ctypes.c_int,
                 ctypes.POINTER(ctypes.c_int),
+                ctypes.c_int,
                 ctypes.c_int
             ]
             lib.llaisysQwen2ModelCreate.restype=ctypes.c_void_p

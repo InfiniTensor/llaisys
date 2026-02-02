@@ -9,6 +9,7 @@ import numpy as np
 import struct
 import json
 import mmap
+import os
 
 from ..libllaisys import(
      DeviceType,
@@ -16,27 +17,59 @@ from ..libllaisys import(
      llaisys_qwen2_create,
      llaisys_qwen2_load_weight
 )
-
+TYPE_MAP={
+         "F32":13,
+         "F16":11,
+         "BF16":19
+    }
 class Qwen2:
 
     def __init__(self, model_path, device: DeviceType = DeviceType.CPU):
-        print("DEBUG:Loading NEW Qwen code ...")
+        self.lib=LIB_LLAISYS
 
+        config_path=os.path.join(model_path,"config.json")
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"Config not found at {config_path}")
+        with open(config_path,"r") as f:
+            config=json.load(f)
+        
         meta=LlaisysQwen2Meta()
-        meta.nlayer=28
-        meta.hs=1536
+        meta.nlayer=config.get("num_hidden_layers",28)
+        meta.hs=config.get("hidden_size",1536)
+        meta.nh=config.get("num_attention_heads",12)
+        meta.nkvh=config.get("num_key_value_heads",2)
+        meta.vocab_size=config.get("vocab_size",151936)
+        meta.max_seq_len=config.get("max_position_embeddings",32768)
+        meta.epsilon=config.get("rms_norm_eps",1e-6)
+        meta.theta=config.get("rope_theta",10000.0)
 
+        config_dtype_str=config.get("torch_dtype","float16")
+
+        target_key="F16"
+        if config_dtype_str=="float32":
+            target_key="F32"
+        elif config_dtype_str=="bfloat16":
+            target_key="BF16"
+        elif config_dtype_str=="float16":
+            target_key="F16"
+        
+        if target_key not in TYPE_MAP:
+            print(f"Warning: Unknown dtype {config_dtype_str}, using F16")
+            target_dtype=TYPE_MAP["F16"]
+        else:
+            target_dtype=TYPE_MAP[target_key]
+        print(f"Python: Loading Model config | Layers={meta.nlayer} | HS={meta.hs} | Dtype={target_key}({target_dtype})")
         print("Python:calling the cpp to create model ...")
-        self.model=llaisys_qwen2_create(meta,device.value)
+        self.model=self.lib.llaisysQwen2ModelCreate(
+            ctypes.byref(meta),
+            device.value,
+            None,
+            0,
+            target_dtype
+        )
         print("Python: Model handle received:",self.model)
 
         model_path = Path(model_path)
-
-        TYPE_MAP={
-             "F32":13,
-             "F16":11,
-             "BF16":19
-        }
 
         print("Python: Scanning .safetensors files...")
 
