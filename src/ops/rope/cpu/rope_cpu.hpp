@@ -11,6 +11,7 @@ namespace llaisys::ops::cpu {
 // const int64_t *pos_ids (位置 ID 数组):
 // 意义: 一个长度为 seqlen 的整数数组。作用: 存储了序列中每个 token 的绝对位置索引（Position Index）。
 // RoPE 的旋转角度 $\phi$ 是位置的函数，因此 pos_ids[i] 直接决定了第 i 个 token 的旋转幅度
+//  pos_ids[i] = i
 
 // size_t seqlen (序列长度):
 // 意义: 输入张量第一维的大小，即当前处理的 token 总数。

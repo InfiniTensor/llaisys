@@ -34,8 +34,8 @@ void rope(tensor_t out, tensor_t in, tensor_t pos_ids, float theta) {
     // 2. 形状校验
     CHECK_ARGUMENT(in->ndim() == 3, "RoPE: input must be 3D [seqlen, nhead, d]");
     size_t seqlen = in->shape()[0];
-    size_t nhead = in->shape()[1];
-    size_t d = in->shape()[2];
+    size_t nhead = in->shape()[1];// 头维度
+    size_t d = in->shape()[2];// 每个token的维度
 
     CHECK_ARGUMENT(pos_ids->numel() == seqlen, "RoPE: pos_ids length mismatch");
     CHECK_ARGUMENT(d % 2 == 0, "RoPE: head_dim must be even");
