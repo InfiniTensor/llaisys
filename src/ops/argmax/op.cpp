@@ -1,53 +1,58 @@
 #include "op.hpp"
-#include <cstring>
-#include <limits>
+
+#include "../../core/llaisys_core.hpp"
+#include "../../utils.hpp"
+
+#include "cpu/argmax_cpu.hpp"
 
 namespace llaisys::ops {
 
-void argmax(tensor_t max_idx, tensor_t max_val, tensor_t vals) {
-    size_t nel = vals->numel();
-    if (nel == 0)
-        throw std::runtime_error("Cannot argmax on empty tensor");
-    const std::byte* data = vals->data();
-    auto strides = vals->strides();
-    llaisysDataType_t dtype = vals->dtype();
-    size_t elem_size = utils::dsize(dtype);
-    std::byte* out_val_data = max_val->data();
-    int64_t* out_idx = reinterpret_cast<int64_t*>(max_idx->data());
-    float best = std::numeric_limits<float>::lowest();
-    size_t best_i = 0;
-    auto get_float_at = [&](size_t i) -> float {
-        const std::byte* ptr = data + i * strides[0] * elem_size;
-        switch (dtype) {
-            case LLAISYS_DTYPE_F32: {
-                float v;
-                std::memcpy(&v, ptr, sizeof(v));
-                return v;
-            }
-            case LLAISYS_DTYPE_F16: {
-                fp16_t v;
-                std::memcpy(&v, ptr, sizeof(v));
-                return utils::cast<float>(v);
-            }
-            case LLAISYS_DTYPE_BF16: {
-                bf16_t v;
-                std::memcpy(&v, ptr, sizeof(v));
-                return utils::cast<float>(v);
-            }
-            default:
-                EXCEPTION_UNSUPPORTED_DATATYPE(dtype);
-        }
-    };
-    for (size_t i = 0; i < nel; ++i) {
-        float v = get_float_at(i);
-        if (v > best) {
-            best = v;
-            best_i = i;
-        }
+// 执行 argmax 操作：在输入张量中查找最大值及其索引，并写入输出张量
+void argmax(tensor_t indices_out, tensor_t values_out, tensor_t input) {
+    // 确保所有张量位于同一设备
+    CHECK_SAME_DEVICE(indices_out, values_out, input);
+    // 输入与最大值输出必须具有相同的数据类型
+    CHECK_SAME_DTYPE(values_out->dtype(), input->dtype());
+    // 索引输出必须为 int64 类型
+    ASSERT(indices_out->dtype() == LLAISYS_DTYPE_I64, "Argmax: index output tensor must be of type int64.");
+    // 输入不能为空
+    ASSERT(input->numel() > 0, "Argmax: input tensor must contain at least one element.");
+    // 输出张量必须为标量（单元素）
+    ASSERT(indices_out->numel() == 1 && values_out->numel() == 1,
+           "Argmax: both output tensors must contain exactly one element.");
+    // 所有张量必须是内存连续的
+    ASSERT(indices_out->isContiguous() && values_out->isContiguous() && input->isContiguous(),
+           "Argmax: all input and output tensors must be contiguous in memory.");
+
+    if (input->deviceType() == LLAISYS_DEVICE_CPU) {
+        return cpu::argmax(
+            indices_out->data(),
+            values_out->data(),
+            input->data(),
+            input->dtype(),
+            input->numel()
+        );
     }
-    out_idx[0] = static_cast<int64_t>(best_i);
-    const std::byte* src = data + best_i * strides[0] * elem_size;
-    std::memcpy(out_val_data, src, elem_size);
+
+    llaisys::core::context().setDevice(input->deviceType(), input->deviceId());
+
+    switch (input->deviceType()) {
+    case LLAISYS_DEVICE_CPU:
+        return cpu::argmax(
+            indices_out->data(),
+            values_out->data(),
+            input->data(),
+            input->dtype(),
+            input->numel()
+        );
+#ifdef ENABLE_NVIDIA_API
+    case LLAISYS_DEVICE_NVIDIA:
+        TO_BE_IMPLEMENTED();
+        return;
+#endif
+    default:
+        EXCEPTION_UNSUPPORTED_DEVICE;
+    }
 }
 
 } // namespace llaisys::ops

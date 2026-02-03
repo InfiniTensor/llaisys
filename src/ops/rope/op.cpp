@@ -1,71 +1,87 @@
 #include "op.hpp"
-#include <cmath>
-#include <cstring>
+
+#include "../../core/llaisys_core.hpp"
+#include "../../utils.hpp"
+
+#include "cpu/rope_cpu.hpp"
+
 namespace llaisys::ops {
-void rope(tensor_t out, tensor_t in, tensor_t pos_ids, float theta) {
-    auto get_float_at = [&](const std::byte* data, size_t elem_offset) -> float {
-        const std::byte* ptr = data + elem_offset * utils::dsize(in->dtype());
-        switch (in->dtype()) {
-            case LLAISYS_DTYPE_F32: {
-                float val; std::memcpy(&val, ptr, sizeof(float)); return val;
-            }
-            case LLAISYS_DTYPE_F16: {
-                fp16_t val; std::memcpy(&val, ptr, sizeof(fp16_t)); return utils::cast<float>(val);
-            }
-            case LLAISYS_DTYPE_BF16: {
-                bf16_t val; std::memcpy(&val, ptr, sizeof(bf16_t)); return utils::cast<float>(val);
-            }
-            default: EXCEPTION_UNSUPPORTED_DATATYPE(in->dtype());
-        }
-    };
-    auto set_float_at = [&](std::byte* data, size_t elem_offset, float val) {
-        std::byte* ptr = data + elem_offset * utils::dsize(out->dtype());
-        switch (out->dtype()) {
-            case LLAISYS_DTYPE_F32: {
-                std::memcpy(ptr, &val, sizeof(float)); break;
-            }
-            case LLAISYS_DTYPE_F16: {
-                fp16_t h = utils::cast<fp16_t>(val); std::memcpy(ptr, &h, sizeof(fp16_t)); break;
-            }
-            case LLAISYS_DTYPE_BF16: {
-                bf16_t b = utils::cast<bf16_t>(val); std::memcpy(ptr, &b, sizeof(bf16_t)); break;
-            }
-            default: EXCEPTION_UNSUPPORTED_DATATYPE(out->dtype());
-        }
-    };
-    auto get_int_at = [&](const std::byte* data, size_t elem_offset) -> int64_t {
-        const std::byte* ptr = data + elem_offset * utils::dsize(pos_ids->dtype());
-        switch (pos_ids->dtype()) {
-            case LLAISYS_DTYPE_I64: {
-                int64_t val; std::memcpy(&val, ptr, sizeof(int64_t)); return val;
-            }
-            case LLAISYS_DTYPE_I32: {
-                int32_t val; std::memcpy(&val, ptr, sizeof(int32_t)); return val;
-            }
-            case LLAISYS_DTYPE_I16: {
-                int16_t val; std::memcpy(&val, ptr, sizeof(int16_t)); return val;
-            }
-            case LLAISYS_DTYPE_I8: {
-                int8_t val; std::memcpy(&val, ptr, sizeof(int8_t)); return val;
-            }
-            default: EXCEPTION_UNSUPPORTED_DATATYPE(pos_ids->dtype());
-        }
-    };
-    for (size_t i = 0; i < in->shape()[0]; ++i) {
-        for (size_t h = 0; h < in->shape()[1]; ++h) {
-            for (size_t j = 0; j < in->shape()[2] / 2; ++j) {
-                double angle = static_cast<double>(get_int_at(pos_ids->data(), i)) / std::pow(static_cast<double>(theta), (2.0 * static_cast<double>(j)) / static_cast<double>(in->shape()[2]));
-                double cos_val = std::cos(angle);
-                double sin_val = std::sin(angle);
-                size_t base = i * in->shape()[1] * in->shape()[2] + h * in->shape()[2];
-                size_t idx_a = base + j;
-                size_t idx_b = base + j + in->shape()[2] / 2;
-                float a = get_float_at(in->data(), idx_a);
-                float b = get_float_at(in->data(), idx_b);
-                set_float_at(out->data(), idx_a, static_cast<float>(static_cast<double>(a) * cos_val - static_cast<double>(b) * sin_val));
-                set_float_at(out->data(), idx_b, static_cast<float>(static_cast<double>(b) * cos_val + static_cast<double>(a) * sin_val));
-            }
-        }
+
+// 应用 Rotary Position Embedding (RoPE) 到输入张量
+// 输入/输出形状：[seq_len, num_heads, head_dim]，要求 head_dim 为偶数
+// position_ids: 形状为 [seq_len] 的 int64 张量，指定每个 token 的位置索引
+void rope(tensor_t output, tensor_t input, tensor_t position_ids, float base_theta) {
+    // 检查 output 和 input 是否在同一设备
+    CHECK_SAME_DEVICE(output, input);
+    // position_ids 也必须位于相同设备
+    ASSERT(position_ids->deviceType() == output->deviceType() &&
+           position_ids->deviceId() == output->deviceId(),
+           "ROPE: position_ids must reside on the same device as input and output.");
+    // 输入与输出数据类型必须一致
+    CHECK_SAME_DTYPE(output->dtype(), input->dtype());
+    // position_ids 必须为 int64 类型
+    ASSERT(position_ids->dtype() == LLAISYS_DTYPE_I64,
+           "ROPE: position_ids must be of type int64.");
+
+    // 维度合法性检查
+    ASSERT(output->ndim() == 3 && input->ndim() == 3,
+           "ROPE: input and output tensors must be 3-dimensional with shape [seq_len, num_heads, head_dim].");
+    ASSERT(position_ids->ndim() == 1,
+           "ROPE: position_ids must be a 1-dimensional tensor of shape [seq_len].");
+
+    size_t seq_len = input->shape()[0];
+    size_t num_heads = input->shape()[1];
+    size_t head_dim = input->shape()[2];
+    // RoPE 要求每个头的维度为偶数
+    ASSERT(head_dim % 2 == 0, "ROPE: head dimension must be even.");
+
+    // 验证输出张量形状是否匹配输入
+    ASSERT(output->shape()[0] == seq_len &&
+           output->shape()[1] == num_heads &&
+           output->shape()[2] == head_dim,
+           "ROPE: output tensor shape does not match input shape.");
+    // 验证 position_ids 长度与序列长度一致
+    ASSERT(position_ids->shape()[0] == seq_len,
+           "ROPE: length of position_ids must equal sequence length.");
+
+    // 所有张量必须内存连续
+    ASSERT(output->isContiguous() && input->isContiguous() && position_ids->isContiguous(),
+           "ROPE: all tensors must be contiguous in memory.");
+
+    if (output->deviceType() == LLAISYS_DEVICE_CPU) {
+        return cpu::rope(
+            output->data(),
+            input->data(),
+            position_ids->data(),
+            output->dtype(),
+            seq_len,
+            num_heads,
+            head_dim,
+            base_theta
+        );
+    }
+
+    llaisys::core::context().setDevice(output->deviceType(), output->deviceId());
+
+    switch (output->deviceType()) {
+    case LLAISYS_DEVICE_CPU:
+        return cpu::rope(
+            output->data(),
+            input->data(),
+            position_ids->data(),
+            output->dtype(),
+            seq_len,
+            num_heads,
+            head_dim,
+            base_theta
+        );
+#ifdef ENABLE_NVIDIA_API
+    case LLAISYS_DEVICE_NVIDIA:
+        TO_BE_IMPLEMENTED();
+        return;
+#endif
+    default:
+        EXCEPTION_UNSUPPORTED_DEVICE;
     }
 }
 

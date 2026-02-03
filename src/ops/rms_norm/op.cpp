@@ -1,63 +1,71 @@
 #include "op.hpp"
-#include <cstring>
-#include <cmath>
+
+#include "../../core/llaisys_core.hpp"
+#include "../../utils.hpp"
+
+#include "cpu/rms_norm_cpu.hpp"
 
 namespace llaisys::ops {
-void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps) {
-    auto get_float_at=[&](const std::byte* data,size_t i,size_t j,size_t stride_i,size_t stride_j)->float{
-        const std::byte* ptr=data+(i*stride_i+j*stride_j)*utils::dsize(in->dtype());
-        switch(in->dtype()){
-            case LLAISYS_DTYPE_F32:{
-                float val;
-                std::memcpy(&val,ptr,sizeof(float));
-                return val;
-            }
-            case LLAISYS_DTYPE_F16:{
-                fp16_t val;
-                std::memcpy(&val, ptr, sizeof(fp16_t));
-                return utils::cast<float>(val);
-            }
-            case LLAISYS_DTYPE_BF16:{
-                bf16_t val;
-                std::memcpy(&val, ptr, sizeof(bf16_t));
-                return utils::cast<float>(val);
-            }
-            default:EXCEPTION_UNSUPPORTED_DATATYPE(in->dtype());
-        }
-    };
 
-    auto set_float_at = [&](std::byte* data, size_t i, size_t j, size_t stride_i, size_t stride_j, float val) {
-        std::byte* ptr = data + (i * stride_i + j * stride_j) * utils::dsize(out->dtype());
-        switch (out->dtype()) {
-            case LLAISYS_DTYPE_F32: {
-                std::memcpy(ptr, &val, sizeof(float)); break;
-            }
-            case LLAISYS_DTYPE_F16: {
-                fp16_t h = utils::cast<fp16_t>(val); std::memcpy(ptr, &h, sizeof(fp16_t)); break;
-            }
-            case LLAISYS_DTYPE_BF16: {
-                bf16_t b = utils::cast<bf16_t>(val); std::memcpy(ptr, &b, sizeof(bf16_t)); break;
-            }
-            default:
-                EXCEPTION_UNSUPPORTED_DATATYPE(out->dtype());
-        }
-    };
+// 执行 RMS 归一化操作：对输入的每个样本（行）进行归一化，并通过可学习缩放参数调整
+void rms_norm(tensor_t output, tensor_t input, tensor_t scale, float epsilon) {
+    // 确保输出、输入和缩放参数位于同一设备
+    CHECK_SAME_DEVICE(output, input, scale);
+    // 三者必须具有相同的数据类型
+    CHECK_SAME_DTYPE(output->dtype(), input->dtype(), scale->dtype());
 
-    for (size_t i = 0; i < in->shape()[0]; ++i) {
-        float sum_sq = 0.0f;
-        for (size_t j = 0; j < in->shape()[1]; ++j) {
-            float x_val = get_float_at(in->data(), i, j, in->strides()[0], in->strides()[1]);
-            sum_sq += x_val * x_val;
-        }
+    // 张量维度约束
+    ASSERT(output->ndim() == 2, "RMSNorm: output tensor must be 2-dimensional.");
+    ASSERT(input->ndim() == 2, "RMSNorm: input tensor must be 2-dimensional.");
+    ASSERT(scale->ndim() == 1, "RMSNorm: scale (weight) tensor must be 1-dimensional.");
 
-        float norm = sqrt(sum_sq / in->shape()[1] + eps);
+    size_t batch_size = input->shape()[0];
+    size_t hidden_dim = input->shape()[1];
 
-        for (size_t j = 0; j < in->shape()[1]; ++j) {
-            float w_val = get_float_at(weight->data(), 0, j, 1, 1); 
-            float x_val = get_float_at(in->data(), i, j, in->strides()[0], in->strides()[1]);
-            float y_val = w_val * x_val / norm;
-            set_float_at(out->data(), i, j, out->strides()[0], out->strides()[1], y_val);
-        }
+    // 验证输出形状与输入一致
+    ASSERT(output->shape()[0] == batch_size && output->shape()[1] == hidden_dim,
+           "RMSNorm: output shape does not match input shape.");
+    // 验证缩放向量长度与特征维度一致
+    ASSERT(scale->shape()[0] == hidden_dim,
+           "RMSNorm: length of scale vector must equal the last dimension of input.");
+
+    // 所有张量必须内存连续
+    ASSERT(output->isContiguous() && input->isContiguous() && scale->isContiguous(),
+           "RMSNorm: all tensors must be contiguous in memory.");
+
+    if (output->deviceType() == LLAISYS_DEVICE_CPU) {
+        return cpu::rms_norm(
+            output->data(),
+            input->data(),
+            scale->data(),
+            output->dtype(),
+            batch_size,
+            hidden_dim,
+            epsilon
+        );
+    }
+
+    llaisys::core::context().setDevice(output->deviceType(), output->deviceId());
+
+    switch (output->deviceType()) {
+    case LLAISYS_DEVICE_CPU:
+        return cpu::rms_norm(
+            output->data(),
+            input->data(),
+            scale->data(),
+            output->dtype(),
+            batch_size,
+            hidden_dim,
+            epsilon
+        );
+#ifdef ENABLE_NVIDIA_API
+    case LLAISYS_DEVICE_NVIDIA:
+        TO_BE_IMPLEMENTED();
+        return;
+#endif
+    default:
+        EXCEPTION_UNSUPPORTED_DEVICE;
     }
 }
+
 } // namespace llaisys::ops

@@ -1,83 +1,95 @@
 #include "op.hpp"
-#include <cmath>
-#include <cstring>
+
+#include "../../core/llaisys_core.hpp"
+#include "../../utils.hpp"
+
+#include "cpu/self_attention_cpu.hpp"
+
 namespace llaisys::ops {
 
-void self_attention(tensor_t out, tensor_t q, tensor_t k, tensor_t v, float scale) {
-    auto get_float_at = [&](const std::byte* data, size_t elem_offset, llaisysDataType_t dtype) -> float {
-        const std::byte* ptr = data + elem_offset * utils::dsize(dtype);
-        switch (dtype) {
-            case LLAISYS_DTYPE_F32: { float val; std::memcpy(&val, ptr, sizeof(float)); return val; }
-            case LLAISYS_DTYPE_F16: { fp16_t val; std::memcpy(&val, ptr, sizeof(fp16_t)); return utils::cast<float>(val); }
-            case LLAISYS_DTYPE_BF16: { bf16_t val; std::memcpy(&val, ptr, sizeof(bf16_t)); return utils::cast<float>(val); }
-            default: EXCEPTION_UNSUPPORTED_DATATYPE(dtype);
-        }
-    };
+// 执行自注意力计算（支持标准 MHA 和 GQA）
+// 输入张量布局：[seq_len, num_heads, head_dim]
+// 要求 Q/K/V 和输出位于同一设备且数据类型一致
+void self_attention(tensor_t output, tensor_t query, tensor_t key, tensor_t value, float softmax_scale) {
+    // 检查所有张量是否在同一设备
+    CHECK_SAME_DEVICE(output, query, key, value);
+    // 数据类型必须完全一致
+    CHECK_SAME_DTYPE(output->dtype(), query->dtype(), key->dtype(), value->dtype());
 
-    auto set_float_at = [&](std::byte* data, size_t elem_offset, float val, llaisysDataType_t dtype) {
-        std::byte* ptr = data + elem_offset * utils::dsize(dtype);
-        switch (dtype) {
-            case LLAISYS_DTYPE_F32: { std::memcpy(ptr, &val, sizeof(float)); break; }
-            case LLAISYS_DTYPE_F16: { fp16_t h = utils::cast<fp16_t>(val); std::memcpy(ptr, &h, sizeof(fp16_t)); break; }
-            case LLAISYS_DTYPE_BF16: { bf16_t b = utils::cast<bf16_t>(val); std::memcpy(ptr, &b, sizeof(bf16_t)); break; }
-            default: EXCEPTION_UNSUPPORTED_DATATYPE(dtype);
-        }
-    };
+    // 所有输入和输出必须是三维张量
+    ASSERT(output->ndim() == 3 && query->ndim() == 3 && key->ndim() == 3 && value->ndim() == 3,
+           "SelfAttention: all tensors must be 3-dimensional with shape [seq_len, num_heads, head_dim].");
 
-    size_t seqlen = q->shape()[0];
-    size_t total_len = k->shape()[0];
-    size_t nhead = q->shape()[1];
-    size_t nkvhead = k->shape()[1];
-    size_t d = q->shape()[2];
-    size_t dv = v->shape()[2];
-    size_t group_size = nhead / nkvhead;
+    size_t query_len = query->shape()[0];
+    size_t num_q_heads = query->shape()[1];
+    size_t qk_head_dim = query->shape()[2];
 
-    for (size_t i = 0; i < seqlen; ++i) {
-        size_t query_global_pos = (total_len - seqlen) + i;
-        for (size_t h = 0; h < nhead; ++h) {
-            size_t kv_h = h / group_size;
-            std::vector<float> logits(total_len);
-            float max_score = -std::numeric_limits<float>::infinity();
-            for (size_t t = 0; t < total_len; ++t) {
-                if (t > query_global_pos) {
-                    logits[t] = -std::numeric_limits<float>::infinity();
-                    continue;
-                }
-                float score = 0.0f;
-                for (size_t j = 0; j < d; ++j) {
-                    score += get_float_at(q->data(), i * nhead * d + h * d + j, q->dtype()) *
-                             get_float_at(k->data(), t * nkvhead * d + kv_h * d + j, k->dtype());
-                }
-                score *= scale;
-                logits[t] = score;
-                if (score > max_score) max_score = score;
-            }
+    size_t kv_len = key->shape()[0];
+    size_t num_kv_heads = key->shape()[1];
+    size_t k_head_dim = key->shape()[2];
+    size_t v_head_dim = value->shape()[2];
 
-            float sum_exp = 0.0f;
-            for (size_t t = 0; t < total_len; ++t) {
-                if (logits[t] == -std::numeric_limits<float>::infinity()) {
-                    logits[t] = 0.0f;
-                } else {
-                    float exp_val = std::exp(logits[t] - max_score);
-                    logits[t] = exp_val;
-                    sum_exp += exp_val;
-                }
-            }
-            float inv_sum = 1.0f / (sum_exp + 1e-9f);
+    // 验证 Q 与 K 的头维度一致
+    ASSERT(qk_head_dim == k_head_dim,
+           "SelfAttention: query and key must have the same head dimension.");
+    // 验证 V 与 K 的序列长度和 KV 头数一致
+    ASSERT(value->shape()[0] == kv_len && value->shape()[1] == num_kv_heads,
+           "SelfAttention: value tensor shape must match key in sequence length and number of KV heads.");
+    // 验证输出形状匹配预期：[query_len, num_q_heads, v_head_dim]
+    ASSERT(output->shape()[0] == query_len &&
+           output->shape()[1] == num_q_heads &&
+           output->shape()[2] == v_head_dim,
+           "SelfAttention: output tensor shape does not match expected dimensions.");
+    // 支持 GQA：Q 头数必须是 KV 头数的整数倍
+    ASSERT(num_q_heads % num_kv_heads == 0,
+           "SelfAttention: number of query heads must be divisible by number of KV heads (for GQA support).");
 
-            std::vector<float> acc_out(dv, 0.0f);
-            for (size_t t = 0; t < total_len; ++t) {
-                if (logits[t] == 0.0f) continue;
-                float prob = logits[t] * inv_sum;
-                for (size_t j = 0; j < dv; ++j) {
-                    acc_out[j] += prob * get_float_at(v->data(), t * nkvhead * dv + kv_h * dv + j, v->dtype());
-                }
-            }
+    // 所有张量必须内存连续
+    ASSERT(output->isContiguous() && query->isContiguous() && key->isContiguous() && value->isContiguous(),
+           "SelfAttention: all tensors must be contiguous in memory.");
 
-            for (size_t j = 0; j < dv; ++j) {
-                set_float_at(out->data(), i * nhead * dv + h * dv + j, acc_out[j], out->dtype());
-            }
-        }
+    if (output->deviceType() == LLAISYS_DEVICE_CPU) {
+        return cpu::self_attention(
+            output->data(),
+            query->data(),
+            key->data(),
+            value->data(),
+            output->dtype(),
+            query_len,
+            kv_len,
+            num_q_heads,
+            num_kv_heads,
+            qk_head_dim,
+            v_head_dim,
+            softmax_scale
+        );
+    }
+
+    llaisys::core::context().setDevice(output->deviceType(), output->deviceId());
+
+    switch (output->deviceType()) {
+    case LLAISYS_DEVICE_CPU:
+        return cpu::self_attention(
+            output->data(),
+            query->data(),
+            key->data(),
+            value->data(),
+            output->dtype(),
+            query_len,
+            kv_len,
+            num_q_heads,
+            num_kv_heads,
+            qk_head_dim,
+            v_head_dim,
+            softmax_scale
+        );
+#ifdef ENABLE_NVIDIA_API
+    case LLAISYS_DEVICE_NVIDIA:
+        TO_BE_IMPLEMENTED();
+        return;
+#endif
+    default:
+        EXCEPTION_UNSUPPORTED_DEVICE;
     }
 }
 

@@ -1,35 +1,39 @@
 #include "op.hpp"
-#include <cstring>
+
+#include "../../core/llaisys_core.hpp"
+#include "../../utils.hpp"
+
+#include "cpu/add_cpu.hpp"
+
 namespace llaisys::ops {
 
-void add(tensor_t c, tensor_t a, tensor_t b) {
-    auto get_value_at = [&](const std::byte* data, size_t elem_offset, llaisysDataType_t dtype) -> float {
-        const std::byte* ptr = data + elem_offset * utils::dsize(dtype);
-        switch (dtype) {
-            case LLAISYS_DTYPE_F32: { float val; std::memcpy(&val, ptr, sizeof(float)); return val; }
-            case LLAISYS_DTYPE_F16: { fp16_t val; std::memcpy(&val, ptr, sizeof(fp16_t)); return utils::cast<float>(val); }
-            case LLAISYS_DTYPE_BF16: { bf16_t val; std::memcpy(&val, ptr, sizeof(bf16_t)); return utils::cast<float>(val); }
-            default: EXCEPTION_UNSUPPORTED_DATATYPE(dtype);
-        }
-    };
+// 执行两个张量的逐元素加法，结果写入输出张量
+void add(tensor_t out, tensor_t lhs, tensor_t rhs) {
+    // 验证三个张量位于同一计算设备
+    CHECK_SAME_DEVICE(out, lhs, rhs);
+    // 当前仅支持形状一致且内存连续的输入
+    CHECK_SAME_SHAPE(out->shape(), lhs->shape(), rhs->shape());
+    CHECK_SAME_DTYPE(out->dtype(), lhs->dtype(), rhs->dtype());
+    ASSERT(out->isContiguous() && lhs->isContiguous() && rhs->isContiguous(),
+           "Add operation requires all tensors to be contiguous in memory.");
 
-    auto set_value_at = [&](std::byte* data, size_t elem_offset, float val, llaisysDataType_t dtype) {
-        std::byte* ptr = data + elem_offset * utils::dsize(dtype);
-        switch (dtype) {
-            case LLAISYS_DTYPE_F32: { std::memcpy(ptr, &val, sizeof(float)); break; }
-            case LLAISYS_DTYPE_F16: { fp16_t h = utils::cast<fp16_t>(val); std::memcpy(ptr, &h, sizeof(fp16_t)); break; }
-            case LLAISYS_DTYPE_BF16: { bf16_t b = utils::cast<bf16_t>(val); std::memcpy(ptr, &b, sizeof(bf16_t)); break; }
-            default: EXCEPTION_UNSUPPORTED_DATATYPE(dtype);
-        }
-    };
+    // CPU 后端始终可用
+    if (out->deviceType() == LLAISYS_DEVICE_CPU) {
+        return cpu::add(out->data(), lhs->data(), rhs->data(), out->dtype(), out->numel());
+    }
 
-    size_t numel = a->shape()[0]; // Assuming all tensors have the same number of elements
+    llaisys::core::context().setDevice(out->deviceType(), out->deviceId());
 
-    for (size_t i = 0; i < numel; ++i) {
-        float a_val = get_value_at(a->data(), i, a->dtype());
-        float b_val = get_value_at(b->data(), i, b->dtype());
-        float result = a_val + b_val;
-        set_value_at(c->data(), i, result, c->dtype());
+    switch (out->deviceType()) {
+    case LLAISYS_DEVICE_CPU:
+        return cpu::add(out->data(), lhs->data(), rhs->data(), out->dtype(), out->numel());
+#ifdef ENABLE_NVIDIA_API
+    case LLAISYS_DEVICE_NVIDIA:
+        TO_BE_IMPLEMENTED();
+        return;
+#endif
+    default:
+        EXCEPTION_UNSUPPORTED_DEVICE;
     }
 }
 

@@ -13,6 +13,12 @@ option("nv-gpu")
     set_description("Whether to compile implementations for Nvidia GPU")
 option_end()
 
+option("sentencepiece")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Enable SentencePiece tokenizer support")
+option_end()
+
 if has_config("nv-gpu") then
     add_defines("ENABLE_NVIDIA_API")
     includes("xmake/nvidia.lua")
@@ -106,7 +112,16 @@ target("llaisys")
     set_languages("cxx17")
     set_warnings("all", "error")
     add_files("src/llaisys/*.cc")
+    add_files("src/llaisys/*/*.cpp")
+    add_files("src/models/*/*.cpp")
+    add_files("src/models/*/*/*.cpp")
+    add_files("src/tokenizer/*/*.cpp")
     set_installdir(".")
+
+    if has_config("sentencepiece") then
+        add_defines("LLAISYS_ENABLE_SENTENCEPIECE")
+        add_links("sentencepiece")
+    end
 
     
     after_install(function (target)

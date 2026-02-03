@@ -1,48 +1,86 @@
 #include "op.hpp"
-#include <cstring>
+
+#include "../../core/llaisys_core.hpp"
+#include "../../utils.hpp"
+
+#include "cpu/linear_cpu.hpp"
+
 namespace llaisys::ops {
-void linear(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias) {
-    auto get_float_at=[&](const std::byte* data,size_t elem_offset,llaisysDataType_t dtype)->float{
-        const std::byte* ptr=data+elem_offset*utils::dsize(dtype);
-        switch(dtype){
-            case LLAISYS_DTYPE_F32:{
-                float val;std::memcpy(&val,ptr,sizeof(float));return val;
-            }
-            case LLAISYS_DTYPE_F16: {
-                fp16_t val;std::memcpy(&val,ptr,sizeof(fp16_t));return utils::cast<float>(val);
-            }
-            case LLAISYS_DTYPE_BF16: {
-                bf16_t val;std::memcpy(&val,ptr,sizeof(bf16_t));return utils::cast<float>(val);
-            }
-            default:EXCEPTION_UNSUPPORTED_DATATYPE(dtype);
-        }
-    };
-    auto set_float_at=[&](std::byte* data,size_t elem_offset,float val,llaisysDataType_t dtype) {
-        std::byte* ptr=data+elem_offset*utils::dsize(dtype);
-        switch(dtype){
-            case LLAISYS_DTYPE_F32:{
-                std::memcpy(ptr,&val,sizeof(float));break;
-            }
-            case LLAISYS_DTYPE_F16: {
-                fp16_t h=utils::cast<fp16_t>(val);
-                std::memcpy(ptr,&h,sizeof(fp16_t));break;
-            }
-            case LLAISYS_DTYPE_BF16:{
-                bf16_t b=utils::cast<bf16_t>(val);
-                std::memcpy(ptr,&b,sizeof(bf16_t));break;
-            }
-            default:EXCEPTION_UNSUPPORTED_DATATYPE(dtype);
-        }
-    };
-    for(size_t i = 0; i < in->shape()[0]; ++i) {
-        for (size_t j = 0; j < weight->shape()[0]; ++j) {
-            float sum = 0.0f;
-            for (size_t k = 0; k < in->shape()[1]; ++k)
-                sum += get_float_at(in->data(), i * in->shape()[1] + k, in->dtype()) * get_float_at(weight->data(), j * in->shape()[1] + k, weight->dtype());
-            if (bias)
-                sum += get_float_at(bias->data(), j, bias->dtype());
-            set_float_at(out->data(), i * weight->shape()[0] + j, sum, out->dtype());
-        }
+
+// 执行线性变换：output = input @ weight^T + bias（若提供）
+void linear(tensor_t output, tensor_t input, tensor_t weight_matrix, tensor_t bias_vector) {
+    // 确保输出、输入和权重位于同一设备
+    CHECK_SAME_DEVICE(output, input, weight_matrix);
+    if (bias_vector) {
+        // 若存在偏置，也需在同一设备且数据类型一致
+        CHECK_SAME_DEVICE(output, bias_vector);
+        CHECK_SAME_DTYPE(output->dtype(), bias_vector->dtype());
+    }
+    // 输出、输入和权重必须具有相同的数据类型
+    CHECK_SAME_DTYPE(output->dtype(), input->dtype(), weight_matrix->dtype());
+
+    // 所有张量维度要求：均为二维（偏置除外）
+    ASSERT(output->ndim() == 2, "Linear: output tensor must be 2-dimensional.");
+    ASSERT(input->ndim() == 2, "Linear: input tensor must be 2-dimensional.");
+    ASSERT(weight_matrix->ndim() == 2, "Linear: weight matrix must be 2-dimensional.");
+
+    size_t batch_size = input->shape()[0];
+    size_t in_features = input->shape()[1];
+    size_t out_features = weight_matrix->shape()[0]; // 权重形状为 [out_features, in_features]
+
+    // 验证权重的输入特征维度与输入匹配
+    ASSERT(weight_matrix->shape()[1] == in_features,
+           "Linear: mismatch between input feature dimension and weight's second dimension.");
+    // 验证输出形状是否符合预期
+    ASSERT(output->shape()[0] == batch_size && output->shape()[1] == out_features,
+           "Linear: output tensor shape does not match expected (batch_size, out_features).");
+
+    // 若提供偏置，必须为一维且长度等于输出特征数
+    if (bias_vector) {
+        ASSERT(bias_vector->ndim() == 1 && bias_vector->shape()[0] == out_features,
+               "Linear: bias must be a 1D tensor with length equal to out_features.");
+    }
+
+    // 所有参与计算的张量必须内存连续
+    ASSERT(output->isContiguous() && input->isContiguous() && weight_matrix->isContiguous()
+               && (!bias_vector || bias_vector->isContiguous()),
+           "Linear: all input and output tensors must be contiguous in memory.");
+
+    if (output->deviceType() == LLAISYS_DEVICE_CPU) {
+        return cpu::linear(
+            output->data(),
+            input->data(),
+            weight_matrix->data(),
+            bias_vector ? bias_vector->data() : nullptr,
+            output->dtype(),
+            batch_size,
+            out_features,
+            in_features
+        );
+    }
+
+    llaisys::core::context().setDevice(output->deviceType(), output->deviceId());
+
+    switch (output->deviceType()) {
+    case LLAISYS_DEVICE_CPU:
+        return cpu::linear(
+            output->data(),
+            input->data(),
+            weight_matrix->data(),
+            bias_vector ? bias_vector->data() : nullptr,
+            output->dtype(),
+            batch_size,
+            out_features,
+            in_features
+        );
+#ifdef ENABLE_NVIDIA_API
+    case LLAISYS_DEVICE_NVIDIA:
+        TO_BE_IMPLEMENTED();
+        return;
+#endif
+    default:
+        EXCEPTION_UNSUPPORTED_DEVICE;
     }
 }
+
 } // namespace llaisys::ops
