@@ -68,3 +68,7 @@ def load_models(lib):
         c_size_t,
     ]
     lib.llaisysQwen2ModelInfer.restype = c_int64
+
+    # llaisysQwen2ModelResetCache
+    lib.llaisysQwen2ModelResetCache.argtypes = [llaisysQwen2Model_t]
+    lib.llaisysQwen2ModelResetCache.restype = None

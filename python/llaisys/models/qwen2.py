@@ -82,6 +82,9 @@ class Qwen2:
         # 存储设备信息
         self.device = device
 
+        # 保存结束token
+        self.end_token = meta.end_token
+
     def _load_weights(self, model_path: Path):
         """加载模型权重"""
 
@@ -245,29 +248,45 @@ class Qwen2:
         top_p: float = 0.8,
         temperature: float = 0.8,
     ):
-        """生成文本"""
+        """生成文本，使用KV-Cache进行增量推理"""
         if max_new_tokens is None:
             max_new_tokens = 128
+
+        # 重置KV Cache
+        LIB_LLAISYS.llaisysQwen2ModelResetCache(self.model)
 
         # 准备输入token
         tokens = list(inputs)
 
-        # 生成新token
-        for _ in range(max_new_tokens):
-            # 将token列表转换为ctypes数组
-            token_array = (c_int64 * len(tokens))(*tokens)
+        # 第一步：处理完整的prompt（所有输入token）
+        token_array = (c_int64 * len(tokens))(*tokens)
+        next_token = LIB_LLAISYS.llaisysQwen2ModelInfer(
+            self.model,
+            token_array,
+            len(tokens)
+        )
+        tokens.append(next_token)
 
-            # 调用模型推理
+        # 检查是否生成结束token
+        if next_token == self.end_token:
+            return tokens
+
+        # 后续步骤：每次只传入一个新token，利用KV-Cache
+        for _ in range(max_new_tokens - 1):
+            # 只传入最后一个token
+            token_array = (c_int64 * 1)(tokens[-1])
+
+            # 调用模型推理（使用KV-Cache）
             next_token = LIB_LLAISYS.llaisysQwen2ModelInfer(
                 self.model,
                 token_array,
-                len(tokens)
+                1
             )
 
             tokens.append(next_token)
 
             # 检查是否生成结束token
-            if next_token == self.weights.end_token:
+            if next_token == self.end_token:
                 break
 
         return tokens

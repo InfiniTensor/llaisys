@@ -47,6 +47,10 @@ struct LlaisysQwen2Model {
     
     // 位置ID张量
     tensor_t pos_ids;
+    
+    // KV Cache状态
+    size_t cache_pos;  // 当前cache位置（已缓存的token数）
+    size_t total_len;  // 总token数（用于注意力计算）
 };
 
 // 辅助函数：从llaisysTensor_t获取tensor_t
@@ -168,6 +172,10 @@ __C struct LlaisysQwen2Model *llaisysQwen2ModelCreate(
     // 位置ID张量
     model->pos_ids = Tensor::create({maxseq}, LLAISYS_DTYPE_I64, device, model->device_id);
     
+    // 初始化KV Cache状态
+    model->cache_pos = 0;
+    model->total_len = 0;
+    
     return model;
 }
 
@@ -234,51 +242,59 @@ static void copy_to_kv_cache(tensor_t cache, tensor_t src, size_t start_pos, siz
     std::memcpy(cache_data, src_data, bytes);
 }
 
-// 模型推理 - 单token
+// 模型推理 - 支持KV Cache的增量推理
+// 当use_cache为true时，只处理新token（ntoken应为1），利用KV Cache
+// 当use_cache为false时，处理所有token（首次调用或重置时）
 __C int64_t llaisysQwen2ModelInfer(
     struct LlaisysQwen2Model *model, 
     int64_t *token_ids, 
     size_t ntoken) {
     
     const auto &meta = model->meta;
-    size_t hs = meta.hs;
     size_t nh = meta.nh;
     size_t nkvh = meta.nkvh;
     size_t dh = meta.dh;
-    size_t di = meta.di;
     size_t voc = meta.voc;
     size_t nlayer = meta.nlayer;
     float epsilon = meta.epsilon;
     float theta = meta.theta;
     
-    // 使用hidden_states的前ntoken行
-    auto hidden = model->hidden_states->slice(0, 0, ntoken);
+    // 判断是否使用KV Cache
+    bool use_cache = model->cache_pos > 0;
+    size_t start_pos = use_cache ? model->cache_pos : 0;
+    size_t total_len = start_pos + ntoken;
     
-    // 1. Embedding
+    // 使用hidden_states的[start_pos, total_len)行作为当前处理的hidden
+    auto hidden = model->hidden_states->slice(0, start_pos, total_len);
+    
+    // 1. Embedding（只对新token做embedding）
     auto token_ids_tensor = Tensor::create({ntoken}, LLAISYS_DTYPE_I64, model->device_type, model->device_id);
     token_ids_tensor->load(token_ids);
     ops::embedding(hidden, token_ids_tensor, get_tensor(model->weights.in_embed));
     
-    // 设置位置ID
-    auto pos_ids_slice = model->pos_ids->slice(0, 0, ntoken);
+    // 设置位置ID（使用实际位置）
+    auto pos_ids_slice = model->pos_ids->slice(0, start_pos, total_len);
     std::vector<int64_t> pos_ids_data(ntoken);
     for (size_t i = 0; i < ntoken; i++) {
-        pos_ids_data[i] = static_cast<int64_t>(i);
+        pos_ids_data[i] = static_cast<int64_t>(start_pos + i);
     }
     pos_ids_slice->load(pos_ids_data.data());
     
     // Transformer层
     for (size_t layer = 0; layer < nlayer; layer++) {
-        // 保存残差
-        auto residual = hidden;
+        // 保存当前hidden到residual张量（用于残差连接）
+        // 需要将hidden_states[start_pos:total_len]复制到residual[start_pos:total_len]
+        auto residual_slice = model->residual->slice(0, start_pos, total_len);
+        std::memcpy(residual_slice->data(), hidden->data(), 
+                    ntoken * meta.hs * hidden->elementSize());
         
         // 1. RMS Norm (input_layernorm)
         ops::rms_norm(hidden, hidden, get_tensor(model->weights.attn_norm_w[layer]), epsilon);
         
         // 2. QKV投影
-        auto q_proj_slice = model->q_proj->slice(0, 0, ntoken);
-        auto k_proj_slice = model->k_proj->slice(0, 0, ntoken);
-        auto v_proj_slice = model->v_proj->slice(0, 0, ntoken);
+        auto q_proj_slice = model->q_proj->slice(0, start_pos, total_len);
+        auto k_proj_slice = model->k_proj->slice(0, start_pos, total_len);
+        auto v_proj_slice = model->v_proj->slice(0, start_pos, total_len);
         
         ops::linear(q_proj_slice, hidden, get_tensor(model->weights.attn_q_w[layer]), 
                     get_tensor(model->weights.attn_q_b[layer]));
@@ -293,60 +309,62 @@ __C int64_t llaisysQwen2ModelInfer(
         auto v_reshaped = v_proj_slice->view({ntoken, nkvh, dh});
         
         // 4. RoPE
-        auto q_rotated_slice = model->q_rotated->slice(0, 0, ntoken);
-        auto k_rotated_slice = model->k_rotated->slice(0, 0, ntoken);
+        auto q_rotated_slice = model->q_rotated->slice(0, start_pos, total_len);
+        auto k_rotated_slice = model->k_rotated->slice(0, start_pos, total_len);
         
         ops::rope(q_rotated_slice, q_reshaped, pos_ids_slice, theta);
         ops::rope(k_rotated_slice, k_reshaped, pos_ids_slice, theta);
         
         // 5. 更新KV Cache
-        copy_to_kv_cache(model->k_cache[layer], k_rotated_slice, 0, ntoken);
-        copy_to_kv_cache(model->v_cache[layer], v_reshaped, 0, ntoken);
+        copy_to_kv_cache(model->k_cache[layer], k_rotated_slice, start_pos, ntoken);
+        copy_to_kv_cache(model->v_cache[layer], v_reshaped, start_pos, ntoken);
         
-        // 6. Self Attention
-        auto k_cache_slice = model->k_cache[layer]->slice(0, 0, ntoken);
-        auto v_cache_slice = model->v_cache[layer]->slice(0, 0, ntoken);
+        // 6. Self Attention - 使用完整的KV Cache
+        auto k_cache_slice = model->k_cache[layer]->slice(0, 0, total_len);
+        auto v_cache_slice = model->v_cache[layer]->slice(0, 0, total_len);
         
-        auto attn_output_slice = model->attn_output->slice(0, 0, ntoken);
+        auto attn_output_slice = model->attn_output->slice(0, start_pos, total_len);
         float scale = 1.0f / std::sqrt(static_cast<float>(dh));
         ops::self_attention(attn_output_slice, q_rotated_slice, k_cache_slice, v_cache_slice, scale);
         
         // 7. O投影
-        auto o_proj_slice = model->o_proj->slice(0, 0, ntoken);
+        auto o_proj_slice = model->o_proj->slice(0, start_pos, total_len);
         auto attn_flat = attn_output_slice->view({ntoken, nh * dh});
         ops::linear(o_proj_slice, attn_flat, get_tensor(model->weights.attn_o_w[layer]), nullptr);
         
-        // 8. 残差连接
-        ops::add(o_proj_slice, o_proj_slice, residual);
+        // 8. 残差连接：o_proj + residual
+        // 需要将residual[start_pos:total_len]加到o_proj_slice
+        ops::add(o_proj_slice, o_proj_slice, residual_slice);
         
-        // 9. 保存残差用于MLP
-        residual = o_proj_slice;
+        // 9. 保存当前结果到residual用于MLP残差连接
+        std::memcpy(residual_slice->data(), o_proj_slice->data(), 
+                    ntoken * meta.hs * o_proj_slice->elementSize());
         
         // 10. RMS Norm (post_attention_layernorm)
         ops::rms_norm(o_proj_slice, o_proj_slice, get_tensor(model->weights.mlp_norm_w[layer]), epsilon);
         
         // 11. MLP
-        auto gate_slice = model->gate_proj->slice(0, 0, ntoken);
-        auto up_slice = model->up_proj->slice(0, 0, ntoken);
+        auto gate_slice = model->gate_proj->slice(0, start_pos, total_len);
+        auto up_slice = model->up_proj->slice(0, start_pos, total_len);
         
         ops::linear(gate_slice, o_proj_slice, get_tensor(model->weights.mlp_gate_w[layer]), nullptr);
         ops::linear(up_slice, o_proj_slice, get_tensor(model->weights.mlp_up_w[layer]), nullptr);
         
-        auto mlp_out_slice = model->mlp_output->slice(0, 0, ntoken);
+        auto mlp_out_slice = model->mlp_output->slice(0, start_pos, total_len);
         ops::swiglu(mlp_out_slice, gate_slice, up_slice);
         
-        // 12. Down投影
+        // 12. Down投影（结果存回hidden）
         ops::linear(hidden, mlp_out_slice, get_tensor(model->weights.mlp_down_w[layer]), nullptr);
         
-        // 13. 残差连接
-        ops::add(hidden, hidden, residual);
+        // 13. 残差连接：hidden + residual
+        ops::add(hidden, hidden, residual_slice);
     }
     
     // 最终RMS Norm
     ops::rms_norm(hidden, hidden, get_tensor(model->weights.out_norm_w), epsilon);
     
     // 输出投影
-    auto logits_slice = model->logits->slice(0, 0, ntoken);
+    auto logits_slice = model->logits->slice(0, start_pos, total_len);
     ops::linear(logits_slice, hidden, get_tensor(model->weights.out_embed), nullptr);
     
     // 取最后一个token的logits进行argmax
@@ -359,5 +377,16 @@ __C int64_t llaisysQwen2ModelInfer(
     int64_t result;
     std::memcpy(&result, model->max_idx->data(), sizeof(int64_t));
     
+    // 更新KV Cache状态
+    model->cache_pos = total_len;
+    model->total_len = total_len;
+    
     return result;
+}
+
+// 重置KV Cache状态（用于新的对话）
+__C void llaisysQwen2ModelResetCache(struct LlaisysQwen2Model *model) {
+    if (!model) return;
+    model->cache_pos = 0;
+    model->total_len = 0;
 }
