@@ -169,7 +169,7 @@ bool Tensor::isContiguous() const {
     }
     
     ptrdiff_t expected_stride = 1;
-    for (int i = this->ndim() - 1; i >= 0; --i) {
+    for (size_t i = this->ndim(); i-- > 0;) {
         if (this->strides()[i] != expected_stride) {
             return false;
         }
@@ -219,7 +219,7 @@ tensor_t Tensor::view(const std::vector<size_t> &shape) const {
         }
         
         new_meta.strides[ndim - 1] = 1;
-        for (int i = ndim - 2; i >= 0; --i) {
+        for (size_t i = ndim - 1; i-- > 0;) {
             new_meta.strides[i] = new_meta.strides[i + 1] * new_meta.shape[i + 1];
         }
     } else {
