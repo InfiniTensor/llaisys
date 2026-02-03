@@ -257,9 +257,9 @@ tensor_t Tensor::view(const std::vector<size_t> &shape) const {
 
     std::vector<ptrdiff_t> new_strides(new_ndim);
     ptrdiff_t stride = 1;
-    for(int i = new_ndim - 1; i >= 0; i--) {
+    for (size_t i = new_ndim; i-- > 0;) {
         new_strides[i] = stride;
-        stride *= shape[i];
+        stride *= static_cast<ptrdiff_t>(shape[i]);
     }
 
     TensorMeta new_meta{this->dtype(), shape, new_strides};
