@@ -170,7 +170,7 @@ bool Tensor::isContiguous() const {
     
     bool ret = true;
     if(ndim != 0) {
-        size_t expected_stride = 1;
+        ptrdiff_t expected_stride = 1;
         for(int i = ndim - 1; i >= 0; i--) {
             if(strides[i] != expected_stride) {
                 ret = false;
@@ -254,7 +254,7 @@ tensor_t Tensor::contiguous() const {
         return std::shared_ptr<Tensor>(new Tensor(_meta, _storage, _offset));
     }
     auto new_tensor = Tensor::create(shape(), dtype(), deviceType(), deviceId());
-    size_t total_bytes = this->numel() * this->elementSize();
+    //size_t total_bytes = this->numel() * this->elementSize();
 
     TO_BE_IMPLEMENTED();
     return new_tensor;
