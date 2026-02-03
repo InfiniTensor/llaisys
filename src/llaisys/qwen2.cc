@@ -13,6 +13,11 @@ struct LlaisysQwen2Model {
 };
 
 namespace {
+void log_c_api_error(const char *func, const char *file, int line, const char *message) {
+    std::cerr << "[ERROR] " << message << " from " << func << " at " << file << ":" << line << "."
+              << std::endl;
+}
+
 void init_layer_arrays(LlaisysQwen2Weights &weights, size_t nlayer) {
     weights.in_embed = nullptr;
     weights.out_embed = nullptr;
@@ -70,37 +75,81 @@ __C {
         llaisysDeviceType_t device,
         int *device_ids,
         int ndevice) {
-        CHECK_ARGUMENT(meta != nullptr, "meta is null");
+        if (!meta) {
+            log_c_api_error(__func__, __FILE__, __LINE__, "Invalid argument: meta is null");
+            return nullptr;
+        }
 
-        auto *model = new LlaisysQwen2Model();
-        model->meta = *meta;
-        model->device = device;
-        model->device_id = (device_ids && ndevice > 0) ? device_ids[0] : 0;
+        LlaisysQwen2Model *model = nullptr;
+        try {
+            model = new LlaisysQwen2Model();
+            model->meta = *meta;
+            model->device = device;
+            model->device_id = (device_ids && ndevice > 0) ? device_ids[0] : 0;
 
-        init_layer_arrays(model->weights, model->meta.nlayer);
-        model->impl = new llaisys::models::qwen2::Qwen2Model(model->meta, device, model->device_id);
+            init_layer_arrays(model->weights, model->meta.nlayer);
+            model->impl = new llaisys::models::qwen2::Qwen2Model(model->meta, device, model->device_id);
 
-        return model;
+            return model;
+        } catch (const std::exception &e) {
+            log_c_api_error(__func__, __FILE__, __LINE__, e.what());
+        } catch (...) {
+            log_c_api_error(__func__, __FILE__, __LINE__, "Unknown exception");
+        }
+
+        if (model) {
+            delete model->impl;
+            model->impl = nullptr;
+            free_layer_arrays(model->weights);
+            delete model;
+        }
+        return nullptr;
     }
 
     void llaisysQwen2ModelDestroy(struct LlaisysQwen2Model *model) {
         if (!model) {
             return;
         }
-        delete model->impl;
-        model->impl = nullptr;
-        free_layer_arrays(model->weights);
-        delete model;
+        try {
+            delete model->impl;
+            model->impl = nullptr;
+            free_layer_arrays(model->weights);
+            delete model;
+        } catch (const std::exception &e) {
+            log_c_api_error(__func__, __FILE__, __LINE__, e.what());
+        } catch (...) {
+            log_c_api_error(__func__, __FILE__, __LINE__, "Unknown exception");
+        }
     }
 
     struct LlaisysQwen2Weights *llaisysQwen2ModelWeights(struct LlaisysQwen2Model *model) {
-        CHECK_ARGUMENT(model != nullptr, "model is null");
-        return &model->weights;
+        if (!model) {
+            log_c_api_error(__func__, __FILE__, __LINE__, "Invalid argument: model is null");
+            return nullptr;
+        }
+        try {
+            return &model->weights;
+        } catch (const std::exception &e) {
+            log_c_api_error(__func__, __FILE__, __LINE__, e.what());
+        } catch (...) {
+            log_c_api_error(__func__, __FILE__, __LINE__, "Unknown exception");
+        }
+        return nullptr;
     }
 
     int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model *model, int64_t *token_ids, size_t ntoken) {
-        CHECK_ARGUMENT(model != nullptr, "model is null");
-        model->impl->bind_weights(model->weights);
-        return model->impl->infer(token_ids, ntoken);
+        if (!model) {
+            log_c_api_error(__func__, __FILE__, __LINE__, "Invalid argument: model is null");
+            return -1;
+        }
+        try {
+            model->impl->bind_weights(model->weights);
+            return model->impl->infer(token_ids, ntoken);
+        } catch (const std::exception &e) {
+            log_c_api_error(__func__, __FILE__, __LINE__, e.what());
+        } catch (...) {
+            log_c_api_error(__func__, __FILE__, __LINE__, "Unknown exception");
+        }
+        return model->meta.end_token;
     }
 }
