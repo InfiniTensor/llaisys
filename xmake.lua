@@ -106,6 +106,7 @@ target("llaisys")
     set_languages("cxx17")
     set_warnings("all", "error")
     add_files("src/llaisys/*.cc")
+    add_files("src/models/qwen2/*.cpp")
     set_installdir(".")
 
     
