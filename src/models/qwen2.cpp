@@ -7,6 +7,7 @@
 #include "../ops/self_attention/op.hpp"
 #include "../ops/swiglu/op.hpp"
 #include "../ops/add/op.hpp" 
+#include "../ops/argmax/op.hpp" 
 #include "llaisys.h"
 #include <cmath>
 #include <cstdio>
@@ -63,6 +64,9 @@ LlaisysQwen2Model *llaisysQwen2ModelCreate(const LlaisysQwen2Meta *meta, llaisys
         model->k_cache[i]=Tensor::create(cache_shape, dtype,device,0);
         model->v_cache[i]=Tensor::create(cache_shape, dtype,device,0);
     }
+    printf("DEBUG: Meta Check -> nlayer=%lu, hs=%lu, maxseq=%lu\n", 
+        model->meta.nlayer, model->meta.hs, model->meta.maxseq);
+    fflush(stdout);
     printf("Cpp:Qwen2 Model Initialized on device: %d ! Layers: %lu\n",(int)model->device,meta->nlayer);
     fflush(stdout);
     return model;
@@ -136,12 +140,13 @@ void llaisysQwen2LoadWeight(
     fflush(stdout);
 
 }
-tensor_t llaisysQwen2ModelForward(
+void* llaisysQwen2ModelForward(
     LlaisysQwen2Model* model,
     int64_t*input_ids_ptr,
     size_t seq_len,
     size_t start_pos
 ){
+    printf("DEBUG: Entered Forward | seq_len=%lu | start_pos=%lu\n", seq_len, start_pos); fflush(stdout);//debug
     auto device=model->device;
     auto dtype=model->tok_embeddings->dtype();
     size_t hs=model->meta.hs;
@@ -153,23 +158,28 @@ tensor_t llaisysQwen2ModelForward(
     std::vector<size_t> input_shape={1,seq_len};
     
     tensor_t input_tensor=Tensor::create(input_shape,LLAISYS_DTYPE_I64,device,0);
-
+    printf("DEBUG: Loading input ptr...\n"); fflush(stdout);
+    if (!input_ids_ptr) { printf("ERROR: input_ids_ptr is NULL!\n"); exit(1); }//debug
     input_tensor->load(input_ids_ptr);
-
+    
     std::vector<size_t> hidden_shape={1,seq_len,hs};
 
     tensor_t hidden_states=Tensor::create(hidden_shape,dtype,device,0);
 
+    printf("DEBUG: Running Embedding...\n"); fflush(stdout);//debug
     ops::embedding(hidden_states, input_tensor, model->tok_embeddings);
 
+    printf("DEBUG: Inside Forward. start_pos = %ld\n", start_pos); 
+    fflush(stdout);
     std::vector<size_t> pos_shape={1,seq_len};
     tensor_t pos_ids=Tensor::create(pos_shape, LLAISYS_DTYPE_I64,device,0);
-
+    printf("DEBUG: Creating Pos IDs...\n"); fflush(stdout);//debug
     std::vector<int64_t> pos_vec(seq_len);
     for(size_t i=0;i<seq_len;++i) pos_vec[i]=start_pos+i;
     pos_ids->load(pos_vec.data());
 
     for(size_t i=0;i<model->meta.nlayer;++i){
+        printf("DEBUG: Layer %lu start\n", i); fflush(stdout);//debug
         auto&layer=model->layers[i];
         
         tensor_t norm_out=Tensor::create(hidden_shape,dtype,device,0);
@@ -183,11 +193,17 @@ tensor_t llaisysQwen2ModelForward(
         ops::linear(k, norm_out, layer.w_k, layer.b_k);
         ops::linear(v, norm_out, layer.w_v, layer.b_v);
 
-        ops::rope(q, q, pos_ids, model->meta.theta);
-        ops::rope(k, k, pos_ids, model->meta.theta);
-        // TODO: Implement KV Cache Append
+        ops::rope(q, q, pos_ids, 1000000.0f);
+        ops::rope(k, k, pos_ids, 1000000.0f);
+        // printf("DEBUG: Layer %lu RoPE done. Entering KV Cache...\n", i); fflush(stdout);//debug
+
         tensor_t k_slot=model->k_cache[i]->slice(1,start_pos,start_pos+seq_len);
         tensor_t v_slot=model->v_cache[i]->slice(1,start_pos,start_pos+seq_len);
+
+        // printf("DEBUG: Layer %lu loading KV Cache...\n", i); fflush(stdout);//debug
+
+        if (!k->data()) printf("ERROR: k->data() is NULL\n");
+        if (!v->data()) printf("ERROR: v->data() is NULL\n");//debug
 
         k_slot->load(k->data());
         v_slot->load(v->data());
@@ -195,8 +211,15 @@ tensor_t llaisysQwen2ModelForward(
         tensor_t full_k=model->k_cache[i]->slice(1,0,start_pos+seq_len);
         tensor_t full_v=model->v_cache[i]->slice(1,0,start_pos+seq_len);
 
+        // printf("DEBUG: Layer %lu KV Cache loaded. Running Attention...\n", i); fflush(stdout);//debug
+
         tensor_t attn_out=Tensor::create(hidden_shape,dtype,device,0);
-        float scale=1.0f/std::sqrt((float)head_dim);
+        float scale = 0.0883883f;
+        // printf("DEBUG: SelfAttn Check -> q[%lu,%lu,%lu], k[%lu,%lu,%lu], scale=%f\n", 
+        //     q->shape()[0], q->shape()[1], q->shape()[2],
+        //     full_k->shape()[0], full_k->shape()[1], full_k->shape()[2],
+        //     scale);
+        // fflush(stdout);
 
         ops::self_attention(attn_out, q, full_k, full_v, scale);
 
@@ -224,6 +247,7 @@ tensor_t llaisysQwen2ModelForward(
         ops::linear(mlp_out, act, layer.w_down, nullptr);
 
         ops::add(hidden_states, hidden_states, mlp_out);
+        // printf("DEBUG: Layer %lu FFN done.\n", i); fflush(stdout);//debug
     }
 
     tensor_t final_norm=Tensor::create(hidden_shape,dtype,device,0);
@@ -231,11 +255,50 @@ tensor_t llaisysQwen2ModelForward(
 
     size_t vocab_size=model->output->shape()[0];
     std::vector<size_t> logits_shape={1,seq_len,vocab_size};
-    tensor_t logits=Tensor::create(logits_shape, dtype,device,0);
+    tensor_t logits=Tensor::create(logits_shape,final_norm->dtype(),device,0);
 
     ops::linear(logits, final_norm, model->output, nullptr);
+    printf("DEBUG: Final Norm & Head...\n"); fflush(stdout);
 
-    return logits;
+    tensor_t* heap_logits=new tensor_t(logits);
+    return (void*)heap_logits;
 
+}
+int llaisysQwen2Sample(void* logits_void_ptr) {
+    if (!logits_void_ptr) {
+        printf("Error: logits ptr is NULL\n");
+        return 0;
+    }
+
+    tensor_t* ptr_to_shared = (tensor_t*)logits_void_ptr;
+    tensor_t logits = *ptr_to_shared;
+
+    size_t seq_len = logits->shape()[1];
+
+    tensor_t last_token_logits=logits->slice(1,seq_len-1,seq_len);
+
+    tensor_t final_logits=last_token_logits->contiguous();
+
+    if (final_logits->dtype() == LLAISYS_DTYPE_BF16) {
+        uint16_t* debug_ptr = (uint16_t*)final_logits->data();
+        float val0 = llaisys::utils::_bf16_to_f32(llaisys::bf16_t{debug_ptr[0]});
+        // 确保你的 Logits[46055] 依然在合理范围内
+        printf("[NUMERICAL] Logits[0]: %f\n", val0);
+    }
+
+    std::vector<size_t> out_shape = {1};
+    tensor_t max_idx = Tensor::create(out_shape, LLAISYS_DTYPE_I64, logits->deviceType(), logits->deviceId());
+    tensor_t max_val = Tensor::create(out_shape, logits->dtype(), logits->deviceType(), logits->deviceId());
+
+    ops::argmax(max_idx, max_val, final_logits);
+
+    // 6. 获取并返回结果
+    int64_t result_index = *reinterpret_cast<int64_t*>(max_idx->data());
+
+    printf("[DEBUG Cpp] Argmax Result (as I64): %ld\n", result_index);
+    fflush(stdout);
+
+    delete ptr_to_shared;
+    return (int)result_index;
 }
 }

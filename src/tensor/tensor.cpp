@@ -1,7 +1,6 @@
 #include "tensor.hpp"
-
+#include "../ops/rearrange/op.hpp"
 #include "../utils.hpp"
-
 #include <cstring>
 #include <numeric>
 #include <sstream>
@@ -274,8 +273,28 @@ void Tensor::load(const void *src_) {
 }
 
 tensor_t Tensor::contiguous() const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    // 1. 如果已经是连续的，仿照 slice 的实现，返回一个指向相同存储的浅拷贝
+    if (this->isContiguous()) {
+        //
+        return std::shared_ptr<Tensor>(new Tensor(this->_meta, this->_storage, this->_offset));
+    }
+
+    // 2. 如果不连续，创建一个形状相同、物理连续的新 Tensor
+    //
+    auto out = Tensor::create(this->shape(), this->dtype(), this->deviceType(), this->deviceId());
+
+    // 3. 【核心技巧】由于 rearrange 需要 tensor_t (shared_ptr<Tensor>)
+    // 我们将 const this 指针临时包装成一个不拥有所有权的 shared_ptr
+    // 加上 const_cast 是因为 rearrange 的输入参数类型要求
+    tensor_t self_wrapper(const_cast<Tensor*>(this), [](Tensor*){
+        // 空删除器：防止这个临时 shared_ptr 析构时误删 this 
+    });
+
+    // 4. 调用你定义的 rearrange 算子进行物理搬运
+    //
+    llaisys::ops::rearrange(out, self_wrapper);
+
+    return out;
 }
 
 tensor_t Tensor::reshape(const std::vector<size_t> &shape) const {
