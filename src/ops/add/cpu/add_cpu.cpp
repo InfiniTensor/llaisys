@@ -18,16 +18,16 @@ void add_(std::byte *c, const std::byte *a, const std::byte *b, size_t numel) {
     }
 }
 
-#define DISPATCH_ADD(dtype, ctype) case dtype: add_<ctype>(c, a, b, numel); break;
+#define DISPATCH_SWIGLU(dtype, ctype) case dtype: add_<ctype>(c, a, b, numel); break;
 
 namespace llaisys::ops::cpu {
 void add(std::byte *c, const std::byte *a, const std::byte *b, llaisysDataType_t type, size_t numel) {
     switch (type) {
-        DISPATCH_ADD(LLAISYS_DTYPE_F32, float)
-        DISPATCH_ADD(LLAISYS_DTYPE_BF16, llaisys::bf16_t)
-        DISPATCH_ADD(LLAISYS_DTYPE_F16, llaisys::fp16_t)
-        DISPATCH_ADD(LLAISYS_DTYPE_I32, int32_t)
-        DISPATCH_ADD(LLAISYS_DTYPE_F64, double)
+        DISPATCH_SWIGLU(LLAISYS_DTYPE_F32, float)
+        DISPATCH_SWIGLU(LLAISYS_DTYPE_BF16, llaisys::bf16_t)
+        DISPATCH_SWIGLU(LLAISYS_DTYPE_F16, llaisys::fp16_t)
+        DISPATCH_SWIGLU(LLAISYS_DTYPE_I32, int32_t)
+        DISPATCH_SWIGLU(LLAISYS_DTYPE_F64, double)
     default:
         EXCEPTION_UNSUPPORTED_DATATYPE(type);
     }
