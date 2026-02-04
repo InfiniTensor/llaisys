@@ -7,6 +7,22 @@ import llaisys
 import torch
 from test_utils import arrange_tensor, random_tensor, check_equal, benchmark
 
+# def check_equal(y_, y, atol=1e-5, rtol=1e-5):
+#     # 确保两个张量都是 PyTorch 张量
+#     if not isinstance(y_, torch.Tensor):
+#         y_ = torch.tensor(y_)
+#     if not isinstance(y, torch.Tensor):
+#         y = torch.tensor(y)
+    
+#     # 确保它们在同一个设备上
+#     if y_.device != y.device:
+#         y = y.to(y_.device)
+    
+#     diff = torch.abs(y_ - y)
+#     max_diff = diff.max()
+#     mean_diff = diff.mean()
+#     print(f"Max diff: {max_diff}, Mean diff: {mean_diff}")
+
 
 def torch_rope(y: torch.Tensor, x: torch.Tensor, pos_ids: torch.Tensor, theta: float):
     assert y.dim() == 3
@@ -48,6 +64,8 @@ def test_op_rope(
     y, y_ = random_tensor(shape, dtype_name, device_name)
     torch_rope(y, x, pos_ids, theta)
     llaisys.Ops.rope(y_, x_, pos_ids_, theta)
+
+    #check_equal(y_, y, atol=atol, rtol=rtol)
 
     assert check_equal(y_, y, atol=atol, rtol=rtol)
 

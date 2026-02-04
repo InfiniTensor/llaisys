@@ -41,6 +41,10 @@ def test_op_argmax(
 
 if __name__ == "__main__":
     import argparse
+    print(llaisys.__file__)
+    
+    print("llaisys pkg:", os.path.dirname(llaisys.__file__))
+    #print("so candidates:", glob.glob(os.path.join(os.path.dirname(llaisys.__file__), "**/*.so"), recursive=True))
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia"], type=str)
