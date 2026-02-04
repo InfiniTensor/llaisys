@@ -41,11 +41,15 @@ def load_hf_model(model_path=None, device_name="cpu"):
 def hf_infer(
     prompt, tokenizer, model, max_new_tokens=128, top_p=0.8, top_k=50, temperature=0.8
 ):
-    input_content = tokenizer.apply_chat_template(
-        conversation=[{"role": "user", "content": prompt}],
-        add_generation_prompt=True,
-        tokenize=False,
-    )
+    if tokenizer.chat_template:
+        input_content = tokenizer.apply_chat_template(
+            conversation=[{"role": "user", "content": prompt}],
+            add_generation_prompt=True,
+            tokenize=False,
+        )
+    else:
+        input_content = prompt
+
     inputs = tokenizer.encode(input_content, return_tensors="pt").to(model.device)
     with torch.no_grad():
         outputs = model.generate(
@@ -67,11 +71,15 @@ def load_llaisys_model(model_path, device_name):
 def llaisys_infer(
     prompt, tokenizer, model, max_new_tokens=128, top_p=0.8, top_k=50, temperature=0.8
 ):
-    input_content = tokenizer.apply_chat_template(
-        conversation=[{"role": "user", "content": prompt}],
-        add_generation_prompt=True,
-        tokenize=False,
-    )
+    if tokenizer.chat_template:
+        input_content = tokenizer.apply_chat_template(
+            conversation=[{"role": "user", "content": prompt}],
+            add_generation_prompt=True,
+            tokenize=False,
+        )
+    else:
+        input_content = prompt
+
     inputs = tokenizer.encode(input_content)
     outputs = model.generate(
         inputs,
