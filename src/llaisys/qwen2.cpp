@@ -20,6 +20,16 @@
 
 using namespace llaisys;
 
+
+// --- Linux 兼容性补丁 Start ---
+#include <vector>
+#include <string>
+#include <cstring>  // 对应 memcpy, memset
+#include <cmath>    // 对应 exp, sqrt, pow
+#include <iostream> // 对应 printf, std::cout
+#include <fstream>  // 对应文件读写
+#include <algorithm> // 对应 std::max, std::min
+// --- Linux 兼容性补丁 End ---
 struct LlaisysQwen2Model {
     LlaisysQwen2Meta meta;
     LlaisysQwen2Weights exported_weights;
