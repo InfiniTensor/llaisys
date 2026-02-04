@@ -1,7 +1,9 @@
 #ifndef LLAISYS_MODELS_QWEN2_H
 #define LLAISYS_MODELS_QWEN2_H
 
+// 引用基础定义 (确保能找到 tensor.h 和 llaisys.h)
 #include "../tensor.h"
+#include "../../llaisys.h"
 
 __C {
     struct LlaisysQwen2Meta {
@@ -14,8 +16,8 @@ __C {
     struct LlaisysQwen2Weights {
         llaisysTensor_t in_embed;
         llaisysTensor_t out_embed;
-        llaisysTensor_t out_norm_w;   // a.k.a. model.norm.weight
-        llaisysTensor_t *attn_norm_w; // a.k.a. input_layernorm.weight
+        llaisysTensor_t out_norm_w;   // model.norm.weight
+        llaisysTensor_t *attn_norm_w; // input_layernorm.weight
         llaisysTensor_t *attn_q_w;
         llaisysTensor_t *attn_q_b;
         llaisysTensor_t *attn_k_w;
@@ -23,7 +25,7 @@ __C {
         llaisysTensor_t *attn_v_w;
         llaisysTensor_t *attn_v_b;
         llaisysTensor_t *attn_o_w;
-        llaisysTensor_t *mlp_norm_w; // a.k.a. post_attention_layernorm.weight
+        llaisysTensor_t *mlp_norm_w; // post_attention_layernorm.weight
         llaisysTensor_t *mlp_gate_w;
         llaisysTensor_t *mlp_up_w;
         llaisysTensor_t *mlp_down_w;
