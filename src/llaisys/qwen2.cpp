@@ -69,7 +69,9 @@ __export struct LlaisysQwen2Model *llaisysQwen2ModelCreate(const LlaisysQwen2Met
     model->exported_weights.out_embed = create_wrapper({meta->voc, meta->hs});
     model->exported_weights.out_norm_w = create_wrapper({meta->hs});
 
-    for (size_t i = 0; i < meta->nlayer; ++i) {
+
+
+    for (size_t i = 0; i < meta->nlayer; ++i) {   
         model->exported_weights.attn_norm_w[i] = create_wrapper({meta->hs});
         
         // QKV Weights
