@@ -23,7 +23,8 @@ __C {
         llaisys::ops::embedding(out->tensor, index->tensor, weight->tensor);
     }
     void llaisysLinear(llaisysTensor_t out, llaisysTensor_t in, llaisysTensor_t weight, llaisysTensor_t bias) {
-        llaisys::ops::linear(out->tensor, in->tensor, weight->tensor, bias->tensor);
+        auto bias_ptr = bias ? bias->tensor : nullptr;
+        llaisys::ops::linear(out->tensor, in->tensor, weight->tensor, bias_ptr);
     }
     void llaisysRearrange(llaisysTensor_t out, llaisysTensor_t in) {
         llaisys::ops::rearrange(out->tensor, in->tensor);
