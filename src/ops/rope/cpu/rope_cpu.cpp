@@ -30,8 +30,8 @@ void rope_(std::byte *out_raw, const std::byte *in_raw, const std::byte *pos_ids
                 } else {
                     float a = static_cast<float>(in[idx_a]);
                     float b = static_cast<float>(in[idx_b]);
-                    out[idx_a] = static_cast<float>(a * cos_phi - b * sin_phi);
-                    out[idx_b] = static_cast<float>(b * cos_phi + a * sin_phi);
+                    out[idx_a] = static_cast<T>(a * cos_phi - b * sin_phi);
+                    out[idx_b] = static_cast<T>(b * cos_phi + a * sin_phi);
                 }
             }
         }
