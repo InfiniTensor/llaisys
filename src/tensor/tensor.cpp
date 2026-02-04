@@ -202,8 +202,8 @@ tensor_t Tensor::view(const std::vector<size_t> &shape) const {
     if (this->isContiguous()) {
         std::vector<ptrdiff_t> new_strides(shape.size());
         size_t stride = 1;
-        for (long i = shape.size() - 1; i >= 0; --i) {
-            new_strides[i] = stride;
+        for (size_t i = shape.size(); i-- > 0;) {
+            new_strides[i] = static_cast<ptrdiff_t>(stride);
             stride *= shape[i];
         }
         TensorMeta meta{this->dtype(), shape, new_strides};
