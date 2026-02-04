@@ -231,9 +231,11 @@ tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
     shape[dim] = end-start;
     TensorMeta meta{this->dtype(),shape,this->strides()};
 
-    size_t offset = this->_offset+start*this->strides()[dim];
+    // `_offset` is in bytes, strides are in elements. Convert to a byte offset.
+    const size_t byte_offset =
+        this->_offset + static_cast<size_t>(start) * static_cast<size_t>(this->strides()[dim]) * this->elementSize();
 
-    return std::shared_ptr<Tensor>(new Tensor(meta, _storage,offset*this->elementSize()));
+    return std::shared_ptr<Tensor>(new Tensor(meta, _storage, byte_offset));
 }
 
 void Tensor::load(const void *src_) {
@@ -247,13 +249,13 @@ void Tensor::load(const void *src_) {
     size_t byte_size = this->numel()*this->elementSize();
     // 根据设备类型决定如何复制
     if(this->deviceType()==LLAISYS_DEVICE_CPU){
-        std::memcpy(this->_storage->memory(),src_,byte_size);
+        std::memcpy(this->data(), src_, byte_size);
     }else{
         core::context().runtime().api()->memcpy_sync(
-            this->_storage->memory(),
+            this->data(),
             src_,
             byte_size,
-            LLAISYS_MEMCPY_D2H);
+            LLAISYS_MEMCPY_H2D);
     }
 }
 
