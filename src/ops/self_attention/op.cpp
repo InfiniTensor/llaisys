@@ -127,9 +127,6 @@ void self_attention_kernel(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v
                         sum += q_val * k_val;
                     }
                     sum *= scale;
-                    if (b == 0 && n_index == 0 && i == 0 && j == 0) {
-                        printf("DEBUG Attention Score: %f (Scale: %f)\n", sum, scale);
-                    }
                     // Causal Mask logic
                     size_t global_i = total_len - seqlen + i;
                     if(j > global_i){

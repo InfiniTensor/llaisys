@@ -60,8 +60,6 @@ class Qwen2:
             target_dtype=TYPE_MAP["F16"]
         else:
             target_dtype=TYPE_MAP[target_key]
-        print(f"Python: Loading Model config | Layers={meta.nlayer} | HS={meta.hs} | Dtype={target_key}({target_dtype})")
-        print("Python:calling the cpp to create model ...")
         self.model=self.lib.llaisysQwen2ModelCreate(
             ctypes.byref(meta),
             device.value,
@@ -69,7 +67,6 @@ class Qwen2:
             0,
             target_dtype
         )
-        print("Python: Model handle received:",self.model)
 
         self.lib.llaisysQwen2ModelForward.restype=ctypes.c_void_p
         self.lib.llaisysQwen2ModelForward.argtypes=[
@@ -83,9 +80,6 @@ class Qwen2:
             self.lib.llaisysQwen2Sample.argtypes=[ctypes.c_void_p]
 
         model_path = Path(model_path)
-
-        print("Python: Scanning .safetensors files...")
-
         for file in sorted(model_path.glob("*.safetensors")):
             with open(file,'rb') as f_obj:
                 header_size=struct.unpack('<Q',f_obj.read(8))[0]
@@ -128,8 +122,6 @@ class Qwen2:
                                  dtype
                             )
                             del tensor_np
-                    print("Python: All weights loaded")
-                    pass
 
     def forward(self,input_ids:Sequence[int],start_pos:int):
         seq_len=len(input_ids)
@@ -166,11 +158,8 @@ class Qwen2:
         logits_ptr=self.forward(tokens,start_pos)
 
         next_token=self.lib.llaisysQwen2Sample(logits_ptr)
-        print(f"\n[DEBUG Python] First next_token ID: {next_token}") #debug
         tokens.append(next_token)
-
         if next_token ==eos_token_id:
-            print("[DEBUG Python] Hit EOS immediately!")
             return tokens
 
         start_pos=len(inputs)
@@ -182,10 +171,11 @@ class Qwen2:
 
             next_token=self.lib.llaisysQwen2Sample(logits_ptr)
 
+            tokens.append(next_token)
+            # 与 HF 一样，将 EOS token 也包含在输出序列中
             if next_token == eos_token_id:
                 break
 
-            tokens.append(next_token)
             start_pos+=1
 
         return tokens

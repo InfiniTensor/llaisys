@@ -4,13 +4,6 @@
 namespace llaisys::ops {
 template<typename T>
 void rope_cpu_kernel(tensor_t out, tensor_t in, tensor_t pos_ids, float theta){
-    const int64_t* pos_ptr_debug = reinterpret_cast<const int64_t*>(pos_ids->data());
-    // 只打印第一个位置 ID
-    static int print_count = 0;
-    if (print_count < 5) {
-        printf("[DEBUG RoPE] pos_ids[0]: %ld, theta: %f\n", pos_ptr_debug[0], theta);
-        print_count++;
-    }
     T* out_ptr = reinterpret_cast<T*>(out->data());
     const T* in_ptr = reinterpret_cast<const T*>(in->data());
     const int64_t* pos_ptr = reinterpret_cast<const int64_t*>(pos_ids->data());
