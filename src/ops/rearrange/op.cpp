@@ -11,7 +11,7 @@ void rearrange_kernel(tensor_t out, tensor_t in){
         size_t index_acc=i;
         size_t in_offset=0;
         size_t out_offset=0;
-        for(int j=dim-1;j>=0;j--){
+        for (size_t j = dim; j-- > 0;) {
             size_t cur_shape=in->shape()[j];
             size_t cur_index=index_acc%cur_shape;
             index_acc/=cur_shape;

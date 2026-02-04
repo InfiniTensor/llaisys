@@ -26,7 +26,7 @@ namespace llaisys::ops {
                 }
             }
             dst_val[row] = cur_max_val;
-            dst_idx[row] = cur_max_idx;
+            dst_idx[row] = static_cast<int64_t>(cur_max_idx);
         }
     }
 void argmax(tensor_t max_idx, tensor_t max_val, tensor_t vals) {
