@@ -17,7 +17,7 @@ void rearrange_recursive(std::byte* dst, const std::byte* src,
                          int dim, size_t element_size) {
     
     // 递归终止条件：到达了最后一维
-    if (dim == shape.size() - 1) {
+    if (dim == (int)shape.size() - 1) {
         // 在最内层循环，我们把这一行的数据搬过去
         // 注意：源数据在这一行可能也不是连续的（比如切片过），所以还得一个一个搬
         ptrdiff_t stride = strides[dim];
