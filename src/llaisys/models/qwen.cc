@@ -270,7 +270,7 @@ struct LlaisysQwen2Model {
 __export struct LlaisysQwen2Model *
 llaisysQwen2ModelCreate(const LlaisysQwen2Meta *meta,
                         llaisysDeviceType_t device,
-                        int* /*device_ids*/, int /*ndevice*/) noexcept　{
+                        int* /*device_ids*/, int /*ndevice*/) noexcept {
     CHECK_ARGUMENT(meta != nullptr, "meta is null");
 
     auto* model = new LlaisysQwen2Model;
@@ -293,7 +293,7 @@ llaisysQwen2ModelCreate(const LlaisysQwen2Meta *meta,
 }
 
 __export void
-llaisysQwen2ModelDestroy(struct LlaisysQwen2Model * model) noexcept　{
+llaisysQwen2ModelDestroy(struct LlaisysQwen2Model * model) noexcept {
     if (!model) return;
     if (model->impl) {
         free_weights(model->impl);
