@@ -15,16 +15,16 @@ namespace llaisys {
     bool CustomFloat16::operator>=(const CustomFloat16 &other) const {
         return utils::cast<float>(*this) >= utils::cast<float>(other);
     }
-    CustomFloat16 CustomFloat16::operator+(const CustomFloat16 &other) {
+    CustomFloat16 CustomFloat16::operator+(const CustomFloat16 &other) const{
         return utils::cast<CustomFloat16>(utils::cast<float>(*this) + utils::cast<float>(other));
     }
-    CustomFloat16 CustomFloat16::operator-(const CustomFloat16 &other) {
+    CustomFloat16 CustomFloat16::operator-(const CustomFloat16 &other) const {
         return utils::cast<CustomFloat16>(utils::cast<float>(*this) - utils::cast<float>(other));
     }
-    CustomFloat16 CustomFloat16::operator*(const CustomFloat16 &other) {
+    CustomFloat16 CustomFloat16::operator*(const CustomFloat16 &other) const {
         return utils::cast<CustomFloat16>(utils::cast<float>(*this) * utils::cast<float>(other));
     }
-    CustomFloat16 CustomFloat16::operator/(const CustomFloat16 &other) {
+    CustomFloat16 CustomFloat16::operator/(const CustomFloat16 &other) const {
         return utils::cast<CustomFloat16>(utils::cast<float>(*this) / utils::cast<float>(other));
     }
 
@@ -40,16 +40,16 @@ namespace llaisys {
     bool CustomBFloat16::operator>=(const CustomBFloat16 &other) const {
         return utils::cast<float>(*this) >= utils::cast<float>(other);
     }
-    CustomBFloat16 CustomBFloat16::operator+(const CustomBFloat16 &other) {
+    CustomBFloat16 CustomBFloat16::operator+(const CustomBFloat16 &other) const {
         return utils::cast<CustomBFloat16>(utils::cast<float>(*this) + utils::cast<float>(other));
     }
-    CustomBFloat16 CustomBFloat16::operator-(const CustomBFloat16 &other) {
+    CustomBFloat16 CustomBFloat16::operator-(const CustomBFloat16 &other) const {
         return utils::cast<CustomBFloat16>(utils::cast<float>(*this) - utils::cast<float>(other));
     }
-    CustomBFloat16 CustomBFloat16::operator*(const CustomBFloat16 &other) {
+    CustomBFloat16 CustomBFloat16::operator*(const CustomBFloat16 &other) const {
         return utils::cast<CustomBFloat16>(utils::cast<float>(*this) * utils::cast<float>(other));
     }
-    CustomBFloat16 CustomBFloat16::operator/(const CustomBFloat16 &other) {
+    CustomBFloat16 CustomBFloat16::operator/(const CustomBFloat16 &other) const {
         return utils::cast<CustomBFloat16>(utils::cast<float>(*this) / utils::cast<float>(other));
     }
 }//llaisys

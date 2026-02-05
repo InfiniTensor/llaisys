@@ -16,10 +16,10 @@ struct CustomFloat16 {
     bool operator>(const CustomFloat16 &other) const;
     bool operator<=(const CustomFloat16 &other) const;
     bool operator>=(const CustomFloat16 &other) const;
-    CustomFloat16 operator+(const CustomFloat16 &other);
-    CustomFloat16 operator-(const CustomFloat16 &other);
-    CustomFloat16 operator*(const CustomFloat16 &other);
-    CustomFloat16 operator/(const CustomFloat16 &other);
+    CustomFloat16 operator+(const CustomFloat16 &other) const;
+    CustomFloat16 operator-(const CustomFloat16 &other) const;
+    CustomFloat16 operator*(const CustomFloat16 &other) const;
+    CustomFloat16 operator/(const CustomFloat16 &other) const;
 };
 typedef struct CustomFloat16 fp16_t;
 
@@ -35,10 +35,10 @@ struct CustomBFloat16 {
     bool operator>(const CustomBFloat16 &other) const;
     bool operator<=(const CustomBFloat16 &other) const;
     bool operator>=(const CustomBFloat16 &other) const;
-    CustomBFloat16 operator+(const CustomBFloat16 &other);
-    CustomBFloat16 operator-(const CustomBFloat16 &other);
-    CustomBFloat16 operator*(const CustomBFloat16 &other);
-    CustomBFloat16 operator/(const CustomBFloat16 &other);
+    CustomBFloat16 operator+(const CustomBFloat16 &other) const;
+    CustomBFloat16 operator-(const CustomBFloat16 &other) const;
+    CustomBFloat16 operator*(const CustomBFloat16 &other) const;
+    CustomBFloat16 operator/(const CustomBFloat16 &other) const;
 };
 typedef struct CustomBFloat16 bf16_t;
 

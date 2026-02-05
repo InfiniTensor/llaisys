@@ -37,7 +37,6 @@ public:
     const LlaisysRuntimeAPI *api() const;
 
     storage_t allocateDeviceStorage(size_t size);
-    ;
     storage_t allocateHostStorage(size_t size);
     void freeStorage(Storage *storage);
 
