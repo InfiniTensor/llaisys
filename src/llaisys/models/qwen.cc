@@ -5,10 +5,6 @@
 #include <cstring>
 
 #include "llaisys/models/qwen2.h"
-// #include "tensor/tensor.hpp"
-// #include "llaisys/ops.hpp"
-// #include "llaisys/utils/check.hpp"
-// #include "llaisys/core/context.hpp"
 #include "../../tensor/tensor.hpp"
 #include "../../ops/add/op.hpp"
 #include "../../ops/argmax/op.hpp"
@@ -308,6 +304,14 @@ llaisysQwen2ModelDestroy(struct LlaisysQwen2Model * model) noexcept {
         } catch (...) {}
 }
 
+__export void
+llaisysQwen2ModelReset(struct LlaisysQwen2Model * model) noexcept {
+    try {
+        if (!model || !model->impl) return;
+        model->impl->cur_pos = 0;
+    } catch (...) {}
+}
+
 __export struct LlaisysQwen2Weights *
 llaisysQwen2ModelWeights(struct LlaisysQwen2Model * model) noexcept {
     return model ? &model->impl->weights : nullptr;
@@ -404,8 +408,18 @@ llaisysQwen2ModelInfer(struct LlaisysQwen2Model * model, int64_t * token_ids, si
         tensor_t kc_win = m->kv[layer].k->slice(0, m->cur_pos, m->cur_pos + ntoken);
         tensor_t vc_win = m->kv[layer].v->slice(0, m->cur_pos, m->cur_pos + ntoken);
         // 注意：slice dim0，连续 OK
-        llaisys::ops::rearrange(kc_win, k_rope_L);
-        llaisys::ops::rearrange(vc_win, v_L);
+        // llaisys::ops::rearrange(kc_win, k_rope_L);
+        // llaisys::ops::rearrange(vc_win, v_L);
+        require_contiguous(kc_win, "kc_win contiguous");
+        require_contiguous(k_rope_L, "k_rope_L contiguous");
+        std::memcpy(kc_win->data(), k_rope_L->data(),
+            kc_win->numel() * kc_win->elementSize());
+
+        require_contiguous(vc_win, "vc_win contiguous");
+        require_contiguous(v_L, "v_L contiguous");
+        std::memcpy(vc_win->data(), v_L->data(),
+            vc_win->numel() * vc_win->elementSize());
+
 
         // history KV for attention
         const size_t total_len = m->cur_pos + ntoken;

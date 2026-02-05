@@ -37,6 +37,10 @@ __C {
 
      __export struct LlaisysQwen2Weights *llaisysQwen2ModelWeights(struct LlaisysQwen2Model * model) noexcept;
 
+     // Reset decoding state (KV-cache cursor). This does not need to clear KV buffers;
+     // setting cur_pos=0 is enough to start a new request safely.
+     __export void llaisysQwen2ModelReset(struct LlaisysQwen2Model * model) noexcept;
+
      __export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model * model, int64_t * token_ids, size_t ntoken) noexcept;
     
 
