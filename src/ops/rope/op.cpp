@@ -24,14 +24,14 @@ void rope(tensor_t out, tensor_t in, tensor_t pos_ids, float theta) {
 
     // always support cpu calculation
     if (in->deviceType() == LLAISYS_DEVICE_CPU) {
-        return cpu::rope(in->data(), out->data(), pos_ids->data(), in->dtype(), seqlen, nhead, d, theta);
+        return cpu::rope(out->data(), in->data(), pos_ids->data(), in->dtype(), seqlen, nhead, d, theta);
     }
 
     llaisys::core::context().setDevice(in->deviceType(), in->deviceId());
 
     switch (in->deviceType()) {
     case LLAISYS_DEVICE_CPU:
-        return cpu::rope(in->data(), out->data(), pos_ids->data(), in->dtype(), seqlen, nhead, d, theta);
+        return cpu::rope(out->data(), in->data(), pos_ids->data(), in->dtype(), seqlen, nhead, d, theta);
 #ifdef ENABLE_NVIDIA_API
     case LLAISYS_DEVICE_NVIDIA:
         TO_BE_IMPLEMENTED();

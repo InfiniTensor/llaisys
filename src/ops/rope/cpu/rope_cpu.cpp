@@ -38,10 +38,10 @@ void rope_(std::byte *out_raw, const std::byte *in_raw, const std::byte *pos_ids
     }
 }
 
-#define DISPATCH_SELF_ATTENTION(dtype, ctype) case dtype: rope_<ctype>(in, out, pos_ids, seqlen, nhead, d, theta); break;
+#define DISPATCH_SELF_ATTENTION(dtype, ctype) case dtype: rope_<ctype>(out, in, pos_ids, seqlen, nhead, d, theta); break;
 
 namespace llaisys::ops::cpu {
-void rope(std::byte *in, const std::byte *out, const std::byte *pos_ids, llaisysDataType_t type, size_t seqlen, size_t nhead, size_t d, float theta) {
+void rope(std::byte *out, const std::byte *in, const std::byte *pos_ids, llaisysDataType_t type, size_t seqlen, size_t nhead, size_t d, float theta) {
     switch (type) {
         DISPATCH_SELF_ATTENTION(LLAISYS_DTYPE_F32, float)
         DISPATCH_SELF_ATTENTION(LLAISYS_DTYPE_BF16, llaisys::bf16_t)
