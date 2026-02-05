@@ -2,6 +2,7 @@
 
 #include "../utils.hpp"
 
+#include <cstddef>
 #include <cstring>
 #include <numeric>
 #include <sstream>
@@ -164,15 +165,15 @@ void Tensor::debug() const {
 }
 
 bool Tensor::isContiguous() const {
-    long int stride = 1;
+    ptrdiff_t stride = 1;
     auto shape = this->shape();
     auto strides = this->strides();
     size_t ndim = this->ndim();
     for (size_t i = 1; i <= ndim; i++) {
-        if(strides[ndim-i]!=stride){
+        if (strides[ndim - i] != stride) {
             return false;
         }
-        stride *= shape[ndim - i];
+        stride *= static_cast<long>(shape[ndim - i]);
     }
     return true;
 }
@@ -184,12 +185,12 @@ tensor_t Tensor::permute(const std::vector<size_t> &order) const {
 
     auto old_shape = this->shape();
     auto old_strides = this->strides();
-    for(size_t i=0;i<n_dim;++i){
+    for (size_t i = 0; i < n_dim; ++i) {
         int64_t dim = order[i];
         shape[i] = old_shape[dim];
-        strides[i] = old_strides[dim]; 
+        strides[i] = old_strides[dim];
     }
-    TensorMeta meta{this->dtype(),shape,strides};
+    TensorMeta meta{this->dtype(), shape, strides};
     return std::shared_ptr<Tensor>(new Tensor(meta, _storage));
 }
 
@@ -201,8 +202,10 @@ tensor_t Tensor::view(const std::vector<size_t> &shape) const {
     // 验证元素总数匹配
     size_t old_elements = this->numel();
     size_t new_elements = 1;
-    for (auto s : shape) new_elements *= s;
-    
+    for (auto s : shape) {
+        new_elements *= s;
+    }
+
     if (old_elements != new_elements) {
         throw std::runtime_error("Shape mismatch in view()");
     }
@@ -210,13 +213,13 @@ tensor_t Tensor::view(const std::vector<size_t> &shape) const {
     size_t ndim = shape.size();
     std::vector<ptrdiff_t> strides(ndim);
     size_t stride = 1;
-    for(size_t i=1;i<=ndim;++i){
-        strides[ndim-i]= stride;
-        stride *= shape[ndim-i];
+    for (size_t i = 1; i <= ndim; ++i) {
+        strides[ndim - i] = stride;
+        stride *= shape[ndim - i];
     }
 
-    TensorMeta meta{this->dtype(),shape,strides};
-    return std::shared_ptr<Tensor>(new Tensor(meta, _storage,_offset));
+    TensorMeta meta{this->dtype(), shape, strides};
+    return std::shared_ptr<Tensor>(new Tensor(meta, _storage, _offset));
 }
 
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
@@ -228,29 +231,28 @@ tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
     }
 
     std::vector<size_t> shape = this->shape();
-    shape[dim] = end-start;
-    TensorMeta meta{this->dtype(),shape,this->strides()};
+    shape[dim] = end - start;
+    TensorMeta meta{this->dtype(), shape, this->strides()};
 
     // `_offset` is in bytes, strides are in elements. Convert to a byte offset.
-    const size_t byte_offset =
-        this->_offset + static_cast<size_t>(start) * static_cast<size_t>(this->strides()[dim]) * this->elementSize();
+    const size_t byte_offset = this->_offset + static_cast<size_t>(start) * static_cast<size_t>(this->strides()[dim]) * this->elementSize();
 
     return std::shared_ptr<Tensor>(new Tensor(meta, _storage, byte_offset));
 }
 
 void Tensor::load(const void *src_) {
     // 判断指针不为空
-    if(!src_){
+    if (!src_) {
         throw std::runtime_error("Tensor::load: source pointer is null");
     }
-    //获取设备类型
+    // 获取设备类型
     core::context().setDevice(this->deviceType(), this->deviceId());
     core::context().runtime().api()->device_synchronize();
-    size_t byte_size = this->numel()*this->elementSize();
+    size_t byte_size = this->numel() * this->elementSize();
     // 根据设备类型决定如何复制
-    if(this->deviceType()==LLAISYS_DEVICE_CPU){
+    if (this->deviceType() == LLAISYS_DEVICE_CPU) {
         std::memcpy(this->data(), src_, byte_size);
-    }else{
+    } else {
         core::context().runtime().api()->memcpy_sync(
             this->data(),
             src_,
