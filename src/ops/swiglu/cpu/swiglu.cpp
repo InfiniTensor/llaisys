@@ -10,18 +10,13 @@ void swiglu_(
     T *output,
     const T *input,
     const T *gate,
-    size_t batch_size,
-    size_t feature_size
+    size_t total_size
 ) {
-    for (size_t b = 0; b < batch_size; b++) {
-        const T *input_batch = input + b * feature_size;
-        const T *gate_batch = gate + b * feature_size;
-        T *output_batch = output + b * feature_size;
-        for (size_t i = 0; i < feature_size; i++) {
-            float gate_val = 1.0f / (1.0f + std::exp(-llaisys::utils::cast<float>(gate_batch[i])));
-            float input_val = llaisys::utils::cast<float>(input_batch[i]);
-            output_batch[i] = llaisys::utils::cast<T>(input_val * gate_val);
-        }
+    for(size_t i = 0; i < total_size; i++) {
+        float gate_val = llaisys::utils::cast<float>(gate[i]);
+        float silu = gate_val / (1.0f + std::exp(-gate_val));
+        float input_val = llaisys::utils::cast<float>(input[i]);
+        output[i] = llaisys::utils::cast<T>(input_val * silu);
     }
 }
 
@@ -31,19 +26,18 @@ void swiglu(
     const std::byte *input,
     const std::byte *gate,
     llaisysDataType_t type,
-    size_t batch_size,
-    size_t feature_size
+    size_t total_size
 ) {
     switch (type) {
     case LLAISYS_DTYPE_F32:
         return swiglu_(reinterpret_cast<float *>(output), reinterpret_cast<const float *>(input),
-                       reinterpret_cast<const float *>(gate), batch_size, feature_size);
+                       reinterpret_cast<const float *>(gate), total_size);
     case LLAISYS_DTYPE_F16:
         return swiglu_(reinterpret_cast<llaisys::fp16_t *>(output), reinterpret_cast<const llaisys::fp16_t *>(input),
-                       reinterpret_cast<const llaisys::fp16_t *>(gate), batch_size, feature_size);
+                       reinterpret_cast<const llaisys::fp16_t *>(gate), total_size);
     case LLAISYS_DTYPE_BF16:
         return swiglu_(reinterpret_cast<llaisys::bf16_t *>(output), reinterpret_cast<const llaisys::bf16_t *>(input),
-                       reinterpret_cast<const llaisys::bf16_t *>(gate), batch_size, feature_size);
+                       reinterpret_cast<const llaisys::bf16_t *>(gate), total_size);
     default:
         EXCEPTION_UNSUPPORTED_DATATYPE(type);
     }
