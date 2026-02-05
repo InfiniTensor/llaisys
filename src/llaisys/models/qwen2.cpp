@@ -8,7 +8,7 @@
 #include <cmath>
 #include <string>
 
-class LlaisysQwen2Model {
+struct LlaisysQwen2Model {
 public:
     LlaisysQwen2Meta meta;
     LlaisysQwen2Weights weights;
@@ -127,7 +127,7 @@ public:
             // Self Attention
             size_t attn_shape[3] = {ntoken, meta.nh, head_dim};
             llaisysTensor_t attn_out = tensorCreate(attn_shape, 3, meta.dtype, device, device_id);
-            float scale = 1.0f / sqrt(head_dim);
+            float scale = static_cast<float>(1.0 / sqrt(head_dim));
             llaisysSelfAttention(attn_out, q, full_k, full_v, scale);
 
             // Proj
