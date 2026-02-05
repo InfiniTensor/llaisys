@@ -18,10 +18,10 @@ tensor_t Tensor::create(const std::vector<size_t> &shape,
                         int device) {
     size_t ndim_ = shape.size();
     std::vector<ptrdiff_t> strides(ndim_);
-    size_t stride = 1;
+    ptrdiff_t stride = 1;
     for (size_t i = 1; i <= ndim_; i++) {
         strides[ndim_ - i] = stride;
-        stride *= shape[ndim_ - i];
+        stride *= static_cast<ptrdiff_t>(shape[ndim_ - i]);
     }
     TensorMeta meta{dtype, shape, strides};
     size_t total_elems = stride;
@@ -173,7 +173,7 @@ bool Tensor::isContiguous() const {
         if (strides[ndim - i] != stride) {
             return false;
         }
-        stride *= static_cast<long>(shape[ndim - i]);
+        stride *= static_cast<ptrdiff_t>(shape[ndim - i]);
     }
     return true;
 }
@@ -212,10 +212,10 @@ tensor_t Tensor::view(const std::vector<size_t> &shape) const {
     // 计算新的 strides
     size_t ndim = shape.size();
     std::vector<ptrdiff_t> strides(ndim);
-    size_t stride = 1;
+    ptrdiff_t stride = 1;
     for (size_t i = 1; i <= ndim; ++i) {
         strides[ndim - i] = stride;
-        stride *= shape[ndim - i];
+        stride *= static_cast<ptrdiff_t>(shape[ndim - i]);
     }
 
     TensorMeta meta{this->dtype(), shape, strides};
