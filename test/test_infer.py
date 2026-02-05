@@ -4,6 +4,7 @@ from test_utils import *
 import argparse
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
+from huggingface_hub import snapshot_download
 import os
 import time
 import llaisys
@@ -18,24 +19,18 @@ def load_hf_model(model_path=None, device_name="cpu"):
 
     if model_path and os.path.isdir(model_path):
         print(f"Loading model from local path: {model_path}")
-        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-        model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            torch_dtype=torch.bfloat16,
-            device_map=torch_device(device_name),
-            trust_remote_code=True,
-        )
     else:
         print(f"Loading model from Hugging Face: {model_id}")
-        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-        model = AutoModelForCausalLM.from_pretrained(
-            model_id,
-            torch_dtype=torch.bfloat16,
-            device_map=torch_device(device_name),
-            trust_remote_code=True,
-        )
+        model_path = snapshot_download(model_id)
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_path,
+        torch_dtype=torch.bfloat16,
+        device_map=torch_device(device_name),
+        trust_remote_code=True,
+    )
 
-    return tokenizer, model
+    return tokenizer, model, model_path
 
 
 def hf_infer(
@@ -101,7 +96,7 @@ if __name__ == "__main__":
     if args.test:
         top_p, top_k, temperature = 1.0, 1, 1.0
 
-    tokenizer, model = load_hf_model(args.model, args.device)
+    tokenizer, model, model_path = load_hf_model(args.model, args.device)
 
     # Example prompt
     start_time = time.time()
@@ -127,7 +122,7 @@ if __name__ == "__main__":
     print("\n")
     print(f"Time elapsed: {(end_time - start_time):.2f}s\n")
 
-    model = load_llaisys_model(args.model, args.device)
+    model = load_llaisys_model(model_path, args.device)
     start_time = time.time()
     llaisys_tokens, llaisys_output = llaisys_infer(
         args.prompt,

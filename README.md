@@ -191,6 +191,8 @@ $$
 - `weight`: weight $W$ . 2D contiguous tensor. Note that weight tensor is not transposed. You need to deal with this during your calculation.
 - `bias` (optional): bias $b$ . 1D tensor. You need to support the situation where bias is not provided.
 
+You should be able to pass the test cases in `test/ops/linear.py` after you finish the implementation.
+
 ### Task-2.4 rms normalization
 
 ```c++
@@ -200,15 +202,15 @@ void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps);
 Compute the following for each row:
 
 $$
-Y_i = \frac{W_i \times  X_i}{\sqrt{(\sum_{j=1}^n X_j^2) + \epsilon}}
+Y_i = \frac{W_i \times  X_i}{\sqrt{\frac{1}{d}(\sum_{j=1}^d X_j^2) + \epsilon}}
 $$
 
 - `out`: output $Y$ . You can assume output is a 2D contiguous tensor and no broadcasting is involved for now.
-- `input`: input $X$ . You can assume input is a 2D contiguous tensor and no broadcasting is involved for now. The normalization is performed along the last dimension (a.k.a. each row) of the input tensor.
+- `input`: input $X$ . You can assume input is a 2D contiguous tensor and no broadcasting is involved for now. The normalization is performed along the last dimension (a.k.a. each row of length $d$ ) of the input tensor.
 - `weight`: weight $W$ . 1D tensor, same length as a row of input tensor.
 - `eps`: small value $\epsilon$ to avoid division by zero.
 
-You should be able to pass the test cases in `test/ops/linear.py` after you finish the implementation.
+You should be able to pass the test cases in `test/ops/rms_norm.py` after you finish the implementation.
 
 ### Task-2.5 rope
 
@@ -311,6 +313,8 @@ Finally, it is the time for you to achieve text generation with LLAISYS.
 
 - In `python/llaisys/libllaisys/`, define the ctypes wrapper functions for your C APIs. Implement `python/llaisys/models/qwen2.py` with your wrapper functions.
 
+- You need to implement KV Cache, or your model will be too slow.
+
 - Debug until your model works. Take advantage of tensor's `debug` function which prints the tensor data. It allows you to compare the data of any tensor during the model inference with PyTorch.
 
 After you finish the implementation, you can run the following command to test your model:
@@ -321,18 +325,107 @@ python test/test_infer.py --model [dir_path/to/model] --test
 
 Commit and push your changes. You should see the auto tests for assignment #3 passed.
 
-## Project #1: Build an AI chatbot
 
-coming soon...
+## You can proceed to the projects only after you finish the assignments.
+
+## Project #1: Optimize LLAISYS for CPU
+You probably have already noticed that your model inference is very slow compared to PyTorch. This is mostly because your operators are not optimized. Run your operater test scripts with "--profile" flag to see how your operators perform. You would probably see that `linear` operation is much slower than PyTorch. This operator is mainly a matrix multiplication, and is the most time consuming operation in transformer-based models.
+
+There are several ways to optimize your operators for CPU:
+
+### SIMD instructions
+
+SIMD (Single Instruction Multiple Data) instructions are instructions that can perform the same operation on multiple data elements in a single instruction. Modern CPUs have support for SIMD instructions. Look for online materials to learn about compiler intrinsics (such as AVX2, AVX-512, NEON, SVE) to vectorize your operations.
+
+### Use OpenMP for parallelism
+
+You can use multi-threading to parallelize your operators. OpenMP is a popular library for multi-threading in C/C++. Add OpenMP support for LLAISYS to parallelize your `linear` and other operators.
+
+### 3rd-party Libraries
+
+There are several libraries that can help you optimize your operators for CPU. Look for libraries like Eigen, OpenBLAS, MKL, etc. to optimize your linear algebra operations. Note that some libraries are supported only for certain hardware platforms. Check their documentations and use them in your codes with care. You can also try to dig out how PyTorch implement these operators and see if you can use them.
+
+Optimize your implementation with any methods you like and report your performance improvement.
 
 ## Project #2: Intigrate CUDA into LLAISYS
 
-coming soon...
+This project does not depend on **Project #1**. You should choose two CUDA/CUDA-ish hardware platforms from Nvidia, Iluvatar, Metax, and Moore Threads.
 
-## Project #3: Serving Multiple Users
+This camp session provides computation resources from the four platforms above, access to which is granted based on applications from the official website. You can accelerate your model with CUDA on these GPU platforms. Before doing that, let's dive deeper into LLAISYS framework. 
 
-coming soon...
+LLAISYS is actually a framework with homogeous hardware support. When using LLAISYS, each thread will create a thread-local `Context` object which manages all the device `Runtime` objects used by this thread. A `Runtime` object is a resource manager for a device, and `Context` will create (with lazy initialization) a single `Runtime` object for each device. You can set and switch between them using `setDevice` function in `Context`. Only one device will be active at a time for each thread. Check `src/core/context.hpp` for more details. 
 
-## Bonus Project: Optimize Your System
+### Implement CUDA Runtime APIs
+Each `Runtime` object is intialized with a set of generic functions called `Runtime APIs`. You will need to implement CUDA version of these APIS. Check `src/device/cpu/cpu_runtime_api.cpp` to see how these functions are implemented for CPU and look for CUDA APIs to use in [`CUDA Runtime documentation`](https://docs.nvidia.com/cuda/cuda-runtime-api/index.html).
 
-coming soon...
+You can see in `src/device/runtime_api.hpp` that `nvidia::getRuntimeAPI()` is guarded by `ENABLE_NVIDIA_API` macro.
+
+```c++
+#ifdef ENABLE_NVIDIA_API
+namespace nvidia {
+const LlaisysRuntimeAPI *getRuntimeAPI();
+}
+#endif
+```
+
+This macro is defined in `xmake.lua` as a switch to enable/disable CUDA support. CUDA codes will not be compiled if the switch is off. In `xmake/` directory, create a `nvidia.lua` that configs your compiling process. (Similar to `cpu.lua` for CPU.) Search online to learn how to do it with Xmake.
+
+After you implement the CUDA Runtime APIs, config your xmake with `--nv-gpu=y` to enable CUDA support and recompile your program. Run runtime tests to see if your implementation works.
+
+```bash
+xmake f --nv-gpu=y -cv
+xmake
+xmake install
+python test/test_runtime.py --device nvidia
+```
+
+### Implement CUDA Operators
+Create a `nvdia/` sub-directory in each operator source directory and implement a cuda version. Check `src/ops/add/op.cpp` to see how to include your cuda implementations. Remeber to define the compiling procedures in the xmake files. Run the operator tests with `--device nvidia` flag to test your CUDA implementation.
+
+You can use CUDA libraries like cuBLAS, cuDNN, etc. to accelerate your operators. Check their documentations to see how to use them. You can store extra device resources in `src/device/nvidia/nvidia_resource.cu`.
+
+Modify your model codes to support CUDA inference. 
+
+```bash
+python test/test_infer.py --model [dir_path/to/model] --test --device nvidia
+```
+
+## Project #3: Build an AI chatbot
+
+In this project you will build an AI chatbot that can do live conversations with single user with LLAISYS. 
+
+### Random Sampling
+
+So far we have been testing our model with argmax sampling. This is good enough for testing, but a chatbot should be able to generate more natural responses. Implement a random sample operator. Try to add supports for **Temperature**, **Top-K** and **Top-P**.
+
+### Build a Chatbot Server
+
+In your Python frontend, implement a server that can receive http requests from user and send responses back. You can use frameworks like FastAPI to build the server. You should follow the OpenAI chat-completion APIs. Try to support streaming responses if you can. You can assume, for now, that the server is only serving one user, and block the endpoint until the previous request is served.
+
+
+### Interactive Chat UI
+
+Build a UI that send requests to and receive responses from the chatbot server. You can build a simple command-line interface or a fancy web interface. You should be able to keep a conversation going with the chatbot by sending messages and receiving responses consecutively.
+
+### (Optional) Chat Session Management
+
+In real-world AI applications, users are allowed to start new conversations and switch between them. Users can also edit a past question and let the AI regenerate an answer. Enhance your UI to support these features. Implement a KV-Cache pool with prefix matching to reuse past results as much as possible.
+
+
+## Project #4: Multi-user Inference Service
+
+You need to finish **Project #2** and achieve streaming response first before proceeding to this project.
+
+### Serving Multiple Users
+
+In real-world scenarios, an inference service will serve multiple users. Requests can come in at any time, and the service should be able to handle them concurrently. Your endpoint should add a new request to a request pool or queue and have a another looping process or thread to serve the requests. 
+
+### Continous Batching
+To maximize the throughput of your inference service, you need to batch your requests instead of serving them one by one. Since each request can have different length, you will need a continous and iteration-level batching mechanism. For each interation you extract several requests from pool to form a batch, do one round of batch inference, and then return the unfinished requests back to the pool. Use batched matrix multiplication when possible to speed up your inference. Note that every request in the batch need to bind with a different KV-Cache. You should build a KV-Cache pool with prefix matching to reuse past results as much as possible.
+
+## Project #5: Distributed Inference
+Introduce Tensor Parallelism to LLAISYS. Shard your model across multiple devices and implement distributed model inference. Support NCCL in LLAISYS if your are uing Nvidia GPUs, or MPI if you are using CPUs.
+
+## Project #6: Support New Models
+
+Support another model type than the one we use for homework in LLAISYS.

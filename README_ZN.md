@@ -185,10 +185,12 @@ $$
 Y = xW^T + b
 $$
 
-- `out`：输出$Y$。你暂时可以假设输出是一个2D连续张量，不涉及广播。
-- `input`：输入$X$。你暂时可以假设输入是一个2D连续张量，不涉及广播。
-- `weight`：权重$W$。2D连续张量。注意权重张量没有转置。你需要在计算过程中处理这个问题。
-- `bias`（可选）：偏置$b$。1D张量。你需要支持不提供偏置的情况。
+- `out`：输出 $Y$ 。你暂时可以假设输出是一个2D连续张量，不涉及广播。
+- `input`：输入 $X$ 。你暂时可以假设输入是一个2D连续张量，不涉及广播。
+- `weight`：权重 $W$ 。2D连续张量。注意权重张量没有转置。你需要在计算过程中处理这个问题。
+- `bias`（可选）：偏置 $b$ 。1D张量。你需要支持不提供偏置的情况。
+
+完成实现后，你应该能够通过`test/ops/linear.py`中的测试用例。
 
 ### 任务-2.4 RMS Normalization
 
@@ -199,15 +201,15 @@ void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps);
 为每一行计算以下内容：
 
 $$
-Y_i = \frac{W_i \times  X_i}{\sqrt{(\frac{1}{n}\sum_{j=1}^n X_j^2) + \epsilon}}
+Y_i = \frac{W_i \times  X_i}{\sqrt{\frac{1}{d}(\sum_{j=1}^d X_j^2) + \epsilon}}
 $$
 
-- `out`：输出$Y$。你暂时可以假设输出是一个2D连续张量，不涉及广播。
-- `input`：输入$X$。你暂时可以假设输入是一个2D连续张量，不涉及广播。标准化沿输入张量的最后一个维度（即每一行）执行。
-- `weight`：权重$W$。1D张量，与输入张量的一行长度相同。
-- `eps`：小值$\epsilon$以避免除以零。
+- `out`：输出 $Y$ 。你暂时可以假设输出是一个2D连续张量，不涉及广播。
+- `input`：输入 $X$ 。你暂时可以假设输入是一个2D连续张量，不涉及广播。标准化沿输入张量的最后一个维度（即每一行，长度为 $d$ ）执行。
+- `weight`：权重 $W$ 。1D张量，与输入张量的一行长度相同。
+- `eps`：小值 $\epsilon$ 以避免除以零。
 
-完成实现后，你应该能够通过`test/ops/linear.py`中的测试用例。
+完成实现后，你应该能够通过`test/ops/rms_norm.py`中的测试用例。
 
 ### 任务-2.5 旋转位置编码（RoPE）
 
@@ -258,7 +260,7 @@ $$
 - `q`：查询张量。形状应该是 [seqlen, nhead, d]。你暂时可以假设张量是连续的。
 - `k`：键张量。形状应该是 [total_len, nkvhead, d]。你暂时可以假设张量是连续的。
 - `v`：值张量。形状应该是 [total_len, nkvhead, dv]。你暂时可以假设张量是连续的。
-- `scale`：缩放因子。在大多数情况下取值为$\frac{1}{\sqrt{d}}$。
+- `scale`：缩放因子。在大多数情况下取值为 $\frac{1}{\sqrt{d}}$ 。
 
 完成实现后，你应该能够通过`test/ops/self_attention.py`中的测试用例。
 
@@ -310,6 +312,8 @@ void rearrange(tensor_t out, tensor_t in);
 
 - 在`python/llaisys/libllaisys/`中，为你的C API定义ctypes包装函数。使用你的包装函数实现`python/llaisys/models/qwen2.py`。
 
+- 你需要实现 KV-Cache 功能，否则模型推理速度会过慢。
+
 - 调试直到你的模型工作。利用张量的`debug`函数打印张量数据。它允许你在模型推理期间将任何张量的数据与PyTorch进行比较。
 
 完成实现后，你可以运行以下命令来测试你的模型：
@@ -320,18 +324,109 @@ python test/test_infer.py --model [dir_path/to/model] --test
 
 提交并推送你的更改。你应该看到作业#3的自动测试通过了。
 
-## 项目 #1：构建AI聊天机器人
+## 只有完成作业后，才能开始做项目。
 
-即将推出...
+## 项目#1：优化 LLAISYS 的 CPU 推理
 
-## 项目 #2：将CUDA集成到LLAISYS
+你可能已经注意到，你的模型推理速度相比 PyTorch 非常慢。这主要是因为你的算子没有经过优化。运行算子测试脚本时加上 ``--profile`` 参数，看看算子的性能表现。你可能会发现 ``linear`` 操作比 PyTorch 慢很多。这个算子本质上是矩阵乘法，是 Transformer 模型里最耗时的操作。
 
-即将推出...
+以下是几种优化 CPU 算子的方法：
 
-## 项目 #3：服务多用户
+### 使用 SIMD 指令
 
-即将推出...
+SIMD（单指令多数据）是一类可以在单条指令中对多个数据元素同时执行相同操作的指令。现代 CPU 都支持 SIMD。你可以查阅相关资料，学习编译器内建函数（如 AVX2、AVX-512、NEON、SVE）来向量化你的算子。
 
-## 奖励项目：优化你的系统
+### 使用 OpenMP 实现并行
 
-即将推出...
+你可以用多线程来并行化算子。OpenMP 是 C/C++ 中常见的多线程库。为 LLAISYS 增加 OpenMP 支持，使得 ``linear`` 等算子能够并行执行。
+
+### 使用第三方库
+
+有很多库能帮你优化 CPU 上的算子，例如 Eigen、OpenBLAS、MKL 等，它们能高效处理线性代数运算。但要注意，有些库只支持特定硬件平台，需要仔细阅读文档并小心使用。你也可以参考 PyTorch 的算子实现，看是否能复用。
+
+用任何你喜欢的方法优化你的推理实现，并报告性能提升情况。
+
+## 项目#2：在 LLAISYS 中集成 CUDA，适配两款CUDA或类CUDA平台(以下统称CUDA)
+
+这个项目不依赖 ``项目#1``。需要选择 Nvidia、天数、摩尔、沐曦中的至少两款平台。
+
+本次训练营提供了以上四种平台的算力，可以在官方进行申请算力，并用 CUDA 加速模型推理。在动手前，先深入理解 LLAISYS 框架。
+
+事实上，LLAISYS 是一个支持同构硬件的框架。使用时，每个线程会创建一个线程唯一的 **Context** 对象，管理该线程使用的所有设备 **Runtime**。**Runtime** 对象是设备的资源管理器，**Context** 会为每个设备（以延迟初始化的方式）创建唯一的 **Runtime**。你可以用 ``setDevice`` 在不同设备间切换，每个线程同一时间只会激活一个设备。详情见 ``src/core/context.hpp``。
+
+### 实现 CUDA Runtime API
+
+每个 **Runtime** 对象都会初始化一组通用的 **Runtime API**。你需要实现 CUDA 版本的 API。参考 ``src/device/cpu/cpu_runtime_api.cpp`` 看 CPU 的实现方式，查阅 [`CUDA Runtime 文档`](https://docs.nvidia.com/cuda/cuda-runtime-api/index.html) 找到对应 API。
+
+在 ``src/device/runtime_api.hpp`` 中，``nvidia::getRuntimeAPI()`` 被 ``ENABLE_NVIDIA_API`` 宏保护：
+
+```c++
+#ifdef ENABLE_NVIDIA_API
+namespace nvidia {
+const LlaisysRuntimeAPI *getRuntimeAPI();
+}
+#endif
+```
+
+该宏的定义在 ``xmake.lua`` 中，用于开关 CUDA 支持。若关闭，CUDA 代码不会被编译。你需要在 ``xmake/`` 下新建 ``nvidia.lua``，配置编译流程（参考 ``cpu.lua``）。查阅资料学习如何用 Xmake 配置。
+
+完成 CUDA Runtime API 后，用 ``--nv-gpu=y`` 打开 CUDA 支持并重新编译，运行测试：
+
+```bash
+xmake f --nv-gpu=y -cv
+xmake
+xmake install
+python test/test_runtime.py --device nvidia
+```
+
+### 实现 CUDA 算子
+
+在每个算子目录下新建 ``nvidia/`` 子目录，写 CUDA 版本实现。参考 ``src/ops/add/op.cpp`` 看如何包含 CUDA 实现。别忘了在 xmake 文件中定义编译流程。用 ``--device nvidia`` 参数运行测试。
+
+你可以使用 cuBLAS、cuDNN 等 CUDA 库来加速算子，额外的设备资源可以放在 `src/device/nvidia/nvidia_resource.cu`。
+
+最后,修改模型代码，支持 CUDA 推理：
+
+```bash
+python test/test_infer.py --model [dir_path/to/model] --test --device nvidia
+```
+
+## 项目#3：构建 AI 聊天机器人
+
+本项目中，你将用 LLAISYS 构建一个能与单用户实时对话的聊天机器人。
+
+### 随机采样
+
+目前我们只用过 argmax 采样，这在测试时够用，但聊天机器人需要更自然的回复。请实现一个随机采样算子，并尽量支持 **Temperature**、**Top-K**、**Top-P**。
+
+### 搭建聊天服务器
+
+在 Python 前端里，实现一个能接收 HTTP 请求并返回响应的服务器。可以用 FastAPI 等框架。接口最好遵循 OpenAI 的 chat-completion API。如果可以，尽量支持流式输出。你可以先假设只有一个用户在使用，每次请求可以阻塞直到处理完成。
+
+### 交互式聊天 UI
+
+实现一个 UI，能向服务器发送请求并接收回复。可以是命令行界面，也可以是 Web 界面。要能通过连续发送消息与机器人保持对话。
+
+### （可选）会话管理
+
+实际应用中，用户可以开启多个对话并在它们之间切换，还能修改历史问题让 AI 重新生成回答。扩展 UI，支持这些功能。实现一个支持前缀匹配的 KV-Cache 池，尽可能复用已有结果。
+
+## 项目#4：多用户推理服务
+
+在做这个项目之前，你需要完成 ``项目#3`` 并实现流式输出。
+
+### 支持多用户
+
+现实中推理服务要同时为多个用户提供服务，请求可能随时到来。你的服务端需要将请求加入请求池/队列，并用单独的循环线程/进程来处理。
+
+### 连续批处理
+
+为了最大化吞吐量，你需要做批处理，而不是逐一处理。由于每个请求长度不同，需要实现连续的迭代级批处理机制：每轮从池中取出若干请求组成批次（batch），执行一次批量推理，再把未完成的请求放回池中。推理时尽量用批量矩阵乘法加速。注意每个请求需要绑定不同的 KV-Cache，应实现支持前缀匹配的 KV-Cache 池来复用结果。
+
+## 项目#5：分布式推理
+
+在 LLAISYS 中引入张量并行。把模型分片到多个设备上，实现分布式推理。如果用 Nvidia GPU，需要支持 NCCL；如果用 CPU，需要支持 MPI。
+
+## 项目#6：支持新模型
+
+在 LLAISYS 中支持除作业所用模型以外的其他模型。
