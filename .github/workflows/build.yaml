@@ -2,6 +2,7 @@ name: Build and test
 on:
   pull_request:
   push:
+    branches: [ "main", "feature/correct-code" ]  # 加上你的分支
     paths-ignore:
       - '**.md'
       - 'LICENSE'
