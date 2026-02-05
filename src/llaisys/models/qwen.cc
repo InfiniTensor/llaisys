@@ -271,35 +271,41 @@ __export struct LlaisysQwen2Model *
 llaisysQwen2ModelCreate(const LlaisysQwen2Meta *meta,
                         llaisysDeviceType_t device,
                         int* /*device_ids*/, int /*ndevice*/) noexcept {
-    CHECK_ARGUMENT(meta != nullptr, "meta is null");
+    try {
+        if (meta == nullptr) return nullptr;
 
-    auto* model = new LlaisysQwen2Model;
-    model->impl = new Qwen2Impl;
-    auto* m = model->impl;
+        auto* model = new LlaisysQwen2Model;
+        model->impl = new Qwen2Impl;
+        auto* m = model->impl;
 
-    m->meta = *meta;
-    m->device = device;
-    m->device_id = 0;
-    m->cur_pos = 0;
+        m->meta = *meta;
+        m->device = device;
+        m->device_id = 0;
+        m->cur_pos = 0;
 
-    llaisys::core::context().setDevice(device, 0);
+        llaisys::core::context().setDevice(device, 0);
 
-    alloc_weights(m);
+        alloc_weights(m);
 
-    // 保险：tmp 直接按 maxseq 分配，避免 prompt 超出临时 buffer
-    alloc_kv_tmp(m, meta->maxseq);
+        // 保险：tmp 直接按 maxseq 分配，避免 prompt 超出临时 buffer
+        alloc_kv_tmp(m, meta->maxseq);
 
-    return model;
+        return model;
+    } catch (...) {
+        return nullptr;
+    }
 }
 
 __export void
 llaisysQwen2ModelDestroy(struct LlaisysQwen2Model * model) noexcept {
-    if (!model) return;
-    if (model->impl) {
-        free_weights(model->impl);
-        delete model->impl;
-    }
-    delete model;
+    try {
+        if (!model) return;
+        if (model->impl) {
+            free_weights(model->impl);
+            delete model->impl;
+        }
+        delete model;
+        } catch (...) {}
 }
 
 __export struct LlaisysQwen2Weights *
@@ -309,47 +315,52 @@ llaisysQwen2ModelWeights(struct LlaisysQwen2Model * model) noexcept {
 
 __export int64_t
 llaisysQwen2ModelInfer(struct LlaisysQwen2Model * model, int64_t * token_ids, size_t ntoken) noexcept {
-    CHECK_ARGUMENT(model && model->impl, "model is null");
-    CHECK_ARGUMENT(token_ids != nullptr, "token_ids is null");
-    CHECK_ARGUMENT(ntoken > 0, "ntoken must be > 0");
+    // CHECK_ARGUMENT(model && model->impl, "model is null");
+    // CHECK_ARGUMENT(token_ids != nullptr, "token_ids is null");
+    // CHECK_ARGUMENT(ntoken > 0, "ntoken must be > 0");
+    try {
+        if (!model || !model->impl) return -1;
+        if (token_ids == nullptr) return -1;
+        if (ntoken == 0) return -1;
 
-    auto* m = model->impl;
-    auto& meta = m->meta;
-    auto& w = m->weights;
-    auto& t = m->tmp;
+        auto* m = model->impl;
+        auto& meta = m->meta;
+        auto& w = m->weights;
+        auto& t = m->tmp;
 
-    CHECK_ARGUMENT(m->cur_pos + ntoken < meta.maxseq, "sequence length exceeds maxseq");
+    //CHECK_ARGUMENT(m->cur_pos + ntoken < meta.maxseq, "sequence length exceeds maxseq");
+        if (m->cur_pos + ntoken >= meta.maxseq) return -1;
 
-    const size_t dh = meta.dh;
-    const float scale = 1.0f / std::sqrt((float)dh);
+        const size_t dh = meta.dh;
+        const float scale = 1.0f / std::sqrt((float)dh);
 
-    // ---- 写 tok/pos ----
-    std::memcpy(t.tok_i64->data(), token_ids, ntoken * sizeof(int64_t));
-    {
-        int64_t* p = reinterpret_cast<int64_t*>(t.pos_i64->data());
-        for (size_t i = 0; i < ntoken; ++i) p[i] = (int64_t)(m->cur_pos + i);
-    }
+        // ---- 写 tok/pos ----
+        std::memcpy(t.tok_i64->data(), token_ids, ntoken * sizeof(int64_t));
+        {
+            int64_t* p = reinterpret_cast<int64_t*>(t.pos_i64->data());
+            for (size_t i = 0; i < ntoken; ++i) p[i] = (int64_t)(m->cur_pos + i);
+        }
 
-    // 只做 dim0 slice：通常仍 contiguous
-    tensor_t tok_L = t.tok_i64->slice(0, 0, ntoken);
-    tensor_t pos_L = t.pos_i64->slice(0, 0, ntoken);
+        // 只做 dim0 slice：通常仍 contiguous
+        tensor_t tok_L = t.tok_i64->slice(0, 0, ntoken);
+        tensor_t pos_L = t.pos_i64->slice(0, 0, ntoken);
 
-    tensor_t x_L  = t.x_a->slice(0, 0, ntoken);
-    tensor_t xb_L = t.x_b->slice(0, 0, ntoken);
-    tensor_t h_L  = t.h->slice(0, 0, ntoken);
+        tensor_t x_L  = t.x_a->slice(0, 0, ntoken);
+        tensor_t xb_L = t.x_b->slice(0, 0, ntoken);
+        tensor_t h_L  = t.h->slice(0, 0, ntoken);
 
-    require_contiguous(tok_L, "tok_L must be contiguous");
-    require_contiguous(pos_L, "pos_L must be contiguous");
-    require_contiguous(x_L,   "x_L must be contiguous");
+        require_contiguous(tok_L, "tok_L must be contiguous");
+        require_contiguous(pos_L, "pos_L must be contiguous");
+        require_contiguous(x_L,   "x_L must be contiguous");
 
-    // ---- embedding ----
-    llaisys::ops::embedding(x_L, tok_L, w.in_embed->tensor);
+        // ---- embedding ----
+        llaisys::ops::embedding(x_L, tok_L, w.in_embed->tensor);
 
-    // after embedding(x_L, tok_L, in_embed)
-    if (LLAISYS_QWEN2_DEBUG) {
-        auto x0 = x_L->slice(0, 0, 1);  // [1, hs]
-        DBG_TENSOR("x after embedding (first token)", x0);
-    }
+        // after embedding(x_L, tok_L, in_embed)
+        if (LLAISYS_QWEN2_DEBUG) {
+            auto x0 = x_L->slice(0, 0, 1);  // [1, hs]
+            DBG_TENSOR("x after embedding (first token)", x0);
+        }
 
     // ---- layers ----
     for (size_t layer = 0; layer < meta.nlayer; ++layer) {
@@ -460,6 +471,9 @@ llaisysQwen2ModelInfer(struct LlaisysQwen2Model * model, int64_t * token_ids, si
 
     m->cur_pos += ntoken;
     return next;
+    } catch (...) {
+        return -1;
+    }
 }
 
 } // extern "C"
