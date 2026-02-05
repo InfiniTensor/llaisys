@@ -6,7 +6,7 @@
 #include "cpu/rope_cpu.hpp"
 
 namespace llaisys::ops {
-void rope(tensor_t in, tensor_t out, tensor_t pos_ids, float theta) {
+void rope(tensor_t out, tensor_t in, tensor_t pos_ids, float theta) {
     CHECK_SAME_DEVICE(in, out, pos_ids);
     // Only support contiguous inputs with same shape for now.
     CHECK_SAME_SHAPE(in->shape(), out->shape());

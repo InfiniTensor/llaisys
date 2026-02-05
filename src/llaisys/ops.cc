@@ -23,6 +23,10 @@ __C {
         llaisys::ops::embedding(out->tensor, index->tensor, weight->tensor);
     }
     void llaisysLinear(llaisysTensor_t out, llaisysTensor_t in, llaisysTensor_t weight, llaisysTensor_t bias) {
+        if (bias == nullptr) {
+            llaisys::ops::linear(out->tensor, in->tensor, weight->tensor, nullptr);
+            return;
+        }
         llaisys::ops::linear(out->tensor, in->tensor, weight->tensor, bias->tensor);
     }
     void llaisysRearrange(llaisysTensor_t out, llaisysTensor_t in) {
