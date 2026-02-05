@@ -11,18 +11,28 @@ def test_tensor():
     
     print("llaisys pkg:", os.path.dirname(llaisys.__file__))
     print("so candidates:", glob.glob(os.path.join(os.path.dirname(llaisys.__file__), "**/*.so"), recursive=True))
+
+    #print("enter funciton1\n")
     torch_tensor = torch.arange(60, dtype=torch_dtype("i64")).reshape(3, 4, 5)
+    #print("enter funciton2\n")
     llaisys_tensor = llaisys.Tensor(
         (3, 4, 5), dtype=llaisys_dtype("i64"), device=llaisys_device("cpu")
     )
+    #print("enter funciton3\n")
 
-
-
+    # Test load
     print("===Test load===")
+    #print(f"enter funciton4 {torch_tensor.data_ptr()}\n")
+    
+    
     llaisys_tensor.load(torch_tensor.data_ptr())
+    #print("enter funciton4\n")
     llaisys_tensor.debug()
+    #print("enter funciton5\n")
     assert llaisys_tensor.is_contiguous() == torch_tensor.is_contiguous()
+    #print("enter funciton6\n")
     assert check_equal(llaisys_tensor, torch_tensor)
+    #print("enter funciton7\n")
 
     # Test view
     print("===Test view===")
