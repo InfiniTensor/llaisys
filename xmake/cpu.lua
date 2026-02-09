@@ -2,7 +2,9 @@ target("llaisys-device-cpu")
     set_kind("static")
     set_languages("cxx17")
     set_warnings("all", "error")
-    if not is_plat("windows") then
+    if is_plat("windows") then
+        add_cxflags("/wd4267")  -- 禁用 'size_t to int' 警告
+    else
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end
 
@@ -16,7 +18,9 @@ target("llaisys-ops-cpu")
     add_deps("llaisys-tensor")
     set_languages("cxx17")
     set_warnings("all", "error")
-    if not is_plat("windows") then
+    if is_plat("windows") then
+        add_cxflags("/wd4267")  -- 禁用 'size_t to int' 警告
+    else
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end
 
@@ -24,4 +28,3 @@ target("llaisys-ops-cpu")
 
     on_install(function (target) end)
 target_end()
-
