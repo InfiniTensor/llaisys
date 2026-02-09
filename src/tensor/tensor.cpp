@@ -172,7 +172,7 @@ bool Tensor::isContiguous() const {
     if(strides.back()!=1)
         return false;
     size_t expected_stride=1;
-    for(int i=ndim-2;i>=0;i--){
+    for(size_t i=ndim-2;i>=0;i--){
         expected_stride*=shape[i+1];
         if(strides[i] != static_cast<long int>(expected_stride))
             return false;
@@ -211,7 +211,7 @@ tensor_t Tensor::view(const std::vector<size_t> &shape) const {
         throw std::runtime_error("Cannot create view from non-contiguous tensor");
     std::vector<ptrdiff_t> new_strides(shape.size());
     ptrdiff_t stride=1;
-    for(int i=shape.size()-1;i>=0;i--){
+    for(size_t i=shape.size()-1;i>=0;i--){
         new_strides[i]=stride;
         stride*=shape[i];
     }
