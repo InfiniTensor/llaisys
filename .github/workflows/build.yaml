@@ -1,0 +1,60 @@
+name: Build and test
+on:
+  pull_request:
+  push:
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+
+jobs:
+  build:
+    name: Build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        type: [release]
+    runs-on: ${{ matrix.os }}
+    steps:
+
+    - name: checkout code
+      uses: actions/checkout@v4
+
+    - name: install xmake
+      uses: xmake-io/github-action-setup-xmake@v1
+      with:
+        xmake-version: latest
+    
+    - name: Xmake Build & Install
+      run: | 
+        xmake
+        xmake install
+    
+    - name: Install Python
+      run: | 
+        cd python
+        pip install .
+        cd ..
+
+    - name: Assignment-0
+      run: |
+        python test/test_runtime.py --device cpu
+
+    - name: Assignment-1
+      run: |
+        python test/test_tensor.py
+    
+    - name: Assignment-2
+      run: |
+        python test/ops/add.py 
+        python test/ops/argmax.py
+        python test/ops/embedding.py
+        python test/ops/linear.py 
+        python test/ops/rms_norm.py
+        python test/ops/rope.py
+        python test/ops/self_attention.py
+        python test/ops/swiglu.py
+
+    - name: Assignment-3
+      run: |
+        python test/test_infer.py --test
