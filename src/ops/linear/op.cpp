@@ -44,7 +44,7 @@ void linear(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias) {
 void linear(tensor_t out, tensor_t in, tensor_t weight) {
     CHECK_SAME_DEVICE(out, in, weight);
     CHECK_ARGUMENT(
-        in->shape().back() == weight->shape()[weight->ndim() - 2],
+        in->shape().back() == weight->shape().back(),
         "Input dimension does not match weight dimension."
     );
 
@@ -60,7 +60,7 @@ void linear(tensor_t out, tensor_t in, tensor_t weight) {
             nullptr,
             batch_size,
             in->shape().back(),
-            weight->shape().back(),
+            weight->shape()[weight->ndim() - 2],
             in->dtype()
         );
     }

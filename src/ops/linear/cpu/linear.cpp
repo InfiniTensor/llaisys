@@ -12,19 +12,19 @@ static void linear_(
     size_t in_features,
     size_t out_features
 ) {
+    using namespace llaisys::utils;
     for (size_t b = 0; b < batch_size; b++) {
         const T* in_batch = in + b * in_features;
         T* out_batch = out + b * out_features;
 
         for (size_t o = 0; o < out_features; o++) {
-            float sum = 0.0f;
+            float sum = bias ? cast<float>(bias[o]) : 0.0f;
+            const T* weight_ = weight + o * in_features;
+            
             for (size_t i = 0; i < in_features; i++) {
-                sum += llaisys::utils::cast<float>(in_batch[i]) * llaisys::utils::cast<float>(weight[o * in_features + i]);
+                sum += cast<float>(in_batch[i]) * cast<float>(weight_[i]);
             }
-            if (bias) {
-                sum += llaisys::utils::cast<float>(bias[o]);
-            }
-            out_batch[o] = llaisys::utils::cast<T>(sum);
+            out_batch[o] = cast<T>(sum);
         }
     }
 }

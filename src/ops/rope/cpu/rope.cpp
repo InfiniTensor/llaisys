@@ -5,7 +5,7 @@
 #include <cmath>
 #include <vector>
 
-template <typename T>
+template<typename T>
 static void rope_(
     T* out, const T* in, const int64_t* pos_id, float theta,
     size_t seqlen, size_t nhead, size_t d
@@ -13,22 +13,23 @@ static void rope_(
     using namespace llaisys::utils;
     size_t half = d / 2;
 
-    std::vector<double> inv_freq(half);
+    std::vector<float> inv_freq(half);
+    float log_theta = std::log(theta);
     for (size_t j = 0; j < half; j++) {
-        inv_freq[j] = 1.0 / std::pow(theta, 2.0 * j / d);
+        inv_freq[j] = std::exp(-log_theta * (2.0f * j / d));
     }
 
     for (size_t i = 0; i < seqlen; i++) {
-        double p = static_cast<double>(pos_id[i]);
+        float p = static_cast<float>(pos_id[i]);
         for (size_t h = 0; h < nhead; h++) {
             size_t base = (i * nhead + h) * d;
             for (size_t j = 0; j < half; j++) {
-                double angle = p * inv_freq[j];
-                double cos_val = std::cos(angle);
-                double sin_val = std::sin(angle);
+                float angle = p * inv_freq[j];
+                float cos_val = std::cos(angle);
+                float sin_val = std::sin(angle);
 
-                double a = static_cast<double>(cast<float>(in[base + j]));
-                double b = static_cast<double>(cast<float>(in[base + j + half]));
+                float a = cast<float>(in[base + j]);
+                float b = cast<float>(in[base + j + half]);
 
                 out[base + j]        = cast<T>(a * cos_val - b * sin_val);
                 out[base + j + half] = cast<T>(b * cos_val + a * sin_val);

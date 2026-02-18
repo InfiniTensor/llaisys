@@ -115,14 +115,6 @@ fp16_t _f32_to_f16(float val) {
     }
 }
 
-float _bf16_to_f32(bf16_t val) {
-    uint32_t bits32 = static_cast<uint32_t>(val._v) << 16;
-
-    float out;
-    std::memcpy(&out, &bits32, sizeof(out));
-    return out;
-}
-
 bf16_t _f32_to_bf16(float val) {
     uint32_t bits32;
     std::memcpy(&bits32, &val, sizeof(bits32));

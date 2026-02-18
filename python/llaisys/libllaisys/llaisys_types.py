@@ -49,6 +49,16 @@ class MemcpyKind(IntEnum):
 
 llaisysMemcpyKind_t = ctypes.c_int
 
+'''
+struct LlaisysQwen2Meta_ {
+        llaisysDataType_t dtype;
+        size_t nlayer, hs, nh, nkvh, dh, di, maxseq, voc;
+        float epsilon, theta;
+        int64_t end_token;
+}
+'''
+
+
 # Stream type (opaque pointer)
 llaisysStream_t = ctypes.c_void_p
 

@@ -26,14 +26,17 @@ tensor_t Tensor::create(const std::vector<size_t> &shape,
     size_t total_elems = stride;
     size_t dtype_size = utils::dsize(dtype);
 
+    tensor_t ret;
     if (device_type == LLAISYS_DEVICE_CPU && core::context().runtime().deviceType() != LLAISYS_DEVICE_CPU) {
         auto storage = core::context().runtime().allocateHostStorage(total_elems * dtype_size);
-        return std::shared_ptr<Tensor>(new Tensor(meta, storage));
+        ret =  std::shared_ptr<Tensor>(new Tensor(meta, storage, 0));
     } else {
         core::context().setDevice(device_type, device);
         auto storage = core::context().runtime().allocateDeviceStorage(total_elems * dtype_size);
-        return std::shared_ptr<Tensor>(new Tensor(meta, storage));
+        ret = std::shared_ptr<Tensor>(new Tensor(meta, storage, 0));
     }
+    ASSERT(ret->data() != nullptr, "Failed to allocate memory for tensor.");
+    return ret;
 }
 
 std::byte *Tensor::data() {
@@ -171,12 +174,12 @@ bool Tensor::isContiguous() const {
     bool ret = true;
     if(ndim != 0) {
         ptrdiff_t expected_stride = 1;
-        for(auto i = ndim - 1; i >= 0; i--) {
+        for(int i = static_cast<int>(ndim - 1); i >= 0; i--) {
             if(strides[i] != expected_stride) {
                 ret = false;
                 break;
             }
-            expected_stride *= shape[i];
+            expected_stride *= static_cast<ptrdiff_t>(shape[i]);
         }
     }
     return ret;
@@ -189,7 +192,7 @@ tensor_t Tensor::permute(const std::vector<size_t> &order) const {
         meta.shape[i] = _meta.shape[order[i]];
         meta.strides[i] = _meta.strides[order[i]];
     }
-    return std::shared_ptr<Tensor>(new Tensor(meta, _storage));
+    return std::shared_ptr<Tensor>(new Tensor(meta, _storage, _offset));
 }
 
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
@@ -226,7 +229,7 @@ tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
     TensorMeta meta = _meta;
     meta.shape[dim] = end - start;
     size_t offset = _offset + start * _meta.strides[dim] * this->elementSize();
-    return std::shared_ptr<Tensor>(new Tensor(meta, _storage, offset));
+    return tensor_t(new Tensor(meta, _storage, offset));
 }
 
 void Tensor::load(const void *src_) {
