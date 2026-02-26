@@ -9,10 +9,6 @@
 #include "nvidia/rope_nvidia.cuh"
 #endif
 
-#ifdef ENABLE_ILUVATAR_API
-#include "iluvatar/rope_iluvatar.cuh"
-#endif
-
 namespace llaisys::ops {
 void rope(tensor_t out, tensor_t in, tensor_t pos_ids, float theta) {
     CHECK_SAME_DEVICE(out, in);

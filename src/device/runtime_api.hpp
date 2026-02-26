@@ -17,10 +17,4 @@ namespace nvidia {
 const LlaisysRuntimeAPI *getRuntimeAPI();
 }
 #endif
-
-#ifdef ENABLE_ILUVATAR_API
-namespace iluvatar {
-const LlaisysRuntimeAPI *getRuntimeAPI();
-}
-#endif
 } // namespace llaisys::device

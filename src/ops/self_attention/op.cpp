@@ -9,10 +9,6 @@
 #include "nvidia/self_attention_nvidia.cuh"
 #endif
 
-#ifdef ENABLE_ILUVATAR_API
-#include "iluvatar/self_attention_iluvatar.cuh"
-#endif
-
 namespace llaisys::ops {
 void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float scale) {
     CHECK_SAME_DEVICE(attn_val, q, k, v);
@@ -86,24 +82,6 @@ void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float
 #ifdef ENABLE_NVIDIA_API
     case LLAISYS_DEVICE_NVIDIA:
         return nvidia::self_attention(
-            attn_val->data(), 
-            q->data(), 
-            k->data(), 
-            v->data(), 
-            q->dtype(), 
-            scale, 
-            seq_len, 
-            total_len, 
-            nhead, 
-            nkvhead, 
-            d, 
-            dv
-        );
-#endif
-
-#ifdef ENABLE_ILUVATAR_API
-    case LLAISYS_DEVICE_ILUVATAR:
-        return iluvatar::self_attention(
             attn_val->data(), 
             q->data(), 
             k->data(), 

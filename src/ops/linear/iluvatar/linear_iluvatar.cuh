@@ -1,9 +1,0 @@
-#pragma once
-#include "llaisys.h"
-
-#include <cstddef>
-
-namespace llaisys::ops::iluvatar {
-void linear(std::byte *out, const std::byte *in, const std::byte *weight, const std::byte *bias,
-            llaisysDataType_t type, size_t batch_size, size_t in_dim, size_t out_dim);
-}

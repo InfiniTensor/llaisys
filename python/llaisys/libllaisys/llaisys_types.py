@@ -6,8 +6,7 @@ from enum import IntEnum
 class DeviceType(IntEnum):
     CPU = 0
     NVIDIA = 1
-    ILUVATAR = 2
-    COUNT = 3
+    COUNT = 2
 
 
 llaisysDeviceType_t = ctypes.c_int

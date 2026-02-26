@@ -18,18 +18,6 @@ if has_config("nv-gpu") then
     includes("xmake/nvidia.lua")
 end
 
--- ILUVATAR --
-option("iluvatar-gpu")
-    set_default(false)
-    set_showmenu(true)
-    set_description("Whether to compile implementations for Iluvatar GPU")
-option_end()
-
-if has_config("iluvatar-gpu") then
-    add_defines("ENABLE_ILUVATAR_API")
-    includes("xmake/iluvatar.lua")
-end
-
 target("llaisys-utils")
     set_kind("static")
 
@@ -144,19 +132,6 @@ target("llaisys")
         add_linkdirs("/usr/local/cuda/lib64")
         add_syslinks("cudart", "cublas")
         add_shflags("-Wl,--no-as-needed", "-lcudart", "-lcublas", {force = true})
-        set_toolchains("cuda")
-        add_cugencodes("native")
-        add_cuflags("-rdc=true", {force = true})
-    end
-
-    if has_config("iluvatar-gpu") then
-        -- Directly add CUDA object files for Iluvatar
-        add_files("src/device/iluvatar/*.cu")
-        add_files("src/ops/*/iluvatar/*.cu")
-        -- Iluvatar uses CUDA-compatible runtime, link against CUDA libraries
-        add_linkdirs("/usr/local/cuda/lib64")
-        add_syslinks("cudart")
-        add_shflags("-Wl,--no-as-needed", "-lcudart", {force = true})
         set_toolchains("cuda")
         add_cugencodes("native")
         add_cuflags("-rdc=true", {force = true})
