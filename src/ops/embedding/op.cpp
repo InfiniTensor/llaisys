@@ -9,6 +9,10 @@
 #include "nvidia/embedding_nvidia.cuh"
 #endif
 
+#ifdef ENABLE_ILUVATAR_API
+#include "iluvatar/embedding_iluvatar.cuh"
+#endif
+
 namespace llaisys::ops {
 void embedding(tensor_t out, tensor_t index, tensor_t weight) {
     CHECK_SAME_DEVICE(out, index, weight);

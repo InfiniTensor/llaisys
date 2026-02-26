@@ -9,6 +9,10 @@
 #include "nvidia/add_nvidia.cuh"
 #endif
 
+#ifdef ENABLE_ILUVATAR_API
+#include "iluvatar/add_iluvatar.cuh"
+#endif
+
 namespace llaisys::ops {
 void add(tensor_t c, tensor_t a, tensor_t b) {
     CHECK_SAME_DEVICE(c, a, b);
@@ -30,6 +34,11 @@ void add(tensor_t c, tensor_t a, tensor_t b) {
 #ifdef ENABLE_NVIDIA_API
     case LLAISYS_DEVICE_NVIDIA:
         return nvidia::add(c->data(), a->data(), b->data(), c->dtype(), c->numel());
+#endif
+
+#ifdef ENABLE_ILUVATAR_API
+    case LLAISYS_DEVICE_ILUVATAR:
+        return iluvatar::add(c->data(), a->data(), b->data(), c->dtype(), c->numel());
 #endif
     default:
         EXCEPTION_UNSUPPORTED_DEVICE;

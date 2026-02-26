@@ -9,6 +9,10 @@
 #include "nvidia/rms_norm_nvidia.cuh"
 #endif
 
+#ifdef ENABLE_ILUVATAR_API
+#include "iluvatar/rms_norm_iluvatar.cuh"
+#endif
+
 namespace llaisys::ops {
 void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps) {
     CHECK_SAME_DEVICE(out, in, weight);
