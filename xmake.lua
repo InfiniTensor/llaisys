@@ -125,6 +125,18 @@ target("llaisys")
     add_files("src/llaisys/*.cc")
     set_installdir(".")
 
+    if has_config("nv-gpu") then
+        -- Directly add CUDA object files instead of static libraries to avoid RDC issues
+        add_files("src/device/nvidia/*.cu")
+        add_files("src/ops/*/nvidia/*.cu")
+        add_linkdirs("/usr/local/cuda/lib64")
+        add_syslinks("cudart", "cublas")
+        add_shflags("-Wl,--no-as-needed", "-lcudart", "-lcublas", {force = true})
+        set_toolchains("cuda")
+        add_cugencodes("native")
+        add_cuflags("-rdc=true", {force = true})
+    end
+
     
     after_install(function (target)
         -- copy shared library to python package

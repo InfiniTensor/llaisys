@@ -16,7 +16,7 @@ from .models.qwen2 import load_qwen2, LlaisysQwen2Meta, LlaisysQwen2Weights
 
 
 def load_shared_library():
-    lib_dir = Path(__file__).parent
+    lib_dir = Path(__file__).parent.resolve()
 
     if sys.platform.startswith("linux"):
         libname = "libllaisys.so"
@@ -27,9 +27,9 @@ def load_shared_library():
     else:
         raise RuntimeError("Unsupported platform")
 
-    lib_path = os.path.join(lib_dir, libname)
+    lib_path = lib_dir / libname
 
-    if not os.path.isfile(lib_path):
+    if not lib_path.is_file():
         raise FileNotFoundError(f"Shared library not found: {lib_path}")
 
     return ctypes.CDLL(str(lib_path))
