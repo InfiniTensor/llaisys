@@ -5,6 +5,8 @@
 #include <cstring>
 #include <numeric>
 #include <sstream>
+#include <cstdlib>
+#include <cstdint>
 
 namespace llaisys {
 
@@ -290,11 +292,32 @@ void Tensor::load(const void *src_) {
     if (this->deviceType() == LLAISYS_DEVICE_CPU) {
         std::memcpy(this->data(), src_, size);
     } else {
+        const size_t ALIGNMENT = 64;
+        void *src_aligned = const_cast<void*>(src_);
+        void *temp_buf = nullptr;
+        
+        bool src_aligned_ok = (reinterpret_cast<uintptr_t>(src_) % ALIGNMENT) == 0;
+        bool dst_aligned_ok = (reinterpret_cast<uintptr_t>(this->data()) % ALIGNMENT) == 0;
+        bool size_aligned_ok = (size % ALIGNMENT) == 0;
+        
+        if (!src_aligned_ok || !dst_aligned_ok || !size_aligned_ok) {
+            size_t aligned_size = ((size + ALIGNMENT - 1) / ALIGNMENT) * ALIGNMENT;
+            int ret = posix_memalign(&temp_buf, ALIGNMENT, aligned_size > 0 ? aligned_size : ALIGNMENT);
+            if (ret == 0 && temp_buf) {
+                std::memcpy(temp_buf, src_, size);
+                src_aligned = temp_buf;
+            }
+        }
+        
         core::context().runtime().api()->memcpy_sync(
             this->data(),
-            src_,
+            src_aligned,
             size,
             LLAISYS_MEMCPY_H2D);
+        
+        if (temp_buf) {
+            free(temp_buf);
+        }
     }
 }
 

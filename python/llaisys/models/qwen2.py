@@ -26,8 +26,9 @@ class Qwen2:
         head_dim = hidden_size // num_attention_heads
 
         # Create meta structure
+        # Use FP32 for better precision on MetaX (avoid bfloat16 accumulation errors)
         self._meta = LlaisysQwen2Meta()
-        self._meta.dtype = DataType.BF16.value
+        self._meta.dtype = DataType.F32.value if device == DeviceType.METAX else DataType.BF16.value
         self._meta.nlayer = config["num_hidden_layers"]
         self._meta.hs = hidden_size
         self._meta.nh = num_attention_heads
@@ -77,8 +78,12 @@ class Qwen2:
 
         # Helper to load a tensor
         def load_tensor(tensor_handle, tensor_data):
-            # Convert to contiguous bfloat16 and get raw bytes
-            data = tensor_data.to(torch.bfloat16).contiguous()
+            # Convert to the target dtype
+            if self._device == DeviceType.METAX:
+                # Use FP32 for MetaX to avoid precision issues
+                data = tensor_data.to(torch.float32).contiguous()
+            else:
+                data = tensor_data.to(torch.bfloat16).contiguous()
             data_ptr = data.data_ptr()
             LIB_LLAISYS.tensorLoad(tensor_handle, data_ptr)
 

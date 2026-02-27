@@ -9,6 +9,10 @@
 #include "nvidia/swiglu_nvidia.cuh"
 #endif
 
+#ifdef ENABLE_METAX_API
+#include "metax/swiglu_metax.cuh"
+#endif
+
 namespace llaisys::ops {
 void swiglu(tensor_t out, tensor_t gate, tensor_t up) {
     CHECK_SAME_DEVICE(out, gate, up);
@@ -56,6 +60,16 @@ void swiglu(tensor_t out, tensor_t gate, tensor_t up) {
             gate->dtype(), 
             seq_len, 
             intermediate_size
+        );
+#endif
+#ifdef ENABLE_METAX_API
+    case LLAISYS_DEVICE_METAX:
+        return metax::swiglu(
+            out->data(), 
+            gate->data(), 
+            up->data(), 
+            gate->dtype(), 
+            seq_len * intermediate_size
         );
 #endif
     default:

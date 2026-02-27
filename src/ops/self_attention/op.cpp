@@ -9,6 +9,10 @@
 #include "nvidia/self_attention_nvidia.cuh"
 #endif
 
+#ifdef ENABLE_METAX_API
+#include "metax/self_attention_metax.cuh"
+#endif
+
 namespace llaisys::ops {
 void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float scale) {
     CHECK_SAME_DEVICE(attn_val, q, k, v);
@@ -94,6 +98,23 @@ void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float
             nkvhead, 
             d, 
             dv
+        );
+#endif
+#ifdef ENABLE_METAX_API
+    case LLAISYS_DEVICE_METAX:
+        return metax::self_attention(
+            attn_val->data(), 
+            q->data(), 
+            k->data(), 
+            v->data(), 
+            q->dtype(), 
+            scale, 
+            seq_len, 
+            nhead, 
+            nkvhead, 
+            d, 
+            dv, 
+            total_len
         );
 #endif
     default:

@@ -18,6 +18,18 @@ if has_config("nv-gpu") then
     includes("xmake/nvidia.lua")
 end
 
+-- MetaX --
+option("metax-gpu")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Whether to compile implementations for MetaX GPU")
+option_end()
+
+if has_config("metax-gpu") then
+    add_defines("ENABLE_METAX_API")
+    includes("xmake/metax.lua")
+end
+
 target("llaisys-utils")
     set_kind("static")
 
@@ -135,6 +147,19 @@ target("llaisys")
         set_toolchains("cuda")
         add_cugencodes("native")
         add_cuflags("-rdc=true", {force = true})
+    end
+
+    if has_config("metax-gpu") then
+        -- Directly add CUDA object files instead of static libraries to avoid RDC issues
+        add_files("src/device/metax/*.cu")
+        add_files("src/ops/*/metax/*.cu")
+        add_linkdirs("/opt/maca/lib", "/opt/maca/tools/cu-bridge/lib")
+        add_syslinks("mcblas", "mcruntime", "cuda")
+        add_shflags("-Wl,--no-as-needed", "-lmcblas", "-lmcruntime", "-lcuda", {force = true})
+        set_toolchains("cuda")
+        add_cugencodes("native")
+        -- Disable device link for MetaX
+        set_policy("cuda.devlink", false)
     end
 
     

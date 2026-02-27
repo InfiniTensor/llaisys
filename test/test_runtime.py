@@ -55,7 +55,7 @@ def test_memcpy(api, size_bytes: int):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia"], type=str)
+    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia", "metax"], type=str)
     args = parser.parse_args()
     test_basic_runtime_api(args.device)
     

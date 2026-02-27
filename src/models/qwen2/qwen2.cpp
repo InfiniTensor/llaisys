@@ -104,7 +104,19 @@ void Qwen2Model::allocateBuffers(size_t max_seqlen) {
 int64_t Qwen2Model::infer(int64_t* token_ids, size_t ntoken) {
     // Create input tensor for embedding lookup
     tensor_t input_ids = Tensor::create({ntoken}, LLAISYS_DTYPE_I64, device_type, device_id);
-    input_ids->load(token_ids);
+    // For MetaX, ensure alignment by using an aligned buffer if needed
+    if (device_type != LLAISYS_DEVICE_CPU && (reinterpret_cast<uintptr_t>(token_ids) % 64) != 0) {
+        // Copy to aligned buffer
+        alignas(64) int64_t aligned_tokens[4096];  // Max sequence length
+        if (ntoken <= 4096) {
+            std::memcpy(aligned_tokens, token_ids, ntoken * sizeof(int64_t));
+            input_ids->load(aligned_tokens);
+        } else {
+            input_ids->load(token_ids);
+        }
+    } else {
+        input_ids->load(token_ids);
+    }
 
     // Get hidden states view for current sequence
     tensor_t hidden_view = hidden->slice(0, 0, ntoken);
@@ -134,14 +146,17 @@ int64_t Qwen2Model::infer(int64_t* token_ids, size_t ntoken) {
     ops::argmax(max_idx, max_val, last_logits);
 
     // Read result
-    int64_t result;
+    int64_t result = 0;
     if (device_type == LLAISYS_DEVICE_CPU) {
         result = *reinterpret_cast<int64_t*>(max_idx->data());
     } else {
         // Copy from device to host
+        // Use a properly aligned buffer for MetaX
+        alignas(64) int64_t aligned_result;
         core::context().setDevice(device_type, device_id);
         core::context().runtime().api()->memcpy_sync(
-            &result, max_idx->data(), sizeof(int64_t), LLAISYS_MEMCPY_D2H);
+            &aligned_result, max_idx->data(), sizeof(int64_t), LLAISYS_MEMCPY_D2H);
+        result = aligned_result;
     }
 
     return result;
@@ -188,11 +203,12 @@ void Qwen2Model::forwardLayer(size_t layer, size_t seqlen, size_t start_pos) {
 
     // 4. Set up position ids
     tensor_t pos_view = pos_ids->slice(0, 0, seqlen);
-    std::vector<int64_t> pos_data(seqlen);
+    // Use aligned buffer for MetaX
+    alignas(64) int64_t pos_data[4096];
     for (size_t i = 0; i < seqlen; ++i) {
         pos_data[i] = static_cast<int64_t>(start_pos + i);
     }
-    pos_view->load(pos_data.data());
+    pos_view->load(pos_data);
 
     // 5. Apply RoPE
     ops::rope(q_rope_view, q_reshaped, pos_view, meta.theta);
