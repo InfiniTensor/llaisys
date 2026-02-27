@@ -302,8 +302,13 @@ void Tensor::load(const void *src_) {
         
         if (!src_aligned_ok || !dst_aligned_ok || !size_aligned_ok) {
             size_t aligned_size = ((size + ALIGNMENT - 1) / ALIGNMENT) * ALIGNMENT;
+#ifdef _WIN32
+            temp_buf = _aligned_malloc(aligned_size > 0 ? aligned_size : ALIGNMENT, ALIGNMENT);
+            if (temp_buf) {
+#else
             int ret = posix_memalign(&temp_buf, ALIGNMENT, aligned_size > 0 ? aligned_size : ALIGNMENT);
             if (ret == 0 && temp_buf) {
+#endif
                 std::memcpy(temp_buf, src_, size);
                 src_aligned = temp_buf;
             }
@@ -316,7 +321,11 @@ void Tensor::load(const void *src_) {
             LLAISYS_MEMCPY_H2D);
         
         if (temp_buf) {
+#ifdef _WIN32
+            _aligned_free(temp_buf);
+#else
             free(temp_buf);
+#endif
         }
     }
 }
