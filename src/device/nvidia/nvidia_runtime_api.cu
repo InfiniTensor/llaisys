@@ -124,7 +124,7 @@ void memcpySync(void *dst, const void *src, size_t size, llaisysMemcpyKind_t kin
 void memcpyAsync(void *dst, const void *src, size_t size, llaisysMemcpyKind_t kind,llaisysStream_t stream) {
     //将LLAISYS的枚举转换为 CUDA 的枚举
     cudaMemcpyKind cuda_kind=(cudaMemcpyKind)kind;
-    cudaStream_t cuda_stream=stream;
+    cudaStream_t cuda_stream=(cudaStream_t)stream;
     //调用 CUDA API 进行异步拷贝
     cudaError_t err=cudaMemcpyAsync(dst,src,size,cuda_kind,cuda_stream);
     //失败则报错
