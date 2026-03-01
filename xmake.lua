@@ -149,14 +149,18 @@ target("llaisys")
         add_files("src/device/nvidia/*.cu")
         add_files("src/ops/*/nvidia/*.cu")
         add_linkdirs("/usr/local/cuda/lib64")
-        add_linkdirs("/home/hanson/miniconda3/envs/llaisys/lib/python3.10/site-packages/nvidia/nccl/lib")
-        add_syslinks("cudart", "cublas", "nccl")
-        add_shflags("-Wl,--no-as-needed", "-lcudart", "-lcublas", "-lnccl", {force = true})
-        add_shflags("-Wl,-rpath,/home/hanson/miniconda3/envs/llaisys/lib/python3.10/site-packages/nvidia/nccl/lib", {force = true})
+        add_syslinks("cudart", "cublas")
+        add_shflags("-Wl,--no-as-needed", "-lcudart", "-lcublas", {force = true})
         set_toolchains("cuda")
         add_cugencodes("native")
         add_cuflags("-rdc=true", {force = true})
         add_includedirs("/usr/include")  -- For NCCL headers
+        
+        -- Try to find NCCL in common locations
+        if os.isdir("/usr/lib/x86_64-linux-gnu") then
+            add_linkdirs("/usr/lib/x86_64-linux-gnu")
+            add_shflags("-Wl,--no-as-needed", "-lnccl", {force = true})
+        end
     end
 
     if has_config("metax-gpu") then

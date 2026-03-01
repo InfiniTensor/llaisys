@@ -1,47 +1,115 @@
 -- NVIDIA GPU support configuration
--- CUDA files are compiled directly in the main llaisys target to avoid
--- duplicate symbol issues with device linking
 
+-- Check if NCCL is available (Linux only)
+local nccl_available = false
+local nccl_lib = nil
+
+if is_plat("linux") then
+    -- Try to find NCCL in common locations
+    local nccl_paths = {
+        "/usr/lib/x86_64-linux-gnu",
+        "/usr/local/cuda/lib64",
+        os.getenv("NCCL_ROOT") and (os.getenv("NCCL_ROOT") .. "/lib") or nil,
+        os.getenv("NCCL_HOME") and (os.getenv("NCCL_HOME") .. "/lib") or nil,
+    }
+    
+    for _, path in ipairs(nccl_paths) do
+        if path and os.isfile(path .. "/libnccl.so") then
+            nccl_available = true
+            nccl_lib = path
+            break
+        end
+    end
+end
+
+-- NVIDIA GPU implementation
 target("llaisys-device-nvidia")
     set_kind("static")
-    add_deps("llaisys-utils")
-
-    set_toolchains("cuda")
-    set_languages("cxx17")
-    add_cugencodes("native")
+    add_files("src/device/nvidia/*.cu")
+    add_includedirs("src")
+    
+    -- CUDA settings
+    add_cugencodes("sm_80")
     add_cuflags("-rdc=true", {force = true})
-
-    if not is_plat("windows") then
-        add_cxflags("-fPIC", "-Wno-unknown-pragmas")
-        add_cuflags("-Xcompiler=-fPIC", "-Wno-unknown-pragmas")
+    
+    -- Platform specific
+    if is_plat("linux") then
+        add_links("cudart", "cublas")
+        if nccl_available then
+            add_links("nccl")
+            add_defines("ENABLE_NCCL")
+            if nccl_lib then
+                add_linkdirs(nccl_lib)
+            end
+        end
+    else
+        add_links("cudart", "cublas")
     end
-
-    add_includedirs("../include")
-    add_includedirs("/usr/include")
-    -- CUDA files are compiled in main target, not here
-    add_linkdirs("/home/hanson/miniconda3/envs/llaisys/lib/python3.10/site-packages/nvidia/nccl/lib")
-    add_syslinks("nccl")
-
-    on_install(function (target) end)
+    
+    add_cxflags("-fPIC", "-Wno-unknown-pragmas")
+    add_cuflags("-Xcompiler=-fPIC", "-Wno-unknown-pragmas")
 target_end()
 
+-- NVIDIA operator implementations
 target("llaisys-ops-nvidia")
     set_kind("static")
-    add_deps("llaisys-tensor")
-    add_deps("llaisys-device-nvidia")
-
-    set_toolchains("cuda")
-    set_languages("cxx17")
-    add_cugencodes("native")
+    add_files("src/ops/**/nvidia/*.cu")
+    add_includedirs("src")
+    
+    add_cugencodes("sm_80")
     add_cuflags("-rdc=true", {force = true})
+    
+    if is_plat("linux") then
+        add_links("cudart", "cublas")
+    else
+        add_links("cudart", "cublas")
+    end
+    
+    add_cxflags("-fPIC", "-Wno-unknown-pragmas")
+    add_cuflags("-Xcompiler=-fPIC", "-Wno-unknown-pragmas")
+target_end()
 
-    if not is_plat("windows") then
+-- Main library with NVIDIA support
+target("llaisys-nvidia")
+    set_kind("shared")
+    add_deps("llaisys-models", "llaisys-ops", "llaisys-ops-cpu", 
+             "llaisys-tensor", "llaisys-core", "llaisys-device", 
+             "llaisys-device-cpu", "llaisys-utils")
+    
+    if is_plat("linux") then
+        add_deps("llaisys-device-nvidia")
+    end
+    
+    add_links("cudadevrt", "rt", "pthread", "dl")
+    
+    if is_plat("linux") and nccl_available then
+        add_links("nccl")
+    end
+    
+    add_cuflags("-rdc=true", {force = true})
+    
+    if is_plat("linux") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
         add_cuflags("-Xcompiler=-fPIC", "-Wno-unknown-pragmas")
     end
-
-    add_includedirs("../include")
-    -- CUDA ops files are compiled in main target
-
-    on_install(function (target) end)
 target_end()
+
+-- NCCL availability message
+if is_plat("linux") and nccl_available then
+    print("NCCL found: " .. (nccl_lib or "system"))
+elseif is_plat("linux") then
+    print("Warning: NCCL not found. TP will be disabled.")
+else
+    print("NCCL not available on Windows. TP is disabled.")
+end
+
+-- Export NCCL availability for other scripts
+if nccl_available then
+    set_configvar("NCCL_AVAILABLE", 1)
+end
+
+-- Return NCCL status for use in other xmake files
+return {
+    nccl_available = nccl_available,
+    nccl_lib = nccl_lib
+}
