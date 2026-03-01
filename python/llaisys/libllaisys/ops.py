@@ -1,5 +1,5 @@
 from .tensor import llaisysTensor_t
-from ctypes import c_float
+from ctypes import c_float, c_int, c_longlong
 
 def load_ops(lib):
     lib.llaisysAdd.argtypes = [llaisysTensor_t, llaisysTensor_t, llaisysTensor_t]
@@ -22,6 +22,16 @@ def load_ops(lib):
 
     lib.llaisysROPE.argtypes = [llaisysTensor_t, llaisysTensor_t, llaisysTensor_t, c_float]
     lib.llaisysROPE.restype = None
+
+    lib.llaisysSample.argtypes = [
+        llaisysTensor_t,  # out_idx
+        llaisysTensor_t,  # logits
+        c_int,            # top_k
+        c_float,          # top_p
+        c_float,          # temperature
+        c_longlong        # seed
+    ]
+    lib.llaisysSample.restype = None
 
     lib.llaisysSelfAttention.argtypes = [
         llaisysTensor_t,  # attn_val
