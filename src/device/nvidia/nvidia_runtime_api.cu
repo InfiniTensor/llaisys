@@ -121,14 +121,12 @@ void memcpySync(void *dst, const void *src, size_t size, llaisysMemcpyKind_t kin
         fprintf(stderr, "CUDA Memcpy Sync failed: %s\n", cudaGetErrorString(err));
 }
 
-void memcpyAsync(void *dst, const void *src, size_t size, llaisysMemcpyKind_t kind) {
+void memcpyAsync(void *dst, const void *src, size_t size, llaisysMemcpyKind_t kind,llaisysStream_t stream) {
     //将LLAISYS的枚举转换为 CUDA 的枚举
     cudaMemcpyKind cuda_kind=(cudaMemcpyKind)kind;
-    //使用默认流 (0) 进行异步拷贝
-    //因为没有传入stream参数，我们假设使用当前设备的默认流
-    cudaStream_t default_stream=0;
+    cudaStream_t cuda_stream=stream;
     //调用 CUDA API 进行异步拷贝
-    cudaError_t err=cudaMemcpyAsync(dst,src,size,cuda_kind,default_stream);
+    cudaError_t err=cudaMemcpyAsync(dst,src,size,cuda_kind,cuda_stream);
     //失败则报错
     if (err!=cudaSuccess)
         fprintf(stderr, "CUDA Memcpy Async failed: %s\n", cudaGetErrorString(err));
