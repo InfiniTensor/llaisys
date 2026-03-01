@@ -6,8 +6,8 @@ target("llaisys-device-nvidia")
     -- 添加 CUDA 编译规则
     add_rules("cuda")
     
-    -- ✅ 新增：为 CUDA 代码添加 -fPIC 标志，以便能被链接到共享库中
-    add_cudaxflags("-fPIC")
+    -- ✅ 修改为 add_cuflags (这是 Xmake 中给 .cu 文件传参的标准方式)
+    add_cuflags("-fPIC")
     
     -- 添加源文件
     add_files("$(projectdir)/src/device/nvidia/nvidia_runtime_api.cu")
