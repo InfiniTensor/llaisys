@@ -25,8 +25,12 @@ end
 -- NVIDIA GPU implementation
 target("llaisys-device-nvidia")
     set_kind("static")
-    add_files("src/device/nvidia/*.cu")
-    add_includedirs("src")
+    -- Device files are added in xmake.lua to avoid duplication
+    -- Only add NCCL files if NCCL is available
+    if nccl_available then
+        add_files("src/device/nvidia/nccl_communicator_impl.cu")
+    end
+    add_includedirs("$(projectdir)/src")
     
     -- CUDA settings
     add_cugencodes("sm_80")
@@ -48,13 +52,16 @@ target("llaisys-device-nvidia")
     
     add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     add_cuflags("-Xcompiler=-fPIC", "-Wno-unknown-pragmas")
+    
+    on_install(function (target) end)
 target_end()
 
 -- NVIDIA operator implementations
+-- Note: Operator CUDA files are added in xmake.lua to avoid duplication with llaisys target
 target("llaisys-ops-nvidia")
     set_kind("static")
-    add_files("src/ops/**/nvidia/*.cu")
-    add_includedirs("src")
+    -- Files are compiled in xmake.lua's llaisys target for proper device linking
+    add_includedirs("$(projectdir)/src")
     
     add_cugencodes("sm_80")
     add_cuflags("-rdc=true", {force = true})
@@ -67,6 +74,8 @@ target("llaisys-ops-nvidia")
     
     add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     add_cuflags("-Xcompiler=-fPIC", "-Wno-unknown-pragmas")
+    
+    on_install(function (target) end)
 target_end()
 
 -- Main library with NVIDIA support
@@ -80,6 +89,7 @@ target("llaisys-nvidia")
         add_deps("llaisys-device-nvidia")
     end
     
+    add_linkdirs("/usr/local/cuda/lib64")
     add_links("cudadevrt", "rt", "pthread", "dl")
     
     if is_plat("linux") and nccl_available then
@@ -92,6 +102,8 @@ target("llaisys-nvidia")
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
         add_cuflags("-Xcompiler=-fPIC", "-Wno-unknown-pragmas")
     end
+    
+    on_install(function (target) end)
 target_end()
 
 -- NCCL availability message

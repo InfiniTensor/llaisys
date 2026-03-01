@@ -5,7 +5,8 @@
 
 // Windows does not support NCCL, provide stub implementation
 // Also use stub when NVIDIA API is not enabled (CPU-only builds)
-#if defined(_WIN32) || !defined(ENABLE_NVIDIA_API)
+// Or when NCCL is not available
+#if defined(_WIN32) || !defined(ENABLE_NVIDIA_API) || !defined(ENABLE_NCCL)
 
 namespace llaisys {
 namespace models {

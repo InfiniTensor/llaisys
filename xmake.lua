@@ -15,6 +15,25 @@ option_end()
 
 if has_config("nv-gpu") then
     add_defines("ENABLE_NVIDIA_API")
+    
+    -- Check NCCL availability (also needed in this file)
+    nccl_available = false
+    if is_plat("linux") then
+        local nccl_paths = {
+            "/usr/lib/x86_64-linux-gnu",
+            "/usr/local/cuda/lib64",
+            os.getenv("NCCL_ROOT") and (os.getenv("NCCL_ROOT") .. "/lib") or nil,
+            os.getenv("NCCL_HOME") and (os.getenv("NCCL_HOME") .. "/lib") or nil,
+        }
+        for _, path in ipairs(nccl_paths) do
+            if path and os.isfile(path .. "/libnccl.so") then
+                nccl_available = true
+                add_defines("ENABLE_NCCL")
+                break
+            end
+        end
+    end
+    
     includes("xmake/nvidia.lua")
 end
 
@@ -125,7 +144,11 @@ target("llaisys-models")
     end
 
     add_files("src/models/*/*.cpp")
-    add_includedirs("/usr/include")  -- For NCCL headers
+    
+    -- Add NCCL define if available
+    if has_config("nv-gpu") and nccl_available then
+        add_defines("ENABLE_NCCL")
+    end
 
     on_install(function (target) end)
 target_end()
@@ -146,7 +169,13 @@ target("llaisys")
 
     if has_config("nv-gpu") then
         -- Add CUDA files directly to main target for proper device linking
-        add_files("src/device/nvidia/*.cu")
+        -- Conditionally exclude NCCL files if NCCL is not available
+        if nccl_available then
+            add_files("src/device/nvidia/*.cu")
+        else
+            add_files("src/device/nvidia/nvidia_resource.cu")
+            add_files("src/device/nvidia/nvidia_runtime_api.cu")
+        end
         add_files("src/ops/*/nvidia/*.cu")
         add_linkdirs("/usr/local/cuda/lib64")
         add_syslinks("cudart", "cublas")
@@ -157,7 +186,7 @@ target("llaisys")
         add_includedirs("/usr/include")  -- For NCCL headers
         
         -- Try to find NCCL in common locations
-        if os.isdir("/usr/lib/x86_64-linux-gnu") then
+        if nccl_available and os.isdir("/usr/lib/x86_64-linux-gnu") then
             add_linkdirs("/usr/lib/x86_64-linux-gnu")
             add_shflags("-Wl,--no-as-needed", "-lnccl", {force = true})
         end
