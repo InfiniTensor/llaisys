@@ -44,6 +44,11 @@ target("llaisys-device")
     add_deps("llaisys-utils")
     add_deps("llaisys-device-cpu")
 
+    -- ✅ 新增：如果开启了 nv-gpu，则依赖 nvidia 的 device 实现
+    if has_config("nv-gpu") then
+        add_deps("llaisys-device-nvidia")
+    end
+
     set_languages("cxx17")
     set_warnings("all", "error")
     if not is_plat("windows") then
