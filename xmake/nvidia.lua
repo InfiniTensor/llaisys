@@ -1,6 +1,6 @@
 -- NVIDIA GPU support configuration
--- This file defines separate static libraries for NVIDIA device and ops
--- which are then linked into the main llaisys shared library
+-- CUDA files are compiled directly in the main llaisys target to avoid
+-- duplicate symbol issues with device linking
 
 target("llaisys-device-nvidia")
     set_kind("static")
@@ -17,7 +17,10 @@ target("llaisys-device-nvidia")
     end
 
     add_includedirs("../include")
-    add_files("../src/device/nvidia/*.cu")
+    add_includedirs("/usr/include")
+    -- CUDA files are compiled in main target, not here
+    add_linkdirs("/home/hanson/miniconda3/envs/llaisys/lib/python3.10/site-packages/nvidia/nccl/lib")
+    add_syslinks("nccl")
 
     on_install(function (target) end)
 target_end()
@@ -38,7 +41,7 @@ target("llaisys-ops-nvidia")
     end
 
     add_includedirs("../include")
-    add_files("../src/ops/*/nvidia/*.cu")
+    -- CUDA ops files are compiled in main target
 
     on_install(function (target) end)
 target_end()

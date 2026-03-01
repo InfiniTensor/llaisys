@@ -13,6 +13,7 @@ from .tensor import llaisysTensor_t
 from .tensor import load_tensor
 from .ops import load_ops
 from .models.qwen2 import load_qwen2, LlaisysQwen2Meta, LlaisysQwen2Weights
+from .models.qwen2_tp import load_qwen2_tp
 
 
 def load_shared_library():
@@ -40,6 +41,7 @@ load_runtime(LIB_LLAISYS)
 load_tensor(LIB_LLAISYS)
 load_ops(LIB_LLAISYS)
 load_qwen2(LIB_LLAISYS)
+load_qwen2_tp(LIB_LLAISYS)
 
 
 __all__ = [

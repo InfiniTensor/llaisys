@@ -49,6 +49,9 @@ target("llaisys-device")
     set_kind("static")
     add_deps("llaisys-utils")
     add_deps("llaisys-device-cpu")
+    if has_config("nv-gpu") then
+        add_deps("llaisys-device-nvidia")
+    end
 
     set_languages("cxx17")
     set_warnings("all", "error")
@@ -95,6 +98,9 @@ target_end()
 target("llaisys-ops")
     set_kind("static")
     add_deps("llaisys-ops-cpu")
+    if has_config("nv-gpu") then
+        add_deps("llaisys-ops-nvidia")
+    end
 
     set_languages("cxx17")
     set_warnings("all", "error")
@@ -119,6 +125,7 @@ target("llaisys-models")
     end
 
     add_files("src/models/*/*.cpp")
+    add_includedirs("/usr/include")  -- For NCCL headers
 
     on_install(function (target) end)
 target_end()
@@ -138,15 +145,18 @@ target("llaisys")
     set_installdir(".")
 
     if has_config("nv-gpu") then
-        -- Directly add CUDA object files instead of static libraries to avoid RDC issues
+        -- Add CUDA files directly to main target for proper device linking
         add_files("src/device/nvidia/*.cu")
         add_files("src/ops/*/nvidia/*.cu")
         add_linkdirs("/usr/local/cuda/lib64")
-        add_syslinks("cudart", "cublas")
-        add_shflags("-Wl,--no-as-needed", "-lcudart", "-lcublas", {force = true})
+        add_linkdirs("/home/hanson/miniconda3/envs/llaisys/lib/python3.10/site-packages/nvidia/nccl/lib")
+        add_syslinks("cudart", "cublas", "nccl")
+        add_shflags("-Wl,--no-as-needed", "-lcudart", "-lcublas", "-lnccl", {force = true})
+        add_shflags("-Wl,-rpath,/home/hanson/miniconda3/envs/llaisys/lib/python3.10/site-packages/nvidia/nccl/lib", {force = true})
         set_toolchains("cuda")
         add_cugencodes("native")
         add_cuflags("-rdc=true", {force = true})
+        add_includedirs("/usr/include")  -- For NCCL headers
     end
 
     if has_config("metax-gpu") then
