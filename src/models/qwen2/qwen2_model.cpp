@@ -8,6 +8,7 @@
 #include "../../ops/rearrange/op.hpp"
 #include "../../ops/rms_norm/op.hpp"
 #include "../../ops/rope/op.hpp"
+#include "../../ops/sample/op.hpp"
 #include "../../ops/self_attention/op.hpp"
 #include "../../ops/swiglu/op.hpp"
 
@@ -123,7 +124,7 @@ void Qwen2Model::bind_weights(const LlaisysQwen2Weights &weights) {
     _weights_bound = true;
 }
 
-int64_t Qwen2Model::infer(const int64_t *token_ids, size_t ntoken) {
+int64_t Qwen2Model::infer(const int64_t *token_ids, size_t ntoken, int top_k, float top_p, float temperature, int64_t seed) {
     CHECK_ARGUMENT(token_ids || ntoken == 0, "token_ids is null");
     CHECK_ARGUMENT(_weights_bound, "Model weights are not bound");
     if (ntoken == 0) {
@@ -145,7 +146,12 @@ int64_t Qwen2Model::infer(const int64_t *token_ids, size_t ntoken) {
 
     llaisys::ops::rms_norm(_final_norm, _hidden, _weights.out_norm_w, _meta.epsilon);
     llaisys::ops::linear(_logits, _final_norm, _weights.out_embed, nullptr);
-    llaisys::ops::argmax(_max_idx, _max_val, _logits_flat);
+
+    if (top_k > 1 || top_p > 0.0f) {
+        llaisys::ops::sample(_max_idx, _logits_flat, top_k, top_p, temperature, seed);
+    } else {
+        llaisys::ops::argmax(_max_idx, _max_val, _logits_flat);
+    }
 
     auto *idx_ptr = reinterpret_cast<const int64_t *>(_max_idx->data());
     return idx_ptr[0];

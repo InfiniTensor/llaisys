@@ -37,7 +37,7 @@ public:
     int device_id() const { return _device_id; }
 
     void bind_weights(const LlaisysQwen2Weights &weights);
-    int64_t infer(const int64_t *token_ids, size_t ntoken);
+    int64_t infer(const int64_t *token_ids, size_t ntoken, int top_k, float top_p, float temperature, int64_t seed = -1);
 
 private:
     void process_token(int64_t token_id);

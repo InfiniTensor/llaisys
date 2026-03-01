@@ -225,8 +225,9 @@ class Qwen2:
         inputs: Sequence[int],
         max_new_tokens: int = None,
         top_k: int = 1,
-        top_p: float = 0.8,
-        temperature: float = 0.8,
+        top_p: float = 0.0,
+        temperature: float = 1.0,
+        seed: int = -1,
     ):
         if max_new_tokens is None:
             max_new_tokens = 128
@@ -235,7 +236,15 @@ class Qwen2:
         for _ in range(max_new_tokens):
             arr = (ctypes.c_int64 * len(tokens))(*tokens)
             next_token = int(
-                LIB_LLAISYS.llaisysQwen2ModelInfer(self._model, arr, ctypes.c_size_t(len(tokens)))
+                LIB_LLAISYS.llaisysQwen2ModelInferEx(
+                    self._model,
+                    arr,
+                    ctypes.c_size_t(len(tokens)),
+                    ctypes.c_int(top_k),
+                    ctypes.c_float(top_p),
+                    ctypes.c_float(temperature),
+                    ctypes.c_int64(seed),
+                )
             )
             tokens.append(next_token)
             if next_token == int(self._meta.end_token):

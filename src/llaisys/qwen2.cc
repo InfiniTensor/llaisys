@@ -144,7 +144,24 @@ __C {
         }
         try {
             model->impl->bind_weights(model->weights);
-            return model->impl->infer(token_ids, ntoken);
+            // Default to argmax for backward compatibility
+            return model->impl->infer(token_ids, ntoken, 1, 0.0f, 1.0f);
+        } catch (const std::exception &e) {
+            log_c_api_error(__func__, __FILE__, __LINE__, e.what());
+        } catch (...) {
+            log_c_api_error(__func__, __FILE__, __LINE__, "Unknown exception");
+        }
+        return model->meta.end_token;
+    }
+
+    int64_t llaisysQwen2ModelInferEx(struct LlaisysQwen2Model *model, int64_t *token_ids, size_t ntoken, int top_k, float top_p, float temperature, int64_t seed) {
+        if (!model) {
+            log_c_api_error(__func__, __FILE__, __LINE__, "Invalid argument: model is null");
+            return -1;
+        }
+        try {
+            model->impl->bind_weights(model->weights);
+            return model->impl->infer(token_ids, ntoken, top_k, top_p, temperature, seed);
         } catch (const std::exception &e) {
             log_c_api_error(__func__, __FILE__, __LINE__, e.what());
         } catch (...) {
