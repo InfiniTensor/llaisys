@@ -1,4 +1,5 @@
 #include "llaisys/models/qwen2_tp.h"
+#include "llaisys/models/qwen2.h"
 #include "../models/qwen2/qwen2_tp.hpp"
 #include "llaisys_tensor.hpp"
 

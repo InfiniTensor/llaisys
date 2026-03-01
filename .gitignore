@@ -90,4 +90,5 @@ ehthumbs.db
 desktop.ini
 
 # Models
-models/
+/models/
+/checkpoints/

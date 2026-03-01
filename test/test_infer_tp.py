@@ -24,9 +24,9 @@ def load_hf_model(model_path=None, device_name="cuda"):
     else:
         # Try alternative local paths
         alt_paths = [
-            "./models/deepseek-1.5b/",
-            "../models/deepseek-1.5b/",
-            "/home/hanson/llaisys/models/deepseek-1.5b/",
+            "./models/deepseek-r1-distill-qwen-1.5b/",
+            "../models/deepseek-r1-distill-qwen-1.5b/",
+            "/home/hanson/llaisys/models/deepseek-r1-distill-qwen-1.5b/",
         ]
         use_path = None
         for p in alt_paths:
@@ -106,7 +106,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--device-ids", default="0,1", type=str,
                         help="Comma-separated GPU IDs for tensor parallelism")
-    parser.add_argument("--model", default="./models/deepseek-1.5b/", type=str)
+    parser.add_argument("--model", default="./models/deepseek-r1-distill-qwen-1.5b/", type=str)
     parser.add_argument("--prompt", default="Who are you?", type=str)
     parser.add_argument("--max_steps", default=128, type=int)
     parser.add_argument("--top_p", default=0.8, type=float)
