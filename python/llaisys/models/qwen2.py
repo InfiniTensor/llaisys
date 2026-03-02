@@ -77,11 +77,27 @@ class Qwen2:
         self._weights_ptr = LIB_LLAISYS.llaisysQwen2ModelWeights(self._model)
         self._tensor_store: Dict[str, Tensor] = {}
         self._load_weights(model_path)
+        
+        # Default session for backward compatibility
+        self._default_session = LIB_LLAISYS.llaisysQwen2CreateSession(self._model)
 
     def __del__(self):
+        if hasattr(self, "_default_session") and self._default_session is not None:
+            LIB_LLAISYS.llaisysQwen2DestroySession(self._default_session)
+            self._default_session = None
+            
         if hasattr(self, "_model") and self._model is not None:
             LIB_LLAISYS.llaisysQwen2ModelDestroy(self._model)
             self._model = None
+
+    def create_session(self):
+        """Create a new independent session for multi-turn conversation"""
+        return LIB_LLAISYS.llaisysQwen2CreateSession(self._model)
+        
+    def destroy_session(self, session):
+        """Destroy a session"""
+        if session:
+            LIB_LLAISYS.llaisysQwen2DestroySession(session)
 
     def _build_meta(self, cfg: dict) -> LlaisysQwen2Meta:
         meta = LlaisysQwen2Meta()
@@ -229,10 +245,14 @@ class Qwen2:
         temperature: float = 1.0,
         seed: int = -1,
         stream: bool = False,
+        session = None,
     ):
+        if session is None:
+            session = self._default_session
+
         if stream:
             return self._generate_stream(
-                inputs, max_new_tokens, top_k, top_p, temperature, seed
+                inputs, max_new_tokens, top_k, top_p, temperature, seed, session
             )
 
         if max_new_tokens is None:
@@ -244,6 +264,7 @@ class Qwen2:
             next_token = int(
                 LIB_LLAISYS.llaisysQwen2ModelInferEx(
                     self._model,
+                    session,
                     arr,
                     ctypes.c_size_t(len(tokens)),
                     ctypes.c_int(top_k),
@@ -266,6 +287,7 @@ class Qwen2:
         top_p: float = 0.0,
         temperature: float = 1.0,
         seed: int = -1,
+        session = None,
     ):
         if max_new_tokens is None:
             max_new_tokens = 128
@@ -276,6 +298,7 @@ class Qwen2:
             next_token = int(
                 LIB_LLAISYS.llaisysQwen2ModelInferEx(
                     self._model,
+                    session,
                     arr,
                     ctypes.c_size_t(len(tokens)),
                     ctypes.c_int(top_k),

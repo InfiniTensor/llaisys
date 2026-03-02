@@ -2,6 +2,7 @@
 
 #include "llaisys_tensor.hpp"
 #include "../models/qwen2/qwen2_model.hpp"
+#include "../models/qwen2/qwen2_session.hpp"
 #include "../utils.hpp"
 
 struct LlaisysQwen2Model {
@@ -10,6 +11,10 @@ struct LlaisysQwen2Model {
     LlaisysQwen2Weights weights{};
     llaisysDeviceType_t device = LLAISYS_DEVICE_CPU;
     int device_id = 0;
+};
+
+struct LlaisysQwen2Session {
+    llaisys::models::qwen2::Qwen2Session *impl = nullptr;
 };
 
 namespace {
@@ -137,15 +142,54 @@ __C {
         return nullptr;
     }
 
-    int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model *model, int64_t *token_ids, size_t ntoken) {
+    struct LlaisysQwen2Session *llaisysQwen2CreateSession(struct LlaisysQwen2Model *model) {
         if (!model) {
             log_c_api_error(__func__, __FILE__, __LINE__, "Invalid argument: model is null");
+            return nullptr;
+        }
+        LlaisysQwen2Session *session = nullptr;
+        try {
+            session = new LlaisysQwen2Session();
+            session->impl = model->impl->create_session();
+            return session;
+        } catch (const std::exception &e) {
+            log_c_api_error(__func__, __FILE__, __LINE__, e.what());
+        } catch (...) {
+            log_c_api_error(__func__, __FILE__, __LINE__, "Unknown exception");
+        }
+        if (session) {
+            delete session;
+        }
+        return nullptr;
+    }
+
+    void llaisysQwen2DestroySession(struct LlaisysQwen2Session *session) {
+        if (!session) {
+            return;
+        }
+        try {
+            delete session->impl;
+            delete session;
+        } catch (const std::exception &e) {
+            log_c_api_error(__func__, __FILE__, __LINE__, e.what());
+        } catch (...) {
+            log_c_api_error(__func__, __FILE__, __LINE__, "Unknown exception");
+        }
+    }
+
+    int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model *model, struct LlaisysQwen2Session *session, int64_t *token_ids, size_t ntoken) {
+        if (!model) {
+            log_c_api_error(__func__, __FILE__, __LINE__, "Invalid argument: model is null");
+            return -1;
+        }
+        if (!session) {
+            log_c_api_error(__func__, __FILE__, __LINE__, "Invalid argument: session is null");
             return -1;
         }
         try {
             model->impl->bind_weights(model->weights);
             // Default to argmax for backward compatibility
-            return model->impl->infer(token_ids, ntoken, 1, 0.0f, 1.0f);
+            return model->impl->infer(session->impl, token_ids, ntoken, 1, 0.0f, 1.0f);
         } catch (const std::exception &e) {
             log_c_api_error(__func__, __FILE__, __LINE__, e.what());
         } catch (...) {
@@ -154,14 +198,18 @@ __C {
         return model->meta.end_token;
     }
 
-    int64_t llaisysQwen2ModelInferEx(struct LlaisysQwen2Model *model, int64_t *token_ids, size_t ntoken, int top_k, float top_p, float temperature, int64_t seed) {
+    int64_t llaisysQwen2ModelInferEx(struct LlaisysQwen2Model *model, struct LlaisysQwen2Session *session, int64_t *token_ids, size_t ntoken, int top_k, float top_p, float temperature, int64_t seed) {
         if (!model) {
             log_c_api_error(__func__, __FILE__, __LINE__, "Invalid argument: model is null");
             return -1;
         }
+        if (!session) {
+            log_c_api_error(__func__, __FILE__, __LINE__, "Invalid argument: session is null");
+            return -1;
+        }
         try {
             model->impl->bind_weights(model->weights);
-            return model->impl->infer(token_ids, ntoken, top_k, top_p, temperature, seed);
+            return model->impl->infer(session->impl, token_ids, ntoken, top_k, top_p, temperature, seed);
         } catch (const std::exception &e) {
             log_c_api_error(__func__, __FILE__, __LINE__, e.what());
         } catch (...) {

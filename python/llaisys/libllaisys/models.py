@@ -43,6 +43,7 @@ class LlaisysQwen2Weights(ctypes.Structure):
 
 
 llaisysQwen2Model_t = ctypes.c_void_p
+llaisysQwen2Session_t = ctypes.c_void_p
 
 
 def load_models(lib):
@@ -60,8 +61,15 @@ def load_models(lib):
     lib.llaisysQwen2ModelWeights.argtypes = [llaisysQwen2Model_t]
     lib.llaisysQwen2ModelWeights.restype = POINTER(LlaisysQwen2Weights)
 
+    lib.llaisysQwen2CreateSession.argtypes = [llaisysQwen2Model_t]
+    lib.llaisysQwen2CreateSession.restype = llaisysQwen2Session_t
+
+    lib.llaisysQwen2DestroySession.argtypes = [llaisysQwen2Session_t]
+    lib.llaisysQwen2DestroySession.restype = None
+
     lib.llaisysQwen2ModelInfer.argtypes = [
         llaisysQwen2Model_t,
+        llaisysQwen2Session_t,
         POINTER(c_int64),
         c_size_t,
     ]
@@ -69,6 +77,7 @@ def load_models(lib):
 
     lib.llaisysQwen2ModelInferEx.argtypes = [
         llaisysQwen2Model_t,
+        llaisysQwen2Session_t,
         POINTER(c_int64),
         c_size_t,
         c_int,
@@ -84,5 +93,6 @@ __all__ = [
     "LlaisysQwen2Meta",
     "LlaisysQwen2Weights",
     "llaisysQwen2Model_t",
+    "llaisysQwen2Session_t",
     "load_models",
 ]

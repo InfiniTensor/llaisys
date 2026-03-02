@@ -23,6 +23,7 @@ class GlobalState:
     model: Optional[llaisys.models.Qwen2] = None
     tokenizer: Optional[AutoTokenizer] = None
     model_path: str = "/home/wsl/model/DeepSeek-R1-Distill-Qwen-1.5B"  # Default path
+    session_store: Dict[str, Any] = {}
 
 state = GlobalState()
 
@@ -48,6 +49,7 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: Optional[int] = 512
     stream: Optional[bool] = False
     seed: Optional[int] = -1
+    session_id: Optional[str] = None
 
 class ChatCompletionResponseChoice(BaseModel):
     index: int
@@ -112,6 +114,16 @@ async def chat_completions(request: ChatCompletionRequest):
 
     # Acquire lock for single-user processing
     async with generation_lock:
+        # 0. Resolve Session
+        session = None
+        if request.session_id:
+            if request.session_id in state.session_store:
+                session = state.session_store[request.session_id]
+            else:
+                print(f"Creating new session for id: {request.session_id}")
+                session = state.model.create_session()
+                state.session_store[request.session_id] = session
+
         # 1. Prepare Prompt
         try:
             # Convert Pydantic models to dicts for apply_chat_template
@@ -136,7 +148,8 @@ async def chat_completions(request: ChatCompletionRequest):
                     top_p=request.top_p if request.top_p is not None else 0.0,
                     temperature=request.temperature,
                     seed=request.seed if request.seed is not None else -1,
-                    stream=True
+                    stream=True,
+                    session=session
                 )
                 
                 # Send initial role
@@ -201,7 +214,8 @@ async def chat_completions(request: ChatCompletionRequest):
                 top_p=request.top_p if request.top_p is not None else 0.0,
                 temperature=request.temperature,
                 seed=request.seed if request.seed is not None else -1,
-                stream=False
+                stream=False,
+                session=session
             )
             
             # The generate method returns the full sequence (input + output)

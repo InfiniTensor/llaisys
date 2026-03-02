@@ -29,7 +29,7 @@ __C {
         llaisysTensor_t *mlp_down_w;
     };
 
-    struct LlaisysQwen2Model;
+    struct LlaisysQwen2Session;
 
     __export struct LlaisysQwen2Model *llaisysQwen2ModelCreate(const LlaisysQwen2Meta *meta, llaisysDeviceType_t device, int *device_ids, int ndevice);
 
@@ -37,8 +37,12 @@ __C {
 
     __export struct LlaisysQwen2Weights *llaisysQwen2ModelWeights(struct LlaisysQwen2Model * model);
 
-    __export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model * model, int64_t * token_ids, size_t ntoken);
+    __export struct LlaisysQwen2Session *llaisysQwen2CreateSession(struct LlaisysQwen2Model * model);
 
-    __export int64_t llaisysQwen2ModelInferEx(struct LlaisysQwen2Model * model, int64_t * token_ids, size_t ntoken, int top_k, float top_p, float temperature, int64_t seed);
+    __export void llaisysQwen2DestroySession(struct LlaisysQwen2Session * session);
+
+    __export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model * model, struct LlaisysQwen2Session * session, int64_t * token_ids, size_t ntoken);
+
+    __export int64_t llaisysQwen2ModelInferEx(struct LlaisysQwen2Model * model, struct LlaisysQwen2Session * session, int64_t * token_ids, size_t ntoken, int top_k, float top_p, float temperature, int64_t seed);
 }
 #endif // LLAISYS_MODELS_QWEN2_H

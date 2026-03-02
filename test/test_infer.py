@@ -94,7 +94,7 @@ if __name__ == "__main__":
 
     top_p, top_k, temperature = args.top_p, args.top_k, args.temperature
     if args.test:
-        top_p, top_k, temperature = 1.0, 1, 1.0
+        top_p, top_k, temperature = 0.0, 1, 1.0
 
     tokenizer, model, model_path = load_hf_model(args.model, args.device)
 
