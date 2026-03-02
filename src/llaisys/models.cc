@@ -163,4 +163,16 @@ __C {
         sync_weights(model);
         return model->model->infer(token_ids, ntoken);
     }
+
+    int64_t llaisysQwen2ModelInferSample(
+        struct LlaisysQwen2Model *model,
+        int64_t *token_ids,
+        size_t ntoken,
+        int top_k,
+        float top_p,
+        float temperature) {
+
+        sync_weights(model);
+        return model->model->infer(token_ids, ntoken, top_k, top_p, temperature);
+    }
 }

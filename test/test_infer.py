@@ -113,6 +113,10 @@ if __name__ == "__main__":
 
     del model
     gc.collect()
+    if args.device == "nvidia":
+        # Release PyTorch caching allocator blocks before running LLAISYS in the same process.
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
 
     print("\n=== Answer ===\n")
     print("Tokens:")

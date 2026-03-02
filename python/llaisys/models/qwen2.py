@@ -8,7 +8,7 @@ from ..libllaisys.models import (
 )
 from ..tensor import Tensor
 
-from ctypes import c_int64, c_size_t, POINTER, byref, cast, c_int, c_void_p
+from ctypes import c_int64, c_size_t, POINTER, byref, cast, c_int, c_void_p, c_float
 import json
 from pathlib import Path
 from safetensors.torch import load_file as safetensors_load_file
@@ -229,41 +229,85 @@ class Qwen2:
         top_p: float = 0.8,
         temperature: float = 0.8,
     ):
-        # 实现 generate 函数
-        # 目前只支持 argmax 采样（top_k=1, top_p=1.0, temperature=1.0）
-        
         # 重置 KV Cache（开始新的生成序列）
         LIB_LLAISYS.llaisysQwen2ModelResetCache(self.model)
-        
+
         output_tokens = list(inputs)
-        
-        # Prefill 阶段
-        input_array = (c_int64 * len(inputs))(*inputs)
-        next_token = LIB_LLAISYS.llaisysQwen2ModelInfer(
-            self.model,
-            input_array,
-            len(inputs)
-        )
-        output_tokens.append(next_token)
-        
-        # Decode 阶段
+        if len(inputs) == 0:
+            return output_tokens
+
         if max_new_tokens is None:
             max_new_tokens = 128
-        
+        max_new_tokens = max(int(max_new_tokens), 1)
+
+        # Prefill 阶段
+        next_token = self._infer_next(inputs, top_k, top_p, temperature)
+        output_tokens.append(next_token)
+
+        # Decode 阶段
         for _ in range(max_new_tokens - 1):
             if next_token == self.meta.end_token:
                 break
-            
-            # 只传入最后一个 token
-            single_token = (c_int64 * 1)(next_token)
-            next_token = LIB_LLAISYS.llaisysQwen2ModelInfer(
-                self.model,
-                single_token,
-                1
-            )
+            next_token = self._infer_next([next_token], top_k, top_p, temperature)
             output_tokens.append(next_token)
-        
+
         return output_tokens
+
+    def generate_stream(
+        self,
+        inputs: Sequence[int],
+        max_new_tokens: int = None,
+        top_k: int = 1,
+        top_p: float = 1.0,
+        temperature: float = 1.0,
+    ):
+        LIB_LLAISYS.llaisysQwen2ModelResetCache(self.model)
+        if len(inputs) == 0:
+            return
+
+        if max_new_tokens is None:
+            max_new_tokens = 128
+        max_new_tokens = max(int(max_new_tokens), 1)
+
+        next_token = self._infer_next(inputs, top_k, top_p, temperature)
+        yield next_token
+        for _ in range(max_new_tokens - 1):
+            if next_token == self.meta.end_token:
+                break
+            next_token = self._infer_next([next_token], top_k, top_p, temperature)
+            yield next_token
+
+    def _infer_next(
+        self,
+        tokens: Sequence[int],
+        top_k: int,
+        top_p: float,
+        temperature: float,
+    ) -> int:
+        token_array = (c_int64 * len(tokens))(*tokens)
+        top_k_i = int(top_k)
+        top_p_f = float(top_p)
+        temp_f = float(temperature)
+
+        if top_k_i == 1 and top_p_f >= 1.0 and abs(temp_f - 1.0) < 1e-8:
+            return int(
+                LIB_LLAISYS.llaisysQwen2ModelInfer(
+                    self.model,
+                    token_array,
+                    len(tokens),
+                )
+            )
+
+        return int(
+            LIB_LLAISYS.llaisysQwen2ModelInferSample(
+                self.model,
+                token_array,
+                len(tokens),
+                c_int(top_k_i),
+                c_float(top_p_f),
+                c_float(temp_f),
+            )
+        )
     
     def __del__(self):
         if hasattr(self, 'model') and self.model:

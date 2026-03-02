@@ -90,3 +90,14 @@ def load_models(lib):
         c_size_t,  # size_t ntoken
     ]
     lib.llaisysQwen2ModelInfer.restype = c_int64
+
+    # llaisysQwen2ModelInferSample
+    lib.llaisysQwen2ModelInferSample.argtypes = [
+        llaisysQwen2Model_t,
+        POINTER(c_int64),  # int64_t *token_ids
+        c_size_t,  # size_t ntoken
+        c_int,  # int top_k
+        c_float,  # float top_p
+        c_float,  # float temperature
+    ]
+    lib.llaisysQwen2ModelInferSample.restype = c_int64

@@ -74,19 +74,32 @@ private:
     // 临时张量（避免重复分配）
     tensor_t x_;                     // 当前隐藏状态 [seqlen, hs]
     tensor_t x_norm_;                // 归一化后的隐藏状态
+    tensor_t q_flat_;                // [seqlen, nh * dh]
+    tensor_t k_flat_;                // [seqlen, nkvh * dh]
+    tensor_t v_flat_;                // [seqlen, nkvh * dh]
     tensor_t q_;                     // Query [seqlen, nh, dh]
     tensor_t k_;                     // Key [seqlen, nkvh, dh]
     tensor_t v_;                     // Value [seqlen, nkvh, dh]
+    tensor_t q_rope_;                // [seqlen, nh, dh]
+    tensor_t k_rope_new_;            // [seqlen, nkvh, dh]
     tensor_t k_full_;                // 完整的 K（包含 cache）[total_len, nkvh, dh]
     tensor_t v_full_;                // 完整的 V（包含 cache）[total_len, nkvh, dh]
     tensor_t attn_out_;              // Attention 输出 [seqlen, nh, dh]
     tensor_t attn_proj_out_;          // Attention 投影输出 [seqlen, hs]
+    tensor_t x_attn_;                // Attention 残差输出 [seqlen, hs]
     tensor_t gate_;                   // MLP gate [seqlen, di]
     tensor_t up_;                     // MLP up [seqlen, di]
+    tensor_t swiglu_out_;            // SwiGLU 输出 [seqlen, di]
     tensor_t mlp_out_;                // MLP 输出 [seqlen, hs]
+    tensor_t x_mlp_;                 // MLP 残差输出 [seqlen, hs]
     tensor_t logits_;                // 输出 logits [seqlen, voc]
+    tensor_t pos_ids_q_;             // 位置 id [seqlen]
+    tensor_t input_ids_buf_;         // infer 输入缓存 [ntoken]
+    tensor_t max_idx_;               // argmax 索引缓存 [1]
+    tensor_t max_val_;               // argmax 值缓存 [1]
     
     // 前向传播辅助函数
+    void ensure_tensor(tensor_t &tensor, const std::vector<size_t> &shape, llaisysDataType_t dtype);
     void forward_layer(size_t layer_idx, tensor_t& x, size_t seqlen, size_t total_len, tensor_t pos_ids_q);
     void update_kv_cache(size_t layer_idx, tensor_t k_new, tensor_t v_new, size_t seqlen, size_t old_len);
     
@@ -102,7 +115,12 @@ public:
     tensor_t forward(tensor_t input_ids, size_t seqlen, size_t total_len);
     
     // 推理：生成下一个 token
-    int64_t infer(int64_t* token_ids, size_t ntoken);
+    int64_t infer(
+        int64_t* token_ids,
+        size_t ntoken,
+        int top_k = 1,
+        float top_p = 1.0f,
+        float temperature = 1.0f);
     
     // 重置 KV Cache
     void reset_cache();
