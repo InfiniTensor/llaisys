@@ -50,15 +50,6 @@ Qwen2Model::Qwen2Model(const LlaisysQwen2Meta &meta, llaisysDeviceType_t device,
 
     _attn_scale = 1.0f / std::sqrt(static_cast<float>(_meta.dh));
 
-    _kv_cache.reserve(
-        _meta.nlayer,
-        _meta.maxseq,
-        _meta.nkvh,
-        _meta.dh,
-        _meta.dtype,
-        _device,
-        _device_id);
-
     _token_ids = Tensor::create({1}, LLAISYS_DTYPE_I64, _device, _device_id);
     _pos_ids = Tensor::create({1}, LLAISYS_DTYPE_I64, _device, _device_id);
     _hidden = Tensor::create({1, _meta.hs}, _meta.dtype, _device, _device_id);
@@ -124,7 +115,18 @@ void Qwen2Model::bind_weights(const LlaisysQwen2Weights &weights) {
     _weights_bound = true;
 }
 
-int64_t Qwen2Model::infer(const int64_t *token_ids, size_t ntoken, int top_k, float top_p, float temperature, int64_t seed) {
+Qwen2Session *Qwen2Model::create_session() {
+    Qwen2Config config{
+        .nlayers = _meta.nlayer,
+        .maxseq = _meta.maxseq,
+        .nkvhead = _meta.nkvh,
+        .head_size = _meta.dh,
+    };
+    return new Qwen2Session(config, _device);
+}
+
+int64_t Qwen2Model::infer(Qwen2Session *session, const int64_t *token_ids, size_t ntoken, int top_k, float top_p, float temperature, int64_t seed) {
+    CHECK_ARGUMENT(session, "session is null");
     CHECK_ARGUMENT(token_ids || ntoken == 0, "token_ids is null");
     CHECK_ARGUMENT(_weights_bound, "Model weights are not bound");
     if (ntoken == 0) {
@@ -132,16 +134,18 @@ int64_t Qwen2Model::infer(const int64_t *token_ids, size_t ntoken, int top_k, fl
     }
     CHECK_ARGUMENT(ntoken <= _meta.maxseq, "ntoken exceeds maxseq");
 
-    if (_kv_cache.seq_len() >= _meta.maxseq) {
-        _kv_cache.reset();
+    auto &kv_cache = session->kv_cache();
+
+    if (kv_cache.seq_len() >= _meta.maxseq) {
+        kv_cache.reset();
     }
 
-    if (ntoken <= _kv_cache.seq_len()) {
-        _kv_cache.reset();
+    if (ntoken <= kv_cache.seq_len()) {
+        kv_cache.reset();
     }
 
-    for (size_t i = _kv_cache.seq_len(); i < ntoken; ++i) {
-        process_token(token_ids[i]);
+    for (size_t i = kv_cache.seq_len(); i < ntoken; ++i) {
+        process_token(session, token_ids[i]);
     }
 
     llaisys::ops::rms_norm(_final_norm, _hidden, _weights.out_norm_w, _meta.epsilon);
@@ -157,8 +161,9 @@ int64_t Qwen2Model::infer(const int64_t *token_ids, size_t ntoken, int top_k, fl
     return idx_ptr[0];
 }
 
-void Qwen2Model::process_token(int64_t token_id) {
-    int64_t pos = static_cast<int64_t>(_kv_cache.seq_len());
+void Qwen2Model::process_token(Qwen2Session *session, int64_t token_id) {
+    auto &kv_cache = session->kv_cache();
+    int64_t pos = static_cast<int64_t>(kv_cache.seq_len());
 
     _token_ids->load(&token_id);
     _pos_ids->load(&pos);
@@ -175,13 +180,13 @@ void Qwen2Model::process_token(int64_t token_id) {
         llaisys::ops::rope(_q_rope, _q_view, _pos_ids, _meta.theta);
         llaisys::ops::rope(_k_rope, _k_view, _pos_ids, _meta.theta);
 
-        auto k_cache_slice = _kv_cache.k(layer)->slice(0, pos, pos + 1);
-        auto v_cache_slice = _kv_cache.v(layer)->slice(0, pos, pos + 1);
+        auto k_cache_slice = kv_cache.k(layer)->slice(0, pos, pos + 1);
+        auto v_cache_slice = kv_cache.v(layer)->slice(0, pos, pos + 1);
         llaisys::ops::rearrange(k_cache_slice, _k_rope);
         llaisys::ops::rearrange(v_cache_slice, _v_view);
 
-        auto k_cache = _kv_cache.k(layer)->slice(0, 0, pos + 1);
-        auto v_cache = _kv_cache.v(layer)->slice(0, 0, pos + 1);
+        auto k_cache = kv_cache.k(layer)->slice(0, 0, pos + 1);
+        auto v_cache = kv_cache.v(layer)->slice(0, 0, pos + 1);
 
         llaisys::ops::self_attention(_attn_out, _q_rope, k_cache, v_cache, _attn_scale);
         llaisys::ops::linear(_attn_proj, _attn_out_flat, _weights.attn_o_w[layer], nullptr);
@@ -195,7 +200,7 @@ void Qwen2Model::process_token(int64_t token_id) {
         llaisys::ops::add(_hidden, _hidden, _mlp_down);
     }
 
-    _kv_cache.advance(1);
+    kv_cache.advance(1);
 }
 
 } // namespace llaisys::models::qwen2

@@ -2,13 +2,20 @@
 
 #include "../../utils.hpp"
 #include "../../tensor/tensor.hpp"
-#include "qwen2_kvcache.hpp"
+#include "qwen2_session.hpp"
 
 #include "llaisys/models/qwen2.h"
 
 #include <vector>
 
 namespace llaisys::models::qwen2 {
+
+struct Qwen2Config {
+    size_t nlayers;
+    size_t maxseq;
+    size_t nkvhead;
+    size_t head_size;
+};
 
 struct Qwen2Weights {
     tensor_t in_embed;
@@ -36,17 +43,18 @@ public:
     llaisysDeviceType_t device() const { return _device; }
     int device_id() const { return _device_id; }
 
+    Qwen2Session *create_session();
+
     void bind_weights(const LlaisysQwen2Weights &weights);
-    int64_t infer(const int64_t *token_ids, size_t ntoken, int top_k, float top_p, float temperature, int64_t seed = -1);
+    int64_t infer(Qwen2Session *session, const int64_t *token_ids, size_t ntoken, int top_k, float top_p, float temperature, int64_t seed = -1);
 
 private:
-    void process_token(int64_t token_id);
+    void process_token(Qwen2Session *session, int64_t token_id);
 
     LlaisysQwen2Meta _meta;
     llaisysDeviceType_t _device;
     int _device_id;
     Qwen2Weights _weights;
-    Qwen2KVCache _kv_cache;
     bool _weights_bound = false;
 
     tensor_t _token_ids;
