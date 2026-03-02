@@ -228,7 +228,13 @@ class Qwen2:
         top_p: float = 0.0,
         temperature: float = 1.0,
         seed: int = -1,
+        stream: bool = False,
     ):
+        if stream:
+            return self._generate_stream(
+                inputs, max_new_tokens, top_k, top_p, temperature, seed
+            )
+
         if max_new_tokens is None:
             max_new_tokens = 128
 
@@ -251,3 +257,35 @@ class Qwen2:
                 break
 
         return tokens
+
+    def _generate_stream(
+        self,
+        inputs: Sequence[int],
+        max_new_tokens: int = None,
+        top_k: int = 1,
+        top_p: float = 0.0,
+        temperature: float = 1.0,
+        seed: int = -1,
+    ):
+        if max_new_tokens is None:
+            max_new_tokens = 128
+
+        tokens = list(inputs)
+        for _ in range(max_new_tokens):
+            arr = (ctypes.c_int64 * len(tokens))(*tokens)
+            next_token = int(
+                LIB_LLAISYS.llaisysQwen2ModelInferEx(
+                    self._model,
+                    arr,
+                    ctypes.c_size_t(len(tokens)),
+                    ctypes.c_int(top_k),
+                    ctypes.c_float(top_p),
+                    ctypes.c_float(temperature),
+                    ctypes.c_int64(seed),
+                )
+            )
+            tokens.append(next_token)
+            yield next_token
+
+            if next_token == int(self._meta.end_token):
+                break

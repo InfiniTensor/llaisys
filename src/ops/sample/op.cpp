@@ -20,7 +20,8 @@ void sample(tensor_t out_idx, tensor_t logits, int top_k, float top_p, float tem
     ASSERT(logits->isContiguous(), "Logits tensor must be contiguous");
 
     ASSERT(temperature > 0.0f, "Temperature must be greater than 0");
-    ASSERT(top_p > 0.0f && top_p <= 1.0f, "Top-p must be in the range (0, 1]");
+    // Relaxed top_p check: 0.0 means no top-p sampling
+    ASSERT(top_p >= 0.0f && top_p <= 1.0f, "Top-p must be in the range [0, 1]");
     ASSERT(top_k >= 1, "Top-k must be >= 1");
 
     if (logits->deviceType() == LLAISYS_DEVICE_CPU)
