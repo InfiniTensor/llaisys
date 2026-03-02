@@ -202,7 +202,7 @@ target("llaisys")
         set_toolchains("cuda")
         add_cugencodes("native")
         -- Disable device link for MetaX
-        set_policy("cuda.devlink", false)
+        set_policy("build.cuda.devlink", false)
     end
 
     
