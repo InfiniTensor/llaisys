@@ -167,10 +167,23 @@ void self_attention_(std::byte *attn_val_bytes, const std::byte *q_bytes,
     auto k = reinterpret_cast<const T *>(k_bytes);
     auto v = reinterpret_cast<const T *>(v_bytes);
 
-    // Allocate temporary memory for attention scores
+    // Use thread_local static buffer to avoid repeated cudaMalloc
+    // Max size: 4096 * 4096 * 12 * 4 = 768MB
+    static thread_local float *d_scores_buffer = nullptr;
+    static thread_local size_t buffer_size = 0;
+    
     size_t scores_size = seq_len * total_len * nhead * sizeof(float);
-    float *d_scores;
-    cudaMalloc(&d_scores, scores_size);
+    
+    // Allocate or reallocate if needed
+    if (d_scores_buffer == nullptr || buffer_size < scores_size) {
+        if (d_scores_buffer != nullptr) {
+            cudaFree(d_scores_buffer);
+        }
+        cudaMalloc(&d_scores_buffer, scores_size);
+        buffer_size = scores_size;
+    }
+    
+    float *d_scores = d_scores_buffer;
 
     // Step 1: Compute Q * K^T
     size_t total_scores = seq_len * total_len;
@@ -193,8 +206,7 @@ void self_attention_(std::byte *attn_val_bytes, const std::byte *q_bytes,
     attn_v_kernel<T><<<out_numBlocks, blockSize>>>(
         d_scores, v, attn_val, seq_len, total_len, nhead, nkvhead, dv);
 
-    // Free temporary memory
-    cudaFree(d_scores);
+    // Buffer is cached for reuse, no need to free
 }
 
 void self_attention(std::byte *attn_val, const std::byte *q, const std::byte *k, const std::byte *v,

@@ -26,10 +26,7 @@ end
 target("llaisys-device-nvidia")
     set_kind("static")
     -- Device files are added in xmake.lua to avoid duplication
-    -- Only add NCCL files if NCCL is available
-    if nccl_available then
-        add_files("src/device/nvidia/nccl_communicator_impl.cu")
-    end
+    -- This target is currently empty but kept for future use
     add_includedirs("$(projectdir)/src")
     
     -- CUDA settings
