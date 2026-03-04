@@ -16,7 +16,7 @@ template<> __device__ inline float to_float<nv_bfloat16>(nv_bfloat16 v) { return
 template<typename T> __device__ inline T from_float(float v);
 template<> __device__ inline float from_float<float>(float v) { return v; }
 template<> __device__ inline half from_float<half>(float v) { return __float2half(v); }
-template<> __device__ inline nv_bloat16 from_float<nv_bfloat16>(float v) { return __float2bfloat16(v); }
+template<> __device__ inline nv_bfloat16 from_float<nv_bfloat16>(float v) { return __float2bfloat16(v); }
 
 template<typename T>
 __global__ void rope_kernel(
@@ -81,10 +81,10 @@ void launch_rope(std::byte *out, const std::byte *in, const int64_t *pos_ids,
     }
 }
 
+// 修改函数签名以匹配新的 .hpp
 void rope(std::byte *out, const std::byte *in, const int64_t *pos_ids,
           llaisysDataType_t dtype, size_t seq_len, size_t n_head, size_t head_dim, float theta) {
     
-    // Strides for a contiguous [seq_len, n_head, head_dim] tensor
     size_t in_s0 = n_head * head_dim;
     size_t in_s1 = head_dim;
     size_t in_s2 = 1;
@@ -93,7 +93,6 @@ void rope(std::byte *out, const std::byte *in, const int64_t *pos_ids,
     size_t out_s1 = head_dim;
     size_t out_s2 = 1;
 
-    // Stride for a contiguous [seq_len] tensor
     size_t pos_s0 = 1;
 
     switch (dtype) {
