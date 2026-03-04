@@ -1,17 +1,17 @@
-#include "argmax_nvidia.cuh"
 #include "../../../utils.hpp"
 #include "../../../utils/gpu_utils.hpp"
+#include "argmax_nvidia.cuh"
 #include <cstdint>
 
 namespace {
 
 template <typename T>
-__device__ __forceinline__ void warp_argmax(T local_val, int64_t local_idx, T& max_val, int64_t& max_idx) {
-    #pragma unroll
+__device__ __forceinline__ void warp_argmax(T local_val, int64_t local_idx, T &max_val, int64_t &max_idx) {
+#pragma unroll
     for (int stride = 16; stride > 0; stride >>= 1) {
         T other_val = __shfl_down_sync(0xffffffff, local_val, stride);
         int64_t other_idx = __shfl_down_sync(0xffffffff, local_idx, stride);
-        
+
         if (other_val > local_val || (other_val == local_val && other_idx < local_idx)) {
             local_val = other_val;
             local_idx = other_idx;
@@ -34,13 +34,13 @@ __global__ void argmax_kernel(int64_t *max_idx, T *max_val, const T *vals, size_
 
     __shared__ T vals_shared[warp_per_block];
     __shared__ int64_t idxs_shared[warp_per_block];
-    
+
     // 0. 线程级别求局部最大值
     T thread_max_val = static_cast<T>(-INFINITY);
-    int64_t thread_max_idx = -1;    
+    int64_t thread_max_idx = -1;
     for (int i = tid; i < numel; i += blockDim.x) {
         T local_val = vals[i];
-        if (local_val > thread_max_val || (local_val == thread_max_val && i < thread_max_idx)){
+        if (local_val > thread_max_val || (local_val == thread_max_val && i < thread_max_idx)) {
             thread_max_val = local_val;
             thread_max_idx = i;
         }
@@ -76,19 +76,19 @@ __global__ void argmax_kernel(int64_t *max_idx, T *max_val, const T *vals, size_
 
 namespace llaisys::ops::nvidia {
 
-void argmax(int64_t* max_idx, std::byte* max_val, const std::byte* vals, llaisysDataType_t type, size_t numel) {
+void argmax(int64_t *max_idx, std::byte *max_val, const std::byte *vals, llaisysDataType_t type, size_t numel) {
     // 特殊处理空张量的情况：max_val 是 std::byte*，需按类型写入
     if (numel == 0) {
         *max_idx = 0;
         switch (type) {
         case LLAISYS_DTYPE_F32:
-            *reinterpret_cast<float*>(max_val) = 0.0f;
+            *reinterpret_cast<float *>(max_val) = 0.0f;
             break;
         case LLAISYS_DTYPE_F16:
-            *reinterpret_cast<half*>(max_val) = __float2half(0.0f);
+            *reinterpret_cast<half *>(max_val) = __float2half(0.0f);
             break;
         case LLAISYS_DTYPE_BF16:
-            *reinterpret_cast<__nv_bfloat16*>(max_val) = __float2bfloat16(0.0f);
+            *reinterpret_cast<__nv_bfloat16 *>(max_val) = __float2bfloat16(0.0f);
             break;
         default:
             EXCEPTION_UNSUPPORTED_DATATYPE(type);
@@ -97,25 +97,25 @@ void argmax(int64_t* max_idx, std::byte* max_val, const std::byte* vals, llaisys
     }
 
     const int block_size = 256;
-    const int grid_size = CEIL(numel, block_size);
-    
+    const int grid_size = 1;
+
     switch (type) {
     case LLAISYS_DTYPE_F32:
-        argmax_kernel<float, block_size><<<grid_size, block_size>>>(max_idx, 
-                                                                                      reinterpret_cast<float*>(max_val), 
-                                                                                      reinterpret_cast<const float*>(vals), 
-                                                                                      numel);
+        argmax_kernel<float, block_size><<<grid_size, block_size>>>(max_idx,
+                                                                    reinterpret_cast<float *>(max_val),
+                                                                    reinterpret_cast<const float *>(vals),
+                                                                    numel);
         break;
     case LLAISYS_DTYPE_F16:
-        argmax_kernel<half, block_size><<<grid_size, block_size>>>(max_idx, 
-                                                                   reinterpret_cast<half*>(max_val), 
-                                                                   reinterpret_cast<const half*>(vals), 
+        argmax_kernel<half, block_size><<<grid_size, block_size>>>(max_idx,
+                                                                   reinterpret_cast<half *>(max_val),
+                                                                   reinterpret_cast<const half *>(vals),
                                                                    numel);
         break;
     case LLAISYS_DTYPE_BF16:
         argmax_kernel<__nv_bfloat16, block_size><<<grid_size, block_size>>>(max_idx,
-                                                                            reinterpret_cast<__nv_bfloat16*>(max_val), 
-                                                                            reinterpret_cast<const __nv_bfloat16*>(vals),
+                                                                            reinterpret_cast<__nv_bfloat16 *>(max_val),
+                                                                            reinterpret_cast<const __nv_bfloat16 *>(vals),
                                                                             numel);
         break;
     default:

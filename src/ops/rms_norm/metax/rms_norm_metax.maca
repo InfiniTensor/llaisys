@@ -1,0 +1,151 @@
+#include "rms_norm_metax.hpp"
+
+#include "../../../utils.hpp"
+
+#include <common/maca_bfloat16.h>
+#include <common/maca_fp16.h>
+#include <mc_runtime.h>
+
+#include <cstddef>
+#include <math.h>
+
+namespace {
+
+constexpr int METAX_WARP_SIZE = 64;
+
+template <typename T>
+__device__ __forceinline__ T warp_reduce_sum(T local_val) {
+    constexpr maca_uint64_t full_mask = static_cast<maca_uint64_t>(~0ULL);
+#pragma unroll
+    for (int stride = METAX_WARP_SIZE / 2; stride > 0; stride >>= 1) {
+        local_val += __shfl_xor_sync(full_mask, local_val, stride, METAX_WARP_SIZE);
+    }
+    return local_val;
+}
+
+template <typename T, const int BLOCK_SIZE>
+__device__ __forceinline__ T block_reduce_sum(T local_val) {
+    constexpr int warp_per_block = (BLOCK_SIZE + METAX_WARP_SIZE - 1) / METAX_WARP_SIZE;
+    const int warp_id = threadIdx.x / METAX_WARP_SIZE;
+    const int lane_id = threadIdx.x % METAX_WARP_SIZE;
+    __shared__ T shared_val[warp_per_block];
+
+    local_val = warp_reduce_sum(local_val);
+    if (lane_id == 0) {
+        shared_val[warp_id] = local_val;
+    }
+    __syncthreads();
+
+    const T lane_val = (lane_id < warp_per_block) ? shared_val[lane_id] : static_cast<T>(0);
+    return warp_reduce_sum(lane_val);
+}
+
+template <typename T>
+__device__ __forceinline__ float to_float_t(T v) {
+    return static_cast<float>(v);
+}
+
+template <>
+__device__ __forceinline__ float to_float_t<__half>(__half v) {
+    return __half2float(v);
+}
+
+template <>
+__device__ __forceinline__ float to_float_t<__maca_bfloat16>(__maca_bfloat16 v) {
+    return __bfloat162float(v);
+}
+
+template <typename T>
+__device__ __forceinline__ T from_float_t(float v) {
+    return static_cast<T>(v);
+}
+
+template <>
+__device__ __forceinline__ __half from_float_t<__half>(float v) {
+    return __float2half(v);
+}
+
+template <>
+__device__ __forceinline__ __maca_bfloat16 from_float_t<__maca_bfloat16>(float v) {
+    return __float2bfloat16(v);
+}
+
+template <typename T, int BLOCK_SIZE>
+__global__ void rms_norm_kernel(T *out, const T *in, const T *weight, size_t M, size_t N, float eps) {
+    const size_t row_id = static_cast<size_t>(blockIdx.x);
+    if (row_id >= M) {
+        return;
+    }
+
+    const int tid = threadIdx.x;
+
+    float sum_thread = 0.0f;
+    for (size_t i = static_cast<size_t>(tid); i < N; i += static_cast<size_t>(blockDim.x)) {
+        const float v = to_float_t(in[row_id * N + i]);
+        sum_thread += v * v;
+    }
+
+    const float sum_block = block_reduce_sum<float, BLOCK_SIZE>(sum_thread);
+    const float mean_sq = sum_block / static_cast<float>(N);
+    const float scale_rms = 1.0f / sqrtf(mean_sq + eps);
+
+    for (size_t i = static_cast<size_t>(tid); i < N; i += static_cast<size_t>(blockDim.x)) {
+        const float x = to_float_t(in[row_id * N + i]);
+        const float w = to_float_t(weight[i]);
+        out[row_id * N + i] = from_float_t<T>(x * w * scale_rms);
+    }
+}
+
+} // namespace
+
+namespace llaisys::ops::metax {
+
+void rms_norm(std::byte *out,
+              const std::byte *in,
+              const std::byte *weight,
+              llaisysDataType_t type,
+              size_t M,
+              size_t N,
+              float eps) {
+    if (M == 0 || N == 0) {
+        return;
+    }
+
+    constexpr int block_size = 512;
+    const int grid_size = static_cast<int>(M);
+
+    switch (type) {
+    case LLAISYS_DTYPE_F32:
+        rms_norm_kernel<float, block_size><<<grid_size, block_size>>>(
+            reinterpret_cast<float *>(out),
+            reinterpret_cast<const float *>(in),
+            reinterpret_cast<const float *>(weight),
+            M,
+            N,
+            eps);
+        break;
+    case LLAISYS_DTYPE_F16:
+        rms_norm_kernel<__half, block_size><<<grid_size, block_size>>>(
+            reinterpret_cast<__half *>(out),
+            reinterpret_cast<const __half *>(in),
+            reinterpret_cast<const __half *>(weight),
+            M,
+            N,
+            eps);
+        break;
+    case LLAISYS_DTYPE_BF16:
+        rms_norm_kernel<__maca_bfloat16, block_size><<<grid_size, block_size>>>(
+            reinterpret_cast<__maca_bfloat16 *>(out),
+            reinterpret_cast<const __maca_bfloat16 *>(in),
+            reinterpret_cast<const __maca_bfloat16 *>(weight),
+            M,
+            N,
+            eps);
+        break;
+    default:
+        EXCEPTION_UNSUPPORTED_DATATYPE(type);
+    }
+}
+
+} // namespace llaisys::ops::metax
+

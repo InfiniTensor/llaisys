@@ -85,16 +85,6 @@ __global__ void argmax_kernel(int64_t *max_idx, T *max_val, const T *vals, size_
     }
 }
 
-template <typename T>
-void launch_argmax(int64_t *max_idx, std::byte *max_val, const std::byte *vals, size_t numel) {
-    constexpr int block_size = 256;
-    argmax_kernel<T, block_size><<<1, block_size>>>(
-        max_idx,
-        reinterpret_cast<T *>(max_val),
-        reinterpret_cast<const T *>(vals),
-        numel);
-}
-
 } // namespace
 
 namespace llaisys::ops::metax {
@@ -118,13 +108,31 @@ void argmax(int64_t *max_idx, std::byte *max_val, const std::byte *vals, llaisys
         return;
     }
 
+    constexpr int block_size = 512;
+    const int grid_size = 1;
+
     switch (type) {
     case LLAISYS_DTYPE_F32:
-        return launch_argmax<float>(max_idx, max_val, vals, numel);
+        argmax_kernel<float, block_size><<<grid_size, block_size>>>(
+            max_idx,
+            reinterpret_cast<float *>(max_val),
+            reinterpret_cast<const float *>(vals),
+            numel);
+        break;
     case LLAISYS_DTYPE_F16:
-        return launch_argmax<__half>(max_idx, max_val, vals, numel);
+        argmax_kernel<__half, block_size><<<grid_size, block_size>>>(
+            max_idx,
+            reinterpret_cast<__half *>(max_val),
+            reinterpret_cast<const __half *>(vals),
+            numel);
+        break;
     case LLAISYS_DTYPE_BF16:
-        return launch_argmax<__maca_bfloat16>(max_idx, max_val, vals, numel);
+        argmax_kernel<__maca_bfloat16, block_size><<<grid_size, block_size>>>(
+            max_idx,
+            reinterpret_cast<__maca_bfloat16 *>(max_val),
+            reinterpret_cast<const __maca_bfloat16 *>(vals),
+            numel);
+        break;
     default:
         EXCEPTION_UNSUPPORTED_DATATYPE(type);
     }

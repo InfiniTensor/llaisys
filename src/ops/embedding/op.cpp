@@ -4,7 +4,12 @@
 #include "../../utils.hpp"
 
 #include "./cpu/embedding_cpu.hpp"
+#ifdef ENABLE_NVIDIA_API
 #include "./nvidia/embedding_nvidia.cuh"
+#endif
+#ifdef ENABLE_METAX_API
+#include "./metax/embedding_metax.hpp"
+#endif
 
 namespace llaisys::ops {
 void embedding(tensor_t out, tensor_t index, tensor_t weight) {
@@ -49,6 +54,11 @@ void embedding(tensor_t out, tensor_t index, tensor_t weight) {
   case LLAISYS_DEVICE_NVIDIA:
     return nvidia::embedding(out->data(), index->data(), weight->data(),
                              out->dtype(), index_numel, embedding_dim);
+#endif
+#ifdef ENABLE_METAX_API
+  case LLAISYS_DEVICE_METAX:
+    return metax::embedding(out->data(), index->data(), weight->data(),
+                            out->dtype(), index_numel, embedding_dim);
 #endif
   default:
     EXCEPTION_UNSUPPORTED_DEVICE;

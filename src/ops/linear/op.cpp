@@ -4,7 +4,12 @@
 #include "../../utils.hpp"
 
 #include "./cpu/linear_cpu.hpp"
+#ifdef ENABLE_NVIDIA_API
 #include "./nvidia/linear_nvidia.cuh"
+#endif
+#ifdef ENABLE_METAX_API
+#include "./metax/linear_metax.hpp"
+#endif
 #include "llaisys.h"
 
 namespace llaisys::ops {
@@ -54,6 +59,13 @@ void linear(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias) {
                           (bias != nullptr) ? bias->data() : nullptr,
                           out->dtype(), out->shape()[0], out->shape()[1],
                           in->shape()[1]);
+#endif
+#ifdef ENABLE_METAX_API
+  case LLAISYS_DEVICE_METAX:
+    return metax::linear(out->data(), in->data(), weight->data(),
+                         (bias != nullptr) ? bias->data() : nullptr,
+                         out->dtype(), out->shape()[0], out->shape()[1],
+                         in->shape()[1]);
 #endif
   default:
     EXCEPTION_UNSUPPORTED_DEVICE;

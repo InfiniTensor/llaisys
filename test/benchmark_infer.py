@@ -27,6 +27,10 @@ PROMPT_PRESETS: Dict[str, str] = {
 JSON_SENTINEL = "__BENCH_JSON__"
 
 
+def is_gpu_device(device: str) -> bool:
+    return device in {"nvidia", "metax"}
+
+
 def parse_csv_ints(text: str) -> List[int]:
     return [int(x.strip()) for x in text.split(",") if x.strip()]
 
@@ -85,7 +89,7 @@ def run_torch_case(
     )
     inputs = tokenizer.encode(input_content, return_tensors="pt").to(model.device)
 
-    if device == "nvidia":
+    if is_gpu_device(device):
         torch.cuda.synchronize()
     start = time.perf_counter()
     with torch.no_grad():
@@ -96,7 +100,7 @@ def run_torch_case(
             top_p=top_p,
             temperature=temperature,
         )
-    if device == "nvidia":
+    if is_gpu_device(device):
         torch.cuda.synchronize()
     elapsed = time.perf_counter() - start
 
@@ -155,12 +159,23 @@ def worker_main(args):
         from transformers import AutoModelForCausalLM
         from test_utils import torch_device
 
-        model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            torch_dtype=torch.bfloat16,
-            device_map=torch_device(args.device),
-            trust_remote_code=True,
-        )
+        model_kwargs = {
+            "device_map": torch_device(args.device),
+            "trust_remote_code": True,
+        }
+        try:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                dtype=torch.bfloat16,
+                **model_kwargs,
+            )
+        except TypeError:
+            # Backward compatibility for older Transformers versions.
+            model = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                torch_dtype=torch.bfloat16,
+                **model_kwargs,
+            )
 
         runner = run_torch_case
     elif args.backend == "llaisys":

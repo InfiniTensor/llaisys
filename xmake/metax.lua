@@ -110,7 +110,7 @@ target("llaisys-device-metax")
     end
 
     -- Link common runtime library names shipped by MACA.
-    add_syslinks("mcruntime", "mxc-runtime64", "runtime_cu", {public = true})
+    add_syslinks("mcruntime", "mxc-runtime64", "runtime_cu", "mcblas", {public = true})
 
     on_install(function (target) end)
 target_end()
@@ -194,7 +194,7 @@ target("llaisys-ops-metax")
     end
 
     -- Link common runtime library names shipped by MACA.
-    add_syslinks("mcruntime", "mxc-runtime64", "runtime_cu", {public = true})
+    add_syslinks("mcruntime", "mxc-runtime64", "runtime_cu", "mcblas", {public = true})
 
     on_install(function (target) end)
 target_end()

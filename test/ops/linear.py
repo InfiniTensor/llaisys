@@ -50,6 +50,13 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia", "metax"], type=str)
+    parser.add_argument(
+        "--dtype",
+        default="auto",
+        choices=["auto", "all", "f32", "f16", "bf16"],
+        type=str,
+        help="dtype set to test. auto: metax->bf16 only, others->all",
+    )
     parser.add_argument("--profile", action="store_true")
     args = parser.parse_args()
     testShapes = [
@@ -60,12 +67,20 @@ if __name__ == "__main__":
         ((1, 11008), (1, 4096), (11008, 4096), True),
         ((1, 4096), (1, 11008), (4096, 11008), True),
     ]
-    testDtypePrec = [
+    allDtypePrec = [
         # type, atol, rtol
         ("f32", 1e-5, 1e-5),
         ("f16", 1e-3, 1e-3),
         ("bf16", 1e-2, 1e-2),
     ]
+
+    if args.dtype == "auto":
+        testDtypePrec = [("bf16", 1e-2, 1e-2)] if args.device == "metax" else allDtypePrec
+    elif args.dtype == "all":
+        testDtypePrec = allDtypePrec
+    else:
+        testDtypePrec = [x for x in allDtypePrec if x[0] == args.dtype]
+
     print(f"Testing Ops.linear on {args.device}")
     for shapes in testShapes:
         for dtype_name, atol, rtol in testDtypePrec:

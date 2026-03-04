@@ -1,0 +1,97 @@
+#include "swiglu_metax.hpp"
+
+#include "../../../utils.hpp"
+
+#include <common/maca_bfloat16.h>
+#include <common/maca_fp16.h>
+#include <mc_runtime.h>
+
+#include <cmath>
+
+namespace {
+
+template <typename T>
+__device__ __forceinline__ float to_float_t(T v) {
+    return static_cast<float>(v);
+}
+
+template <>
+__device__ __forceinline__ float to_float_t<__half>(__half v) {
+    return __half2float(v);
+}
+
+template <>
+__device__ __forceinline__ float to_float_t<__maca_bfloat16>(__maca_bfloat16 v) {
+    return __bfloat162float(v);
+}
+
+template <typename T>
+__device__ __forceinline__ T from_float_t(float v) {
+    return static_cast<T>(v);
+}
+
+template <>
+__device__ __forceinline__ __half from_float_t<__half>(float v) {
+    return __float2half(v);
+}
+
+template <>
+__device__ __forceinline__ __maca_bfloat16 from_float_t<__maca_bfloat16>(float v) {
+    return __float2bfloat16(v);
+}
+
+template <typename T>
+__global__ void swiglu_kernel(T *out, const T *gate, const T *up, size_t numel) {
+    const size_t idx = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (idx >= numel) {
+        return;
+    }
+
+    const float gate_val = to_float_t(gate[idx]);
+    const float up_val = to_float_t(up[idx]);
+    const float exp_gate = ::expf(-gate_val);
+    const float out_val = up_val * gate_val / (1.0f + exp_gate);
+    out[idx] = from_float_t<T>(out_val);
+}
+
+} // namespace
+
+namespace llaisys::ops::metax {
+
+void swiglu(std::byte *out,
+            const std::byte *gate,
+            const std::byte *up,
+            llaisysDataType_t type,
+            size_t numel) {
+    constexpr int block_size = 512;
+    const int grid_size = static_cast<int>((numel + static_cast<size_t>(block_size) - 1) /
+                                           static_cast<size_t>(block_size));
+
+    switch (type) {
+    case LLAISYS_DTYPE_F32:
+        swiglu_kernel<float><<<grid_size, block_size>>>(
+            reinterpret_cast<float *>(out),
+            reinterpret_cast<const float *>(gate),
+            reinterpret_cast<const float *>(up),
+            numel);
+        break;
+    case LLAISYS_DTYPE_F16:
+        swiglu_kernel<__half><<<grid_size, block_size>>>(
+            reinterpret_cast<__half *>(out),
+            reinterpret_cast<const __half *>(gate),
+            reinterpret_cast<const __half *>(up),
+            numel);
+        break;
+    case LLAISYS_DTYPE_BF16:
+        swiglu_kernel<__maca_bfloat16><<<grid_size, block_size>>>(
+            reinterpret_cast<__maca_bfloat16 *>(out),
+            reinterpret_cast<const __maca_bfloat16 *>(gate),
+            reinterpret_cast<const __maca_bfloat16 *>(up),
+            numel);
+        break;
+    default:
+        EXCEPTION_UNSUPPORTED_DATATYPE(type);
+    }
+}
+
+} // namespace llaisys::ops::metax
