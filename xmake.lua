@@ -25,6 +25,7 @@ target("llaisys-utils")
     set_warnings("all", "error")
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
+        add_ldflags("-fopenmp")
     end
 
     add_files("src/utils/*.cpp")

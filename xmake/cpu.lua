@@ -3,7 +3,7 @@ target("llaisys-device-cpu")
     set_languages("cxx17")
     set_warnings("all", "error")
     if not is_plat("windows") then
-        add_cxflags("-fPIC", "-Wno-unknown-pragmas")
+        add_cxflags("-fPIC", "-Wno-unknown-pragmas", "-O3", "-march=native", "-fopenmp")
     end
 
     add_files("../src/device/cpu/*.cpp")
@@ -17,7 +17,7 @@ target("llaisys-ops-cpu")
     set_languages("cxx17")
     set_warnings("all", "error")
     if not is_plat("windows") then
-        add_cxflags("-fPIC", "-Wno-unknown-pragmas")
+        add_cxflags("-fPIC", "-Wno-unknown-pragmas", "-O3", "-march=native", "-fopenmp")
     end
 
     add_files("../src/ops/*/cpu/*.cpp")
