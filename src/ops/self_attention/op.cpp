@@ -9,7 +9,6 @@
 #include "nvidia/self_attention_nvidia.hpp"
 #endif
 
-
 namespace llaisys::ops {
 
 // 执行自注意力计算（支持标准 MHA 和 GQA）
@@ -53,6 +52,7 @@ void self_attention(tensor_t output, tensor_t query, tensor_t key, tensor_t valu
     ASSERT(output->isContiguous() && query->isContiguous() && key->isContiguous() && value->isContiguous(),
            "SelfAttention: all tensors must be contiguous in memory.");
 
+    // CPU 路径直接返回
     if (output->deviceType() == LLAISYS_DEVICE_CPU) {
         return cpu::self_attention(
             output->data(),
@@ -70,10 +70,12 @@ void self_attention(tensor_t output, tensor_t query, tensor_t key, tensor_t valu
         );
     }
 
+    // 设置当前 CUDA 设备
     llaisys::core::context().setDevice(output->deviceType(), output->deviceId());
 
     switch (output->deviceType()) {
     case LLAISYS_DEVICE_CPU:
+        // 理论上不会执行到这里，因为上面已经处理了 CPU 情况
         return cpu::self_attention(
             output->data(),
             query->data(),
@@ -89,22 +91,26 @@ void self_attention(tensor_t output, tensor_t query, tensor_t key, tensor_t valu
             softmax_scale
         );
 #ifdef ENABLE_NVIDIA_API
-    if (attn_val->deviceType() == LLAISYS_DEVICE_NVIDIA) {
-        return nvidia::self_attention(attn_val, q, k, v, scale);
-    }
+    case LLAISYS_DEVICE_NVIDIA:
+        nvidia::self_attention(
+            output->data(),
+            query->data(),
+            key->data(),
+            value->data(),
+            output->dtype(),
+            query_len,
+            kv_len,
+            num_q_heads,
+            num_kv_heads,
+            qk_head_dim,
+            v_head_dim,
+            softmax_scale
+        );
+        return;
 #endif
-
-    if (dtype == llaisysDataType_t::LLAISYS_DTYPE_F32) {
-        self_attention_cpu_kernel<float>(attn_val, q, k, v, scale);
-    } 
-    else if (dtype == llaisysDataType_t::LLAISYS_DTYPE_F16) { 
-        self_attention_cpu_kernel<llaisys::fp16_t>(attn_val, q, k, v, scale);
-    } 
-    else if (dtype == llaisysDataType_t::LLAISYS_DTYPE_BF16) { 
-        self_attention_cpu_kernel<llaisys::bf16_t>(attn_val, q, k, v, scale);
-    }
-    else {
-        throw std::runtime_error("Unsupported dtype");
+    default:
+        EXCEPTION_UNSUPPORTED_DEVICE;
     }
 }
+
 } // namespace llaisys::ops

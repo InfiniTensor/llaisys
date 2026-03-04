@@ -64,7 +64,15 @@ void rms_norm(tensor_t output, tensor_t input, tensor_t scale, float epsilon) {
         );
 #ifdef ENABLE_NVIDIA_API
     case LLAISYS_DEVICE_NVIDIA:
-        TO_BE_IMPLEMENTED();
+        nvidia::rms_norm(
+            output->data(),
+            input->data(),
+            scale->data(),
+            output->dtype(),
+            batch_size,
+            hidden_dim,
+            epsilon
+        );
         return;
 #endif
     default:
