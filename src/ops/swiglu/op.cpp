@@ -7,7 +7,7 @@
 
 
 #ifdef ENABLE_NVIDIA_API
-#include "nvidia/swiglu_nvidia.cuh"
+#include "nvidia/swiglu_nvidia.hpp"
 #endif
 
 namespace llaisys::ops {
