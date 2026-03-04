@@ -1,15 +1,18 @@
+#pragma once
+
 #include <memory>
 #include <vector>
-#include "../core/tensor.hpp"
+#include "../../tensor/tensor.hpp"
+#include "../../utils.hpp"
 #include "qwen2_kvcache.hpp"
 
-namespace llaisys {
+namespace llaisys::models::qwen2 {
 
 struct Qwen2Config;
 
 class Qwen2Session {
 public:
-    Qwen2Session(const Qwen2Config &config, DeviceType device);
+    Qwen2Session(const Qwen2Config &config, llaisysDeviceType_t device);
     ~Qwen2Session() = default;
 
     Qwen2KVCache &kv_cache() { return _kv_cache; }
@@ -21,4 +24,4 @@ private:
     Qwen2KVCache _kv_cache;
 };
 
-} // namespace llaisys
+} // namespace llaisys::models::qwen2

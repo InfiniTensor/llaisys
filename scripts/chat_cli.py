@@ -12,6 +12,7 @@ def chat_cli():
     parser.add_argument("--top_p", type=float, default=0.9, help="Top-P sampling")
     parser.add_argument("--max_tokens", type=int, default=512, help="Max new tokens")
     parser.add_argument("--seed", type=int, default=-1, help="Random seed")
+    parser.add_argument("--use_session", action="store_true", default=True, help="Use session for KV cache reuse (faster multi-turn)")
     args = parser.parse_args()
 
     print(f"Loading tokenizer from {args.model}...")
@@ -34,6 +35,12 @@ def chat_cli():
 
     # Keep chat history
     history = []
+    
+    # Create a session if requested
+    session = None
+    if args.use_session:
+        print("Creating session for KV cache reuse...")
+        session = model.create_session()
 
     while True:
         try:
@@ -66,7 +73,8 @@ def chat_cli():
             top_k=args.top_k,
             top_p=args.top_p,
             seed=args.seed,
-            stream=True
+            stream=True,
+            session=session
         )
 
         full_response = ""
