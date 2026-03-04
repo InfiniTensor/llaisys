@@ -5,6 +5,10 @@
 
 #include "cpu/rms_norm_cpu.hpp"
 
+#ifdef ENABLE_NVIDIA_API
+#include "nvidia/rms_norm_nvidia.hpp"
+#endif
+
 namespace llaisys::ops {
 
 // 执行 RMS 归一化操作：对输入的每个样本（行）进行归一化，并通过可学习缩放参数调整

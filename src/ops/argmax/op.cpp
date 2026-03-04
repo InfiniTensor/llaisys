@@ -5,6 +5,10 @@
 
 #include "cpu/argmax_cpu.hpp"
 
+#ifdef ENABLE_NVIDIA_API
+#include "nvidia/argmax_nvidia.hpp"
+#endif
+
 namespace llaisys::ops {
 
 // 执行 argmax 操作：在输入张量中查找最大值及其索引，并写入输出张量
@@ -47,7 +51,14 @@ void argmax(tensor_t indices_out, tensor_t values_out, tensor_t input) {
         );
 #ifdef ENABLE_NVIDIA_API
     case LLAISYS_DEVICE_NVIDIA:
-        TO_BE_IMPLEMENTED();
+
+        nvidia::argmax(
+            indices_out->data(),
+            values_out->data(),
+            input->data(),
+            input->dtype(),
+            input->numel()
+        );
         return;
 #endif
     default:

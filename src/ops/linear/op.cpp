@@ -5,6 +5,10 @@
 
 #include "cpu/linear_cpu.hpp"
 
+#ifdef ENABLE_NVIDIA_API
+#include "nvidia/linear_nvidia.hpp"
+#endif
+
 namespace llaisys::ops {
 
 // 执行线性变换：output = input @ weight^T + bias（若提供）
@@ -75,7 +79,16 @@ void linear(tensor_t output, tensor_t input, tensor_t weight_matrix, tensor_t bi
         );
 #ifdef ENABLE_NVIDIA_API
     case LLAISYS_DEVICE_NVIDIA:
-        TO_BE_IMPLEMENTED();
+        nvidia::linear(
+            output->data(),
+            input->data(),
+            weight_matrix->data(),
+            bias_vector ? bias_vector->data() : nullptr, // 正确传递 bias 指针或 nullptr
+            output->dtype(),
+            batch_size,
+            out_features,
+            in_features
+        );
         return;
 #endif
     default:

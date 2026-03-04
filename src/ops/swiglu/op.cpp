@@ -5,6 +5,11 @@
 
 #include "cpu/swiglu_cpu.hpp"
 
+
+#ifdef ENABLE_NVIDIA_API
+#include "nvidia/swiglu_nvidia.cuh"
+#endif
+
 namespace llaisys::ops {
 void swiglu(tensor_t out, tensor_t gate, tensor_t up) {
     CHECK_SAME_DEVICE(out, gate, up);
@@ -26,12 +31,22 @@ void swiglu(tensor_t out, tensor_t gate, tensor_t up) {
     case LLAISYS_DEVICE_CPU:
         return cpu::swiglu(out->data(), gate->data(), up->data(), out->dtype(), numel);
 #ifdef ENABLE_NVIDIA_API
-    case LLAISYS_DEVICE_NVIDIA:
-        TO_BE_IMPLEMENTED();
-        return;
+    if (out->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+        return nvidia::swiglu(out, gate, up);
+    }
 #endif
-    default:
-        EXCEPTION_UNSUPPORTED_DEVICE;
+
+    if (dtype == LLAISYS_DTYPE_F32) {
+        swiglu_cpu_kernel<float>(out, gate, up);
+    } 
+    else if (dtype == LLAISYS_DTYPE_F16) { 
+        swiglu_cpu_kernel<llaisys::fp16_t>(out, gate, up);
+    } 
+    else if (dtype == LLAISYS_DTYPE_BF16) { 
+        swiglu_cpu_kernel<llaisys::bf16_t>(out, gate, up);
+    }
+    else {
+        throw std::runtime_error("SwiGLU: Unsupported dtype");
     }
 }
 } // namespace llaisys::ops

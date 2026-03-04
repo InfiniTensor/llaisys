@@ -5,6 +5,11 @@
 
 #include "cpu/rope_cpu.hpp"
 
+
+#ifdef ENABLE_NVIDIA_API
+#include "nvidia/rope_nvidia.hpp"
+#endif
+
 namespace llaisys::ops {
 
 // 应用 Rotary Position Embedding (RoPE) 到输入张量
@@ -76,13 +81,22 @@ void rope(tensor_t output, tensor_t input, tensor_t position_ids, float base_the
             base_theta
         );
 #ifdef ENABLE_NVIDIA_API
-    case LLAISYS_DEVICE_NVIDIA:
-        TO_BE_IMPLEMENTED();
-        return;
+    if (out->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+        return nvidia::rope(out, in, pos_ids, theta);
+    }
 #endif
-    default:
-        EXCEPTION_UNSUPPORTED_DEVICE;
+
+    if (dtype == llaisysDataType_t::LLAISYS_DTYPE_F32) {
+        rope_cpu_kernel<float>(out, in, pos_ids, theta);
+    } 
+    else if (dtype == llaisysDataType_t::LLAISYS_DTYPE_F16) { 
+        rope_cpu_kernel<llaisys::fp16_t>(out, in, pos_ids, theta);
+    } 
+    else if (dtype == llaisysDataType_t::LLAISYS_DTYPE_BF16) { 
+        rope_cpu_kernel<llaisys::bf16_t>(out, in, pos_ids, theta);
+    }
+    else {
+        throw std::runtime_error("数据类型不支持");
     }
 }
-
 } // namespace llaisys::ops

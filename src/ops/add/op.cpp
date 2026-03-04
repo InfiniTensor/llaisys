@@ -5,6 +5,11 @@
 
 #include "cpu/add_cpu.hpp"
 
+// 👇 新增：引入 Nvidia 版本的头文件
+#ifdef ENABLE_NVIDIA_API
+#include "nvidia/add_nvidia.hpp"
+#endif
+
 namespace llaisys::ops {
 
 // 执行两个张量的逐元素加法，结果写入输出张量
@@ -29,7 +34,14 @@ void add(tensor_t out, tensor_t lhs, tensor_t rhs) {
         return cpu::add(out->data(), lhs->data(), rhs->data(), out->dtype(), out->numel());
 #ifdef ENABLE_NVIDIA_API
     case LLAISYS_DEVICE_NVIDIA:
-        TO_BE_IMPLEMENTED();
+        // 👇 替换 TO_BE_IMPLEMENTED() 为实际调用
+        nvidia::add(
+            out->data(),
+            lhs->data(),
+            rhs->data(),
+            out->dtype(),
+            out->numel()
+        );
         return;
 #endif
     default:

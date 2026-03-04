@@ -5,6 +5,11 @@
 
 #include "cpu/self_attention_cpu.hpp"
 
+#ifdef ENABLE_NVIDIA_API
+#include "nvidia/self_attention_nvidia.hpp"
+#endif
+
+
 namespace llaisys::ops {
 
 // 执行自注意力计算（支持标准 MHA 和 GQA）
@@ -84,13 +89,22 @@ void self_attention(tensor_t output, tensor_t query, tensor_t key, tensor_t valu
             softmax_scale
         );
 #ifdef ENABLE_NVIDIA_API
-    case LLAISYS_DEVICE_NVIDIA:
-        TO_BE_IMPLEMENTED();
-        return;
+    if (attn_val->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+        return nvidia::self_attention(attn_val, q, k, v, scale);
+    }
 #endif
-    default:
-        EXCEPTION_UNSUPPORTED_DEVICE;
+
+    if (dtype == llaisysDataType_t::LLAISYS_DTYPE_F32) {
+        self_attention_cpu_kernel<float>(attn_val, q, k, v, scale);
+    } 
+    else if (dtype == llaisysDataType_t::LLAISYS_DTYPE_F16) { 
+        self_attention_cpu_kernel<llaisys::fp16_t>(attn_val, q, k, v, scale);
+    } 
+    else if (dtype == llaisysDataType_t::LLAISYS_DTYPE_BF16) { 
+        self_attention_cpu_kernel<llaisys::bf16_t>(attn_val, q, k, v, scale);
+    }
+    else {
+        throw std::runtime_error("Unsupported dtype");
     }
 }
-
 } // namespace llaisys::ops
