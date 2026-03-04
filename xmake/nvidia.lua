@@ -1,7 +1,6 @@
 target("llaisys-device-nvidia")
     set_kind("static")
     add_deps("llaisys-utils")
-    on_install(function (target) end)
 
     set_policy("build.cuda.devlink", true)
     set_toolchains("cuda")
@@ -41,7 +40,8 @@ target("llaisys-device-nvidia")
 
     set_languages("cxx17")
     set_warnings("all", "error")
-    add_files("../src/device/nvidia/*.cu")
+    
+    add_files("../src/**/nvidia/*.cu")
 
     on_install(function (target) end)
 target_end()
