@@ -39,15 +39,10 @@
 
 ### 2.1 数学定义
 
-对每一行向量 $x_i \in \mathbb{R}^d$：
+对每一行向量 `x_i in R^d`：
 
-$$
-\text{rms}(x_i)=\sqrt{\frac{1}{d}\sum_{j=1}^{d}x_{i,j}^2+\epsilon}
-$$
-
-$$
-y_{i,j}=w_j\cdot\frac{x_{i,j}}{\text{rms}(x_i)}
-$$
+- `rms(x_i) = sqrt((1/d) * sum_{j=1..d}(x_{i,j}^2) + eps)`
+- `y_{i,j} = w_j * x_{i,j} / rms(x_i)`
 
 ### 2.2 直觉
 
@@ -74,19 +69,13 @@ $$
 
 对于每个位置 `pos_id` 和维度对 `j`：
 
-$$
-\phi_{j}=\frac{pos\_id}{\theta^{2j/d}}
-$$
+`phi_j = pos_id / (theta^(2j/d))`
 
-将向量按前后半维配对：$[x_j, x_{j+d/2}]$，做二维旋转：
+将向量按前后半维配对：`[x_j, x_{j+d/2}]`，做二维旋转：
 
-$$
-x'_j=x_j\cos\phi_j-x_{j+d/2}\sin\phi_j
-$$
+`x'_j = x_j * cos(phi_j) - x_{j+d/2} * sin(phi_j)`
 
-$$
-x'_{j+d/2}=x_{j+d/2}\cos\phi_j+x_j\sin\phi_j
-$$
+`x'_{j+d/2} = x_{j+d/2} * cos(phi_j) + x_j * sin(phi_j)`
 
 ### 3.2 为什么有效
 
@@ -111,19 +100,13 @@ $$
 
 ### 4.1 核心公式
 
-$$
-A=QK^T\cdot scale
-$$
+`A = QK^T * scale`
 
-$$
-P=\text{causal\_softmax}(A)
-$$
+`P = causal_softmax(A)`
 
-$$
-Y=PV
-$$
+`Y = P * V`
 
-其中 `scale` 常取 $1/\sqrt{d}$。
+其中 `scale` 常取 `1/sqrt(d)`。
 
 ### 4.2 计算流程（与你实现一致）
 
@@ -162,15 +145,11 @@ $$
 
 逐元素计算：
 
-$$
-out_i=up_i\cdot\frac{gate_i}{1+e^{-gate_i}}
-$$
+`out_i = up_i * gate_i / (1 + e^(-gate_i))`
 
 等价于：
 
-$$
-out_i=up_i\cdot \text{SiLU}(gate_i)
-$$
+`out_i = up_i * SiLU(gate_i)`
 
 ### 5.2 直觉
 
