@@ -2,13 +2,55 @@ import llaisys
 import torch
 
 
+def torch_baseline_device(device_name: str, device_id=0):
+    if device_name in {"nvidia", "metax"}:
+        return torch_device(device_name, device_id)
+    return torch.device("cpu")
+
+
+def torch_to_llaisys_memcpy_kind(torch_tensor: torch.Tensor, dst_device_name: str):
+    src_is_cpu = torch_tensor.device.type == "cpu"
+    dst_is_cpu = dst_device_name == "cpu"
+    if src_is_cpu and dst_is_cpu:
+        return llaisys.MemcpyKind.D2D
+    if src_is_cpu and not dst_is_cpu:
+        return llaisys.MemcpyKind.H2D
+    if (not src_is_cpu) and dst_is_cpu:
+        return llaisys.MemcpyKind.D2H
+    return llaisys.MemcpyKind.D2D
+
+
+def llaisys_to_torch_memcpy_kind(src_device_type: llaisys.DeviceType, torch_tensor: torch.Tensor):
+    src_is_cpu = src_device_type == llaisys.DeviceType.CPU
+    dst_is_cpu = torch_tensor.device.type == "cpu"
+    if src_is_cpu and dst_is_cpu:
+        return llaisys.MemcpyKind.D2D
+    if src_is_cpu and not dst_is_cpu:
+        return llaisys.MemcpyKind.H2D
+    if (not src_is_cpu) and dst_is_cpu:
+        return llaisys.MemcpyKind.D2H
+    return llaisys.MemcpyKind.D2D
+
+
+def host_to_llaisys_memcpy_kind(device_name: str):
+    if device_name == "cpu":
+        return llaisys.MemcpyKind.D2D
+    return llaisys.MemcpyKind.H2D
+
+
+def llaisys_to_host_memcpy_kind(device_type: llaisys.DeviceType):
+    if device_type == llaisys.DeviceType.CPU:
+        return llaisys.MemcpyKind.D2D
+    return llaisys.MemcpyKind.D2H
+
+
 def random_tensor(
     shape, dtype_name, device_name, device_id=0, scale=None, bias=None
 ) -> tuple[torch.Tensor, llaisys.Tensor]:
     torch_tensor = torch.rand(
         shape,
         dtype=torch_dtype(dtype_name),
-        device=torch_device(device_name, device_id),
+        device=torch_baseline_device(device_name, device_id),
     )
     if scale is not None:
         torch_tensor *= scale
@@ -28,7 +70,7 @@ def random_tensor(
         llaisys_tensor.data_ptr(),
         torch_tensor.data_ptr(),
         bytes_,
-        llaisys.MemcpyKind.D2D,
+        torch_to_llaisys_memcpy_kind(torch_tensor, device_name),
     )
 
     return torch_tensor, llaisys_tensor
@@ -40,7 +82,7 @@ def random_int_tensor(shape, device_name, dtype_name="i64", device_id=0, low=0, 
         high,
         shape,
         dtype=torch_dtype(dtype_name),
-        device=torch_device(device_name, device_id),
+        device=torch_baseline_device(device_name, device_id),
     )
 
     llaisys_tensor = llaisys.Tensor(
@@ -56,7 +98,7 @@ def random_int_tensor(shape, device_name, dtype_name="i64", device_id=0, low=0, 
         llaisys_tensor.data_ptr(),
         torch_tensor.data_ptr(),
         bytes_,
-        llaisys.MemcpyKind.D2D,
+        torch_to_llaisys_memcpy_kind(torch_tensor, device_name),
     )
 
     return torch_tensor, llaisys_tensor
@@ -68,7 +110,7 @@ def zero_tensor(
     torch_tensor = torch.zeros(
         shape,
         dtype=torch_dtype(dtype_name),
-        device=torch_device(device_name, device_id),
+        device=torch_baseline_device(device_name, device_id),
     )
 
     llaisys_tensor = llaisys.Tensor(
@@ -84,7 +126,7 @@ def zero_tensor(
         llaisys_tensor.data_ptr(),
         torch_tensor.data_ptr(),
         bytes_,
-        llaisys.MemcpyKind.D2D,
+        torch_to_llaisys_memcpy_kind(torch_tensor, device_name),
     )
 
     return torch_tensor, llaisys_tensor
@@ -93,7 +135,7 @@ def zero_tensor(
 def arrange_tensor(
     start, end, device_name, device_id=0
 ) -> tuple[torch.Tensor, llaisys.Tensor]:
-    torch_tensor = torch.arange(start, end, device=torch_device(device_name, device_id))
+    torch_tensor = torch.arange(start, end, device=torch_baseline_device(device_name, device_id))
     llaisys_tensor = llaisys.Tensor(
         (end - start,),
         dtype=llaisys_dtype("i64"),
@@ -107,7 +149,7 @@ def arrange_tensor(
         llaisys_tensor.data_ptr(),
         torch_tensor.data_ptr(),
         bytes_,
-        llaisys.MemcpyKind.D2D,
+        torch_to_llaisys_memcpy_kind(torch_tensor, device_name),
     )
 
     return torch_tensor, llaisys_tensor
@@ -135,9 +177,7 @@ def check_equal(
     tmp = torch.zeros(
         (right + 1,),
         dtype=torch_answer.dtype,
-        device=torch_device(
-            device_name(llaisys_result.device_type()), llaisys_result.device_id()
-        ),
+        device=torch_baseline_device(device_name(llaisys_result.device_type()), llaisys_result.device_id()),
     )
     result = torch.as_strided(tmp, shape, strides)
     api = llaisys.RuntimeAPI(llaisys_result.device_type())
@@ -145,7 +185,7 @@ def check_equal(
         result.data_ptr(),
         llaisys_result.data_ptr(),
         (right + 1) * tmp.element_size(),
-        llaisys.MemcpyKind.D2D,
+        llaisys_to_torch_memcpy_kind(llaisys_result.device_type(), result),
     )
 
     if strict:
@@ -188,6 +228,9 @@ def torch_device(device_name: str, device_id=0):
         return torch.device("cpu")
     elif device_name == "nvidia":
         return torch.device(f"cuda:{device_id}")
+    elif device_name == "metax":
+        # mcPyTorch uses CUDA-compatible API; tensors are typically exposed as cuda devices.
+        return torch.device(f"cuda:{device_id}")
     else:
         raise ValueError(f"Unsupported device name: {device_name}")
 
@@ -197,6 +240,8 @@ def llaisys_device(device_name: str):
         return llaisys.DeviceType.CPU
     elif device_name == "nvidia":
         return llaisys.DeviceType.NVIDIA
+    elif device_name == "metax":
+        return llaisys.DeviceType.METAX
     else:
         raise ValueError(f"Unsupported device name: {device_name}")
 
@@ -206,6 +251,8 @@ def device_name(llaisys_device: llaisys.DeviceType):
         return "cpu"
     elif llaisys_device == llaisys.DeviceType.NVIDIA:
         return "nvidia"
+    elif llaisys_device == llaisys.DeviceType.METAX:
+        return "metax"
     else:
         raise ValueError(f"Unsupported llaisys device: {llaisys_device}")
 

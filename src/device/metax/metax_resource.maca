@@ -1,0 +1,7 @@
+#include "metax_resource.hpp"
+
+namespace llaisys::device::metax {
+
+Resource::Resource(int device_id) : llaisys::device::DeviceResource(LLAISYS_DEVICE_METAX, device_id) {}
+
+} // namespace llaisys::device::metax

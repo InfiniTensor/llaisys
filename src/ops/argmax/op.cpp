@@ -5,6 +5,9 @@
 
 #include "cpu/argmax_cpu.hpp"
 #include "nvidia/argmax_nvidia.cuh"
+#ifdef ENABLE_METAX_API
+#include "metax/argmax_metax.hpp"
+#endif
 #include "llaisys.h"
 
 // 参数检验+设备分发
@@ -37,6 +40,14 @@ void argmax(tensor_t max_idx, tensor_t max_val, tensor_t vals) {
     case LLAISYS_DEVICE_NVIDIA:
         return nvidia::argmax(reinterpret_cast<int64_t*>(max_idx->data()), reinterpret_cast<std::byte*>(max_val->data()), reinterpret_cast<const std::byte*>(vals->data()), 
                      vals->dtype(), vals->numel());
+#endif
+#ifdef ENABLE_METAX_API
+    case LLAISYS_DEVICE_METAX:
+        return metax::argmax(reinterpret_cast<int64_t*>(max_idx->data()),
+                             reinterpret_cast<std::byte*>(max_val->data()),
+                             reinterpret_cast<const std::byte*>(vals->data()),
+                             vals->dtype(),
+                             vals->numel());
 #endif
     default:
         EXCEPTION_UNSUPPORTED_DEVICE;

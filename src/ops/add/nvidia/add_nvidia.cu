@@ -1,4 +1,4 @@
-#include "add_nvidia.hpp"
+#include "add_nvidia.cuh"
 
 #include "../../../utils.hpp"
 

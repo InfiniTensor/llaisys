@@ -42,16 +42,23 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia"], type=str)
+    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia", "metax"], type=str)
     parser.add_argument("--profile", action="store_true")
     args = parser.parse_args()
     testShapes = [(2, 3), (512, 4096)]
-    testDtypePrec = [
-        # type, atol, rtol
-        ("f32", 1e-5, 1e-5),
-        ("f16", 1e-3, 1e-3),
-        ("bf16", 1e-3, 1e-3),
-    ]
+    if args.device == "metax":
+        testDtypePrec = [
+            ("f32", 1e-5, 1e-5),
+            ("f16", 1e-3, 1e-3),
+            ("bf16", 1e-3, 1e-3),
+        ]
+    else:
+        testDtypePrec = [
+            # type, atol, rtol
+            ("f32", 1e-5, 1e-5),
+            ("f16", 1e-3, 1e-3),
+            ("bf16", 1e-3, 1e-3),
+        ]
     print(f"Testing Ops.add on {args.device}")
     for shape in testShapes:
         for dtype_name, atol, rtol in testDtypePrec:

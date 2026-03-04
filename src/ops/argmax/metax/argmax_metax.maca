@@ -1,0 +1,133 @@
+#include "argmax_metax.hpp"
+
+#include "../../../utils.hpp"
+
+#include <common/maca_bfloat16.h>
+#include <common/maca_fp16.h>
+#include <mc_runtime.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <math.h>
+
+namespace {
+
+template <typename T>
+__device__ __forceinline__ float to_float(T v);
+
+template <>
+__device__ __forceinline__ float to_float<float>(float v) {
+    return v;
+}
+
+template <>
+__device__ __forceinline__ float to_float<__half>(__half v) {
+    return __half2float(v);
+}
+
+template <>
+__device__ __forceinline__ float to_float<__maca_bfloat16>(__maca_bfloat16 v) {
+    return __bfloat162float(v);
+}
+
+__device__ __forceinline__ void warp_argmax(float &max_val, int64_t &max_idx) {
+    constexpr maca_uint64_t full_mask = static_cast<maca_uint64_t>(~0ULL);
+    for (int stride = warpSize / 2; stride > 0; stride >>= 1) {
+        const float other_max = __shfl_down_sync(full_mask, max_val, stride, warpSize);
+        const int64_t other_idx = __shfl_down_sync(full_mask, max_idx, stride, warpSize);
+        if (other_idx >= 0 &&
+            (other_max > max_val || (other_max == max_val && (max_idx < 0 || other_idx < max_idx)))) {
+            max_val = other_max;
+            max_idx = other_idx;
+        }
+    }
+}
+
+template <typename T, int BLOCK_SIZE>
+__global__ void argmax_kernel(int64_t *max_idx, T *max_val, const T *vals, size_t numel) {
+    __shared__ float smax[BLOCK_SIZE];
+    __shared__ int64_t sidx[BLOCK_SIZE];
+
+    const int tid = threadIdx.x;
+    const int lane_id = tid % warpSize;
+    const int warp_id = tid / warpSize;
+    const int warp_count = (BLOCK_SIZE + warpSize - 1) / warpSize;
+
+    float local_max = -INFINITY;
+    int64_t local_idx = -1;
+
+    for (size_t i = static_cast<size_t>(tid); i < numel; i += static_cast<size_t>(BLOCK_SIZE)) {
+        const float cur = to_float<T>(vals[i]);
+        if (cur > local_max || (cur == local_max && (local_idx < 0 || static_cast<int64_t>(i) < local_idx))) {
+            local_max = cur;
+            local_idx = static_cast<int64_t>(i);
+        }
+    }
+
+    // Warp-level reduction first to cut shared-memory traffic and barriers.
+    warp_argmax(local_max, local_idx);
+
+    if (lane_id == 0) {
+        smax[warp_id] = local_max;
+        sidx[warp_id] = local_idx;
+    }
+    __syncthreads();
+
+    // Final reduction over warp leaders by warp 0.
+    if (warp_id == 0) {
+        float block_max = (lane_id < warp_count) ? smax[lane_id] : -INFINITY;
+        int64_t block_idx = (lane_id < warp_count) ? sidx[lane_id] : -1;
+        warp_argmax(block_max, block_idx);
+        if (lane_id == 0) {
+            *max_idx = block_idx;
+            *max_val = vals[block_idx];
+        }
+    }
+}
+
+template <typename T>
+void launch_argmax(int64_t *max_idx, std::byte *max_val, const std::byte *vals, size_t numel) {
+    constexpr int block_size = 256;
+    argmax_kernel<T, block_size><<<1, block_size>>>(
+        max_idx,
+        reinterpret_cast<T *>(max_val),
+        reinterpret_cast<const T *>(vals),
+        numel);
+}
+
+} // namespace
+
+namespace llaisys::ops::metax {
+
+void argmax(int64_t *max_idx, std::byte *max_val, const std::byte *vals, llaisysDataType_t type, size_t numel) {
+    if (numel == 0) {
+        *max_idx = 0;
+        switch (type) {
+        case LLAISYS_DTYPE_F32:
+            *reinterpret_cast<float *>(max_val) = 0.0f;
+            break;
+        case LLAISYS_DTYPE_F16:
+            *reinterpret_cast<__half *>(max_val) = __float2half(0.0f);
+            break;
+        case LLAISYS_DTYPE_BF16:
+            *reinterpret_cast<__maca_bfloat16 *>(max_val) = __float2bfloat16(0.0f);
+            break;
+        default:
+            EXCEPTION_UNSUPPORTED_DATATYPE(type);
+        }
+        return;
+    }
+
+    switch (type) {
+    case LLAISYS_DTYPE_F32:
+        return launch_argmax<float>(max_idx, max_val, vals, numel);
+    case LLAISYS_DTYPE_F16:
+        return launch_argmax<__half>(max_idx, max_val, vals, numel);
+    case LLAISYS_DTYPE_BF16:
+        return launch_argmax<__maca_bfloat16>(max_idx, max_val, vals, numel);
+    default:
+        EXCEPTION_UNSUPPORTED_DATATYPE(type);
+    }
+}
+
+} // namespace llaisys::ops::metax

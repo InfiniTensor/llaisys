@@ -306,7 +306,7 @@ def create_app(engine: ChatEngine, served_model_name: str) -> FastAPI:
 def parse_args():
     parser = argparse.ArgumentParser(description="LLAISYS OpenAI-style Chat Server")
     parser.add_argument("--model", required=True, type=str, help="Path to model directory")
-    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia"], type=str)
+    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia", "metax"], type=str)
     parser.add_argument("--host", default="127.0.0.1", type=str)
     parser.add_argument("--port", default=8000, type=int)
     parser.add_argument("--served-model-name", default="llaisys-qwen2", type=str)

@@ -374,7 +374,7 @@ def orchestrator_main(args):
 def build_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True, type=str, help="Path to local model directory.")
-    parser.add_argument("--device", default="nvidia", choices=["cpu", "nvidia"], type=str)
+    parser.add_argument("--device", default="nvidia", choices=["cpu", "nvidia", "metax"], type=str)
     parser.add_argument("--backends", default="torch,llaisys", type=str)
     parser.add_argument("--prompts", default="short,medium,long", type=str)
     parser.add_argument("--max-new-tokens", default="32,64,128", type=str)
