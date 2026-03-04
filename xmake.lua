@@ -13,9 +13,26 @@ option("nv-gpu")
     set_description("Whether to compile implementations for Nvidia GPU")
 option_end()
 
+option("sentencepiece")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Enable SentencePiece tokenizer support")
+option_end()
+
 if has_config("nv-gpu") then
     add_defines("ENABLE_NVIDIA_API")
+    
+    -- 1. 先引入 nvidia 的定义
     includes("xmake/nvidia.lua")
+    
+    -- 2. 【关键修复】显式找到刚引入的 target，强制追加 -fPIC 标志
+    -- 这确保了即使 nvidia.lua 内部配置有误，这里也能兜底修正
+    local nvidia_target = target("llaisys-device-nvidia")
+    if nvidia_target then
+        nvidia_target:add("cxflags", "-fPIC", {force = true})
+        nvidia_target:add("cuflags", "-Xcompiler=-fPIC", {force = true})
+        nvidia_target:add("culdflags", "-Xcompiler=-fPIC", {force = true})
+    end
 end
 
 target("llaisys-utils")
@@ -37,6 +54,11 @@ target("llaisys-device")
     set_kind("static")
     add_deps("llaisys-utils")
     add_deps("llaisys-device-cpu")
+
+    -- 如果开启了 nv-gpu，则依赖 nvidia 的 device 实现
+    if has_config("nv-gpu") then
+        add_deps("llaisys-device-nvidia")
+    end
 
     set_languages("cxx17")
     set_warnings("all", "error")
@@ -106,7 +128,16 @@ target("llaisys")
     set_languages("cxx17")
     set_warnings("all", "error")
     add_files("src/llaisys/*.cc")
+    add_files("src/llaisys/*/*.cpp")
+    add_files("src/models/*/*.cpp")
+    add_files("src/models/*/*/*.cpp")
+    add_files("src/tokenizer/*/*.cpp")
     set_installdir(".")
+
+    if has_config("sentencepiece") then
+        add_defines("LLAISYS_ENABLE_SENTENCEPIECE")
+        add_links("sentencepiece")
+    end
 
     
     after_install(function (target)

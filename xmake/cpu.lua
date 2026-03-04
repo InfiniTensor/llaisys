@@ -24,4 +24,3 @@ target("llaisys-ops-cpu")
 
     on_install(function (target) end)
 target_end()
-

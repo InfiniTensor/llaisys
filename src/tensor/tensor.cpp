@@ -164,27 +164,91 @@ void Tensor::debug() const {
 }
 
 bool Tensor::isContiguous() const {
-    TO_BE_IMPLEMENTED();
+    const auto& shape=_meta.shape;
+    const auto& strides=_meta.strides;
+    size_t ndim=shape.size();
+    if(ndim==0)
+        return true;
+    if(strides.back()!=1)
+        return false;
+    size_t expected_stride=1;
+    int ndim_int = static_cast<int>(ndim);
+    for (int i = ndim_int - 2; i >= 0; i--) {
+        expected_stride *= shape[i + 1];
+        if (strides[i] != static_cast<ptrdiff_t>(expected_stride))
+            return false;
+    }
     return true;
 }
 
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    size_t ndim=this->ndim();
+    if(order.size()!=ndim)
+        throw std::invalid_argument("Order must have same length as number of dimensions");
+    std::vector<bool> used(ndim,false);
+    std::vector<size_t> new_shape(ndim);
+    std::vector<ptrdiff_t> new_strides(ndim);
+    int i=0;
+    for(size_t idx:order){
+        if(idx>=ndim||used[idx])
+            throw std::invalid_argument("Order must be a valid permutation");
+        used[idx]=true;
+        new_shape[i]=_meta.shape[idx];
+        new_strides[i++]=_meta.strides[idx];
+    }
+    TensorMeta new_meta{
+        _meta.dtype,
+        new_shape,
+        new_strides
+    };
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage,_offset));
 }
 
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    size_t new_numel=std::accumulate(shape.begin(),shape.end(),size_t(1),std::multiplies<>());
+    if(new_numel!=this->numel())
+        throw std::invalid_argument("Shape mismatch: total elements must be equal");
+    if(!this->isContiguous())
+        throw std::runtime_error("Cannot create view from non-contiguous tensor");
+    std::vector<ptrdiff_t> new_strides(shape.size());
+    ptrdiff_t stride=1;
+     int rank = static_cast<int>(shape.size());
+    for (int i = rank - 1; i >= 0; i--) {
+        new_strides[i] = stride;
+        stride *= static_cast<ptrdiff_t>(shape[i]);
+    }
+    TensorMeta new_meta{
+        _meta.dtype,
+        shape,
+        new_strides
+    };
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage,_offset));
 }
 
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    size_t ndim=this->ndim();
+    if(dim>=ndim)
+        throw std::invalid_argument("Dimension out of range");
+    size_t size=this->shape()[dim];
+    if(start>=size||end>size||start>=end)
+        throw std::invalid_argument("Invalid slice range");
+    std::vector<size_t> new_shape=this->shape();
+    new_shape[dim]=end-start;
+    std::vector<ptrdiff_t> new_strides=this->strides();
+    ptrdiff_t new_offset=_offset+start*_meta.strides[dim]*elementSize();
+    TensorMeta new_meta{
+        _meta.dtype,
+        new_shape,
+        new_strides
+    };
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage,new_offset));
 }
 
-void Tensor::load(const void *src_) {
-    TO_BE_IMPLEMENTED();
+void Tensor::load(const void *src_){
+    size_t elem_size=utils::dsize(_meta.dtype);//单个元素大小
+    size_t total_bytes=this->numel()*elem_size;//所有元素占字节数
+    std::byte *dst=_storage->memory()+_offset;//获取目标地址
+    std::memcpy(dst,src_,total_bytes);
 }
 
 tensor_t Tensor::contiguous() const {
