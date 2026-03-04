@@ -30,11 +30,9 @@ __global__ void swiglu_kernel(
     size_t i = tid / cols;
     size_t j = tid % cols;
 
-    // Contiguous access: row * cols + col
     float val_gate = to_float(gate[i * cols + j]);
     float val_up   = to_float(up[i * cols + j]);
 
-    // SiLU(x) = x / (1 + exp(-x))
     float silu_gate = val_gate / (1.0f + expf(-val_gate));
     
     out[i * cols + j] = from_float<T>(val_up * silu_gate);
