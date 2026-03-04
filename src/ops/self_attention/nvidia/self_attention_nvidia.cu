@@ -10,9 +10,6 @@
 
 namespace llaisys::ops::nvidia {
 
-// ============================================================================
-// Type Conversion Helpers
-// ============================================================================
 template<typename T> __device__ inline float to_float(T v);
 template<> __device__ inline float to_float<float>(float v) { return v; }
 template<> __device__ inline float to_float<half>(half v) { return __half2float(v); }
@@ -23,11 +20,6 @@ template<> __device__ inline float from_float<float>(float v) { return v; }
 template<> __device__ inline half from_float<half>(float v) { return __float2half(v); }
 template<> __device__ inline nv_bfloat16 from_float<nv_bfloat16>(float v) { return __float2bfloat16(v); }
 
-// ============================================================================
-// Kernels
-// ============================================================================
-
-// Gather Q: [seq, head, dim] -> float [head, seq, dim]
 template<typename T>
 __global__ void gather_all_q_kernel(
     float *dst, const T *src,
@@ -46,7 +38,6 @@ __global__ void gather_all_q_kernel(
         to_float(src[s * s0 + h * s1 + d * s2]);
 }
 
-// Gather KV + GQA Expand: [total, kv_head, dim] -> float [head, total, dim]
 template<typename T>
 __global__ void gather_expand_kv_kernel(
     float *dst, const T *src,
@@ -67,7 +58,6 @@ __global__ void gather_expand_kv_kernel(
         to_float(src[t * s0 + kv_h * s1 + d * s2]);
 }
 
-// Scatter O: float [head, seq, dim] -> [seq, head, dim]
 template<typename T>
 __global__ void scatter_all_heads_kernel(
     T *dst, const float *src,
@@ -152,16 +142,10 @@ __global__ void softmax_row_kernel(float *data, size_t num_rows, size_t row_len)
     }
 }
 
-// ============================================================================
-// Utilities: cuBLAS Handle & Cached Buffers
-// ============================================================================
 static cublasHandle_t get_cublas_handle() {
     static thread_local cublasHandle_t handle = nullptr;
     if (!handle) {
-        cublasStatus_t status = cublasCreate(&handle);
-        if (status != CUBLAS_STATUS_SUCCESS) {
-            fprintf(stderr, "cuBLAS handle creation failed: %d\n", (int)status);
-        }
+        cublasCreate(&handle);
     }
     return handle;
 }
@@ -180,19 +164,10 @@ static size_t s_o_all_sz = 0;
 static void ensure_buf(float *&ptr, size_t &cur, size_t need) {
     if (need <= cur) return;
     if (ptr) cudaFree(ptr);
-    cudaError_t err = cudaMalloc(&ptr, need);
-    if (err != cudaSuccess) {
-        fprintf(stderr, "CUDA malloc failed: %s\n", cudaGetErrorString(err));
-        ptr = nullptr;
-        cur = 0;
-        return;
-    }
+    cudaMalloc(&ptr, need);
     cur = need;
 }
 
-// ============================================================================
-// Implementation Launcher
-// ============================================================================
 template<typename T>
 void launch_self_attention(std::byte *out, const std::byte *q, const std::byte *k, const std::byte *v,
                            size_t seq_len, size_t n_head, size_t head_dim,
@@ -204,7 +179,6 @@ void launch_self_attention(std::byte *out, const std::byte *q, const std::byte *
     const T *v_ptr = reinterpret_cast<const T *>(v);
     T *o_ptr = reinterpret_cast<T *>(out);
 
-    // Strides for contiguous tensors [seq, head, dim]
     size_t q_s0 = n_head * head_dim, q_s1 = head_dim, q_s2 = 1;
     size_t k_s0 = n_kv_head * head_dim, k_s1 = head_dim, k_s2 = 1;
     size_t v_s0 = n_kv_head * v_dim,   v_s1 = v_dim,   v_s2 = 1;
@@ -213,7 +187,6 @@ void launch_self_attention(std::byte *out, const std::byte *q, const std::byte *
     size_t group_size = n_head / n_kv_head;
     cublasHandle_t handle = get_cublas_handle();
 
-    // Calculate buffer sizes
     size_t q_need = n_head * seq_len * head_dim * sizeof(float);
     size_t k_need = n_head * total_len * head_dim * sizeof(float);
     size_t v_need = n_head * total_len * v_dim * sizeof(float);
@@ -226,56 +199,43 @@ void launch_self_attention(std::byte *out, const std::byte *q, const std::byte *
     ensure_buf(s_scores, s_scores_sz, s_need);
     ensure_buf(s_o_all, s_o_all_sz, o_need);
 
-    if (!s_q_all || !s_k_all || !s_v_all || !s_scores || !s_o_all) {
-        fprintf(stderr, "SelfAttention: Failed to allocate temporary buffers.\n");
-        return;
-    }
-
     int thr = 256;
 
-    // 1. Gather Q
     {
         size_t n = n_head * seq_len * head_dim;
         int blk = (int)((n + thr - 1) / thr);
         gather_all_q_kernel<T><<<blk, thr>>>(s_q_all, q_ptr, seq_len, n_head, head_dim, q_s0, q_s1, q_s2);
     }
 
-    // 2. Gather & Expand K
     {
         size_t n = n_head * total_len * head_dim;
         int blk = (int)((n + thr - 1) / thr);
         gather_expand_kv_kernel<T><<<blk, thr>>>(s_k_all, k_ptr, total_len, n_head, n_kv_head, head_dim, group_size, k_s0, k_s1, k_s2);
     }
-    // 3. Gather & Expand V
+
     {
         size_t n = n_head * total_len * v_dim;
         int blk = (int)((n + thr - 1) / thr);
         gather_expand_kv_kernel<T><<<blk, thr>>>(s_v_all, v_ptr, total_len, n_head, n_kv_head, v_dim, group_size, v_s0, v_s1, v_s2);
     }
 
-    // 4. Batched GEMM: Scores = K * Q^T
     {
         float alpha = 1.0f, beta = 0.0f;
-        long long strideA = (long long)(total_len * head_dim);
-        long long strideB = (long long)(seq_len * head_dim);
+        long long strideA = (long long)(seq_len * head_dim);
+        long long strideB = (long long)(total_len * head_dim);
         long long strideC = (long long)(seq_len * total_len);
         
-        cublasStatus_t status = cublasSgemmStridedBatched(handle,
-            CUBLAS_OP_T, CUBLAS_OP_N,
-            (int)total_len, (int)seq_len, (int)head_dim,
+        cublasSgemmStridedBatched(handle,
+            CUBLAS_OP_N, CUBLAS_OP_T,
+            (int)seq_len, (int)total_len, (int)head_dim,
             &alpha,
-            s_k_all, (int)head_dim, strideA,
-            s_q_all, (int)head_dim, strideB,
+            s_q_all, (int)head_dim, strideA,
+            s_k_all, (int)head_dim, strideB,
             &beta,
             s_scores, (int)total_len, strideC,
             (int)n_head);
-        
-        if (status != CUBLAS_STATUS_SUCCESS) {
-            fprintf(stderr, "cuBLAS GEMM (QK^T) failed: %d\n", (int)status);
-        }
     }
 
-    // 5. Scale + Mask
     {
         size_t ns = n_head * seq_len * total_len;
         int blk = (int)((ns + thr - 1) / thr);
@@ -283,7 +243,6 @@ void launch_self_attention(std::byte *out, const std::byte *q, const std::byte *
         causal_mask_batched_kernel<<<blk, thr>>>(s_scores, n_head, seq_len, total_len);
     }
 
-    // 6. Softmax
     {
         size_t num_rows = n_head * seq_len;
         int sthr = 1;
@@ -292,44 +251,32 @@ void launch_self_attention(std::byte *out, const std::byte *q, const std::byte *
         softmax_row_kernel<<<(int)num_rows, sthr, smem>>>(s_scores, num_rows, total_len);
     }
 
-    // 7. Batched GEMM: Out = Scores * V
     {
         float alpha = 1.0f, beta = 0.0f;
-        long long strideA = (long long)(total_len * v_dim);
-        long long strideB = (long long)(seq_len * total_len);
+        long long strideA = (long long)(seq_len * total_len);
+        long long strideB = (long long)(total_len * v_dim);
         long long strideC = (long long)(seq_len * v_dim);
 
-        cublasStatus_t status = cublasSgemmStridedBatched(handle,
+        cublasSgemmStridedBatched(handle,
             CUBLAS_OP_N, CUBLAS_OP_N,
-            (int)v_dim, (int)seq_len, (int)total_len,
+            (int)seq_len, (int)v_dim, (int)total_len,
             &alpha,
-            s_v_all, (int)v_dim, strideA,
-            s_scores, (int)total_len, strideB,
+            s_scores, (int)total_len, strideA,
+            s_v_all, (int)v_dim, strideB,
             &beta,
             s_o_all, (int)v_dim, strideC,
             (int)n_head);
-
-        if (status != CUBLAS_STATUS_SUCCESS) {
-            fprintf(stderr, "cuBLAS GEMM (SV) failed: %d\n", (int)status);
-        }
     }
 
-    // 8. Scatter Output
     {
         size_t n = n_head * seq_len * v_dim;
         int blk = (int)((n + thr - 1) / thr);
         scatter_all_heads_kernel<T><<<blk, thr>>>(o_ptr, s_o_all, seq_len, n_head, v_dim, o_s0, o_s1, o_s2);
     }
 
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        fprintf(stderr, "CUDA SelfAttention Kernel failed: %s\n", cudaGetErrorString(err));
-    }
+    cudaGetLastError();
 }
 
-// ============================================================================
-// Public API
-// ============================================================================
 void self_attention(std::byte *out, const std::byte *q, const std::byte *k, const std::byte *v,
                     llaisysDataType_t dtype,
                     size_t seq_len, size_t n_head, size_t head_dim,
