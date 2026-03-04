@@ -90,7 +90,7 @@ void rope(tensor_t output, tensor_t input, tensor_t position_ids, float base_the
         nvidia::rope(
             output->data(),
             input->data(),
-            position_ids->data(),
+            reinterpret_cast<const int64_t*>(position_ids->data()), // ✅ 修改处：显式转换类型
             output->dtype(),
             seq_len,
             num_heads,
