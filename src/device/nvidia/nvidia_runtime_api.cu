@@ -1,30 +1,30 @@
 #include "../runtime_api.hpp"
-#include <cuda_runtime.h>
-#include <iostream>
 
-// CUDA 错误检查宏：帮你快速定位显存分配或执行错误
-#define CUDA_CHECK(call) \
-    do { \
-        cudaError_t err = call; \
-        if (err != cudaSuccess) { \
-            std::cerr << "CUDA Error: " << cudaGetErrorString(err) \
-                      << " at " << __FILE__ << ":" << __LINE__ << std::endl; \
-            exit(EXIT_FAILURE); \
-        } \
+#include <cuda_runtime.h>
+#include <cstdlib>
+#include <cstring>
+
+#define CUDA_CHECK(call)                                                      \
+    do {                                                                      \
+        cudaError_t err = call;                                               \
+        if (err != cudaSuccess) {                                             \
+            fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__,  \
+                    cudaGetErrorString(err));                                 \
+            exit(EXIT_FAILURE);                                               \
+        }                                                                     \
     } while (0)
 
 namespace llaisys::device::nvidia {
 
 namespace runtime_api {
-
 int getDeviceCount() {
     int count = 0;
-    cudaGetDeviceCount(&count); // 如果没有GPU，我们不希望它崩溃，所以这里不用 CHECK
+    CUDA_CHECK(cudaGetDeviceCount(&count));
     return count;
 }
 
-void setDevice(int device) {
-    CUDA_CHECK(cudaSetDevice(device));
+void setDevice(int device_id) {
+    CUDA_CHECK(cudaSetDevice(device_id));
 }
 
 void deviceSynchronize() {
@@ -38,15 +38,11 @@ llaisysStream_t createStream() {
 }
 
 void destroyStream(llaisysStream_t stream) {
-    if (stream) {
-        CUDA_CHECK(cudaStreamDestroy(reinterpret_cast<cudaStream_t>(stream)));
-    }
+    CUDA_CHECK(cudaStreamDestroy(reinterpret_cast<cudaStream_t>(stream)));
 }
 
 void streamSynchronize(llaisysStream_t stream) {
-    if (stream) {
-        CUDA_CHECK(cudaStreamSynchronize(reinterpret_cast<cudaStream_t>(stream)));
-    }
+    CUDA_CHECK(cudaStreamSynchronize(reinterpret_cast<cudaStream_t>(stream)));
 }
 
 void *mallocDevice(size_t size) {
@@ -56,32 +52,61 @@ void *mallocDevice(size_t size) {
 }
 
 void freeDevice(void *ptr) {
-    if (ptr) {
-        CUDA_CHECK(cudaFree(ptr));
-    }
+    CUDA_CHECK(cudaFree(ptr));
 }
 
 void *mallocHost(size_t size) {
     void *ptr = nullptr;
-    // 使用 Pinned Memory (锁页内存)，这能让 CPU <-> GPU 的异步数据拷贝快得多
     CUDA_CHECK(cudaMallocHost(&ptr, size));
     return ptr;
 }
 
 void freeHost(void *ptr) {
-    if (ptr) {
-        CUDA_CHECK(cudaFreeHost(ptr));
-    }
+    CUDA_CHECK(cudaFreeHost(ptr));
 }
 
 void memcpySync(void *dst, const void *src, size_t size, llaisysMemcpyKind_t kind) {
-    // 现代 64 位 Linux 默认支持 UVA，cudaMemcpyDefault 会根据指针地址自动判断拷贝方向
-    CUDA_CHECK(cudaMemcpy(dst, src, size, cudaMemcpyDefault));
+    cudaMemcpyKind cuda_kind;
+    switch (kind) {
+    case LLAISYS_MEMCPY_H2H:
+        cuda_kind = cudaMemcpyHostToHost;
+        break;
+    case LLAISYS_MEMCPY_H2D:
+        cuda_kind = cudaMemcpyHostToDevice;
+        break;
+    case LLAISYS_MEMCPY_D2H:
+        cuda_kind = cudaMemcpyDeviceToHost;
+        break;
+    case LLAISYS_MEMCPY_D2D:
+        cuda_kind = cudaMemcpyDeviceToDevice;
+        break;
+    default:
+        cuda_kind = cudaMemcpyDefault;
+        break;
+    }
+    CUDA_CHECK(cudaMemcpy(dst, src, size, cuda_kind));
 }
 
-// 修复点：添加了 llaisysStream_t 参数，并调用 cudaMemcpyAsync
 void memcpyAsync(void *dst, const void *src, size_t size, llaisysMemcpyKind_t kind, llaisysStream_t stream) {
-    CUDA_CHECK(cudaMemcpyAsync(dst, src, size, cudaMemcpyDefault, reinterpret_cast<cudaStream_t>(stream)));
+    cudaMemcpyKind cuda_kind;
+    switch (kind) {
+    case LLAISYS_MEMCPY_H2H:
+        cuda_kind = cudaMemcpyHostToHost;
+        break;
+    case LLAISYS_MEMCPY_H2D:
+        cuda_kind = cudaMemcpyHostToDevice;
+        break;
+    case LLAISYS_MEMCPY_D2H:
+        cuda_kind = cudaMemcpyDeviceToHost;
+        break;
+    case LLAISYS_MEMCPY_D2D:
+        cuda_kind = cudaMemcpyDeviceToDevice;
+        break;
+    default:
+        cuda_kind = cudaMemcpyDefault;
+        break;
+    }
+    CUDA_CHECK(cudaMemcpyAsync(dst, src, size, cuda_kind, reinterpret_cast<cudaStream_t>(stream)));
 }
 
 static const LlaisysRuntimeAPI RUNTIME_API = {

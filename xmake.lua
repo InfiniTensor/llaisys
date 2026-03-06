@@ -5,11 +5,10 @@ add_includedirs("include")
 
 -- DEVICE --
 includes("xmake/cpu.lua")
-includes("xmake/nvidia.lua")
 
 -- NVIDIA --
 option("nv-gpu")
-    set_default(false)
+    set_default(true)
     set_showmenu(true)
     set_description("Whether to compile implementations for Nvidia GPU")
 option_end()
@@ -143,8 +142,6 @@ target("llaisys")
     set_warnings("all", "error")
     
     add_files("src/llaisys/*.cc")
-    -- [修复关键点 3] 确保编译模型的 C API 接口文件
-    add_files("src/llaisys/models/*.cc")
 
     set_installdir(".")
 
