@@ -3,8 +3,9 @@ set_encodings("utf-8")
 
 add_includedirs("include")
 
--- CPU --
+-- DEVICE --
 includes("xmake/cpu.lua")
+includes("xmake/nvidia.lua")
 
 -- NVIDIA --
 option("nv-gpu")
@@ -37,6 +38,11 @@ target("llaisys-device")
     set_kind("static")
     add_deps("llaisys-utils")
     add_deps("llaisys-device-cpu")
+    
+    -- [新增] 动态依赖 nvidia device 模块
+    if has_config("nv-gpu") then
+        add_deps("llaisys-device-nvidia")
+    end
 
     set_languages("cxx17")
     set_warnings("all", "error")
@@ -84,6 +90,11 @@ target("llaisys-ops")
     set_kind("static")
     add_deps("llaisys-ops-cpu")
 
+    -- [新增] 动态依赖 nvidia ops 模块
+    if has_config("nv-gpu") then
+        add_deps("llaisys-ops-nvidia")
+    end
+
     set_languages("cxx17")
     set_warnings("all", "error")
     if not is_plat("windows") then
@@ -123,6 +134,11 @@ target("llaisys")
     -- [修复关键点 2] 添加对 models 的依赖
     add_deps("llaisys-models") 
 
+    -- [新增] 链接 CUDA 核心库 cuBLAS 和 CUDART
+    if has_config("nv-gpu") then
+        add_links("cudart", "cublas")
+    end
+    
     set_languages("cxx17")
     set_warnings("all", "error")
     
