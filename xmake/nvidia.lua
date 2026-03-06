@@ -2,7 +2,7 @@ target("llaisys-device-nvidia")
     set_kind("static")
     add_deps("llaisys-utils")
 
-    -- 【借鉴核心 1】强制开启 CUDA 设备代码链接策略！
+    -- 强制开启 CUDA 设备代码链接策略
     set_policy("build.cuda.devlink", true)
     
     set_toolchains("cuda")
@@ -31,9 +31,8 @@ target("llaisys-device-nvidia")
     set_languages("cxx17")
     set_warnings("all", "error")
     
-    -- 【借鉴核心 2】一网打尽：把 device 和 ops 下所有的 .cu 和 .cpp 全抓进来
-    add_files("../src/device/nvidia/*.cpp", "../src/device/nvidia/*.cu")
-    add_files("../src/ops/*/nvidia/*.cpp", "../src/ops/*/nvidia/*.cu")
+    add_files("../src/device/nvidia/*.cu")
+    add_files("../src/ops/*/nvidia/*.cu")
 
     on_install(function (target) end)
 target_end()

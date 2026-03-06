@@ -3,7 +3,7 @@ set_encodings("utf-8")
 
 add_includedirs("include")
 
--- DEVICE --
+-- CPU --
 includes("xmake/cpu.lua")
 
 -- NVIDIA --
@@ -16,29 +16,32 @@ option_end()
 if has_config("nv-gpu") then
     add_defines("ENABLE_NVIDIA_API")
     includes("xmake/nvidia.lua")
+
+    -- 强制注入 fPIC 兜底
+    local nvidia_target = target("llaisys-device-nvidia")
+    if nvidia_target then
+        nvidia_target:add("cxflags", "-fPIC", {force = true})
+        nvidia_target:add("cuflags", "-Xcompiler=-fPIC", {force = true})
+        nvidia_target:add("culdflags", "-Xcompiler=-fPIC", {force = true})
+    end
 end
 
 target("llaisys-utils")
     set_kind("static")
-
     set_languages("cxx17")
     set_warnings("all", "error")
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end
-
     add_files("src/utils/*.cpp")
-
     on_install(function (target) end)
 target_end()
-
 
 target("llaisys-device")
     set_kind("static")
     add_deps("llaisys-utils")
     add_deps("llaisys-device-cpu")
     
-    -- [新增] 动态依赖 nvidia device 模块
     if has_config("nv-gpu") then
         add_deps("llaisys-device-nvidia")
     end
@@ -48,9 +51,7 @@ target("llaisys-device")
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end
-
     add_files("src/device/*.cpp")
-
     on_install(function (target) end)
 target_end()
 
@@ -64,9 +65,7 @@ target("llaisys-core")
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end
-
     add_files("src/core/*/*.cpp")
-
     on_install(function (target) end)
 target_end()
 
@@ -79,33 +78,25 @@ target("llaisys-tensor")
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end
-
     add_files("src/tensor/*.cpp")
-
     on_install(function (target) end)
 target_end()
 
 target("llaisys-ops")
     set_kind("static")
     add_deps("llaisys-ops-cpu")
-
-    -- [新增] 动态依赖 nvidia ops 模块
-    if has_config("nv-gpu") then
-        add_deps("llaisys-ops-nvidia")
-    end
+    
+    -- 【修复点】：彻底移除了对 llaisys-ops-nvidia 的依赖，防止报错
 
     set_languages("cxx17")
     set_warnings("all", "error")
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end
-    
     add_files("src/ops/*/*.cpp")
-
     on_install(function (target) end)
 target_end()
 
--- [修复关键点 1] 添加 llaisys-models 目标
 target("llaisys-models")
     set_kind("static")
     add_deps("llaisys-tensor")
@@ -116,10 +107,7 @@ target("llaisys-models")
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end
-    
-    -- 编译所有模型代码
     add_files("src/models/*/*.cpp")
-
     on_install(function (target) end)
 target_end()
 
@@ -130,23 +118,25 @@ target("llaisys")
     add_deps("llaisys-core")
     add_deps("llaisys-tensor")
     add_deps("llaisys-ops")
-    -- [修复关键点 2] 添加对 models 的依赖
     add_deps("llaisys-models") 
 
-    -- [新增] 链接 CUDA 核心库 cuBLAS 和 CUDART
     if has_config("nv-gpu") then
-        add_links("cudart", "cublas")
+        add_rules("cuda")
+        if not is_plat("windows") then
+            add_cuflags("-Xcompiler=-fPIC")
+        end
+        -- 【核心逻辑】：直接把所有算子的 cuda 文件喂给这个拥有一切依赖的动态库
+        add_files("src/ops/*/nvidia/*.cpp", "src/ops/*/nvidia/*.cu")
     end
     
     set_languages("cxx17")
     set_warnings("all", "error")
-    
     add_files("src/llaisys/*.cc")
+    add_files("src/llaisys/models/*.cc")
 
     set_installdir(".")
 
     after_install(function (target)
-        -- copy shared library to python package
         print("Copying llaisys to python/llaisys/libllaisys/ ..")
         if is_plat("windows") then
             os.cp("bin/*.dll", "python/llaisys/libllaisys/")

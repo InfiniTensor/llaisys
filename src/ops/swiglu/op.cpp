@@ -5,37 +5,32 @@
 
 #include "cpu/swiglu_cpu.hpp"
 
+#ifdef ENABLE_NVIDIA_API
+#include "nvidia/swiglu_nvidia.hpp"
+#endif
+
 namespace llaisys::ops {
-void swiglu(tensor_t out, tensor_t gate, tensor_t up) {
-    CHECK_SAME_DEVICE(out, gate, up);
-    
-    CHECK_SAME_SHAPE(out->shape(), gate->shape(), up->shape());
-    
-    ASSERT(out->ndim() == 2, "SwiGLU: tensors must be 2D.");
+void swiglu(tensor_t c, tensor_t a, tensor_t b) {
+    CHECK_SAME_DEVICE(c, a, b);
+    CHECK_SAME_SHAPE(c->shape(), a->shape(), b->shape());
+    CHECK_SAME_DTYPE(c->dtype(), a->dtype(), b->dtype());
+    ASSERT(c->isContiguous() && a->isContiguous() && b->isContiguous(), "SwiGLU: all tensors must be contiguous.");
 
-    CHECK_SAME_DTYPE(out->dtype(), gate->dtype(), up->dtype());
-
-    ASSERT(out->isContiguous() && gate->isContiguous() && up->isContiguous(), 
-           "SwiGLU: all tensors must be contiguous.");
-
-    size_t numel = out->numel();
-
-    if (out->deviceType() == LLAISYS_DEVICE_CPU) {
-        return cpu::swiglu(out->data(), gate->data(), up->data(), out->dtype(), numel);
+    if (c->deviceType() == LLAISYS_DEVICE_CPU) {
+        return cpu::swiglu(c->data(), a->data(), b->data(), c->dtype(), c->numel());
     }
 
-    llaisys::core::context().setDevice(out->deviceType(), out->deviceId());
+    llaisys::core::context().setDevice(c->deviceType(), c->deviceId());
 
-    switch (out->deviceType()) {
+    switch (c->deviceType()) {
     case LLAISYS_DEVICE_CPU:
-        return cpu::swiglu(out->data(), gate->data(), up->data(), out->dtype(), numel);
+        return cpu::swiglu(c->data(), a->data(), b->data(), c->dtype(), c->numel());
 #ifdef ENABLE_NVIDIA_API
     case LLAISYS_DEVICE_NVIDIA:
-        TO_BE_IMPLEMENTED();
-        return;
+        return nvidia::swiglu(c->data(), a->data(), b->data(), c->dtype(), c->numel());
 #endif
     default:
         EXCEPTION_UNSUPPORTED_DEVICE;
     }
 }
-}
+} // namespace llaisys::ops
