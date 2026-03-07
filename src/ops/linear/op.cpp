@@ -2,29 +2,100 @@
 
 #include "../../utils.hpp"
 
+#if defined(_OPENMP)
+#include <omp.h>
+#endif
+
+#if defined(__AVX2__)
+#include <immintrin.h>
+#endif
+
 namespace {
+// 匿名命名空间：本文件私有实现，避免与其他翻译单元符号冲突。
+#if defined(__AVX2__)
+// AVX2 点积内核：每次处理 8 个 float，剩余元素走标量尾处理。
+inline float dot_f32_avx2(const float *a, const float *b, size_t k) {
+    __m256 acc = _mm256_setzero_ps();
+    size_t i = 0;
+    for (; i + 8 <= k; i += 8) {
+        __m256 va = _mm256_loadu_ps(a + i);
+        __m256 vb = _mm256_loadu_ps(b + i);
+        acc = _mm256_fmadd_ps(va, vb, acc);
+    }
+
+    alignas(32) float lanes[8];
+    _mm256_store_ps(lanes, acc);
+    float sum = lanes[0] + lanes[1] + lanes[2] + lanes[3] + lanes[4] + lanes[5] + lanes[6] + lanes[7];
+
+    for (; i < k; ++i) {
+        sum += a[i] * b[i];
+    }
+    return sum;
+}
+#endif
+
+inline float dot_f32(const float *a, const float *b, size_t k) {
+#if defined(__AVX2__)
+    // 编译期选择：支持 AVX2 时走 SIMD 快路径。
+    return dot_f32_avx2(a, b, k);
+#else
+    float sum = 0.0f;
+#if defined(_OPENMP) && !defined(_MSC_VER)
+#pragma omp simd reduction(+ : sum)
+#endif
+    for (size_t i = 0; i < k; ++i) {
+        sum += a[i] * b[i];
+    }
+    return sum;
+#endif
+}
+
+void linear_impl_f32(float *out_ptr, const float *in_ptr, const float *weight_ptr, const float *bias_ptr,
+                     size_t M, size_t K, size_t N) {
+#if defined(_OPENMP)
+// 线程按行切分（m 维）：每个线程写不同 out_row，无写冲突。
+#pragma omp parallel for schedule(static)
+#endif
+    for (ptrdiff_t m = 0; m < static_cast<ptrdiff_t>(M); ++m) {
+        const float *in_row = in_ptr + static_cast<size_t>(m) * K;
+        float *out_row = out_ptr + static_cast<size_t>(m) * N;
+        for (size_t n = 0; n < N; ++n) {
+            const float *w_row = weight_ptr + n * K;
+            float sum = dot_f32(in_row, w_row, K);
+            if (bias_ptr) {
+                sum += bias_ptr[n];
+            }
+            out_row[n] = sum;
+        }
+    }
+}
+
 template <typename T>
 void linear_impl(T *out_ptr, const T *in_ptr, const T *weight_ptr, const T *bias_ptr,
                  size_t M, size_t K, size_t N) {
-    for (size_t m = 0; m < M; ++m) {
+#if defined(_OPENMP)
+#pragma omp parallel for schedule(static)
+#endif
+    for (ptrdiff_t m = 0; m < static_cast<ptrdiff_t>(M); ++m) {
         for (size_t n = 0; n < N; ++n) {
             float sum = 0.0f;
+#if defined(_OPENMP) && !defined(_MSC_VER)
+#pragma omp simd reduction(+ : sum)
+#endif
             for (size_t k = 0; k < K; ++k) {
                 // 转换为float进行计算，避免精度损失
-                sum += llaisys::utils::cast<float>(in_ptr[m * K + k]) * llaisys::utils::cast<float>(weight_ptr[n * K + k]);
+                sum += llaisys::utils::cast<float>(in_ptr[static_cast<size_t>(m) * K + k]) * llaisys::utils::cast<float>(weight_ptr[n * K + k]);
             }
             if (bias_ptr) {
                 sum += llaisys::utils::cast<float>(bias_ptr[n]);
             }
             // 转换回目标类型
-            out_ptr[m * N + n] = llaisys::utils::cast<T>(sum);
+            out_ptr[static_cast<size_t>(m) * N + n] = llaisys::utils::cast<T>(sum);
         }
     }
 }
-} // namespace
 
-namespace llaisys::ops {
-void linear(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias) {
+void validate_linear_args(llaisys::tensor_t out, llaisys::tensor_t in, llaisys::tensor_t weight, llaisys::tensor_t bias) {
     // 检查输入输出张量是否在同一设备上
     CHECK_SAME_DEVICE(out, in, weight, bias);
     // 检查数据类型是否匹配
@@ -52,19 +123,22 @@ void linear(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias) {
     if (out->deviceType() != LLAISYS_DEVICE_CPU) {
         EXCEPTION_UNSUPPORTED_DEVICE;
     }
-    size_t M = in->shape()[0];     // in行数
-    size_t K = in->shape()[1];     // in列数
-    size_t N = weight->shape()[0]; // weight行数
-    auto type = in->dtype();
+}
 
-    // 根据数据类型调用相应的实现函数
+void dispatch_linear_kernel(llaisys::tensor_t out, llaisys::tensor_t in, llaisys::tensor_t weight, llaisys::tensor_t bias) {
+    const size_t M = in->shape()[0];     // in行数
+    const size_t K = in->shape()[1];     // in列数
+    const size_t N = weight->shape()[0]; // weight行数
+    const auto type = in->dtype();
+
+    // 运行时 dtype 分发：f32 用特化快路径，f16/bf16 走模板通用路径。
     switch (type) {
     case LLAISYS_DTYPE_F32:
-        return linear_impl(reinterpret_cast<float *>(out->data()),
-                           reinterpret_cast<const float *>(in->data()),
-                           reinterpret_cast<const float *>(weight->data()),
-                           bias ? reinterpret_cast<const float *>(bias->data()) : nullptr,
-                           M, K, N);
+        return linear_impl_f32(reinterpret_cast<float *>(out->data()),
+                               reinterpret_cast<const float *>(in->data()),
+                               reinterpret_cast<const float *>(weight->data()),
+                               bias ? reinterpret_cast<const float *>(bias->data()) : nullptr,
+                               M, K, N);
     case LLAISYS_DTYPE_F16:
         return linear_impl(reinterpret_cast<llaisys::fp16_t *>(out->data()),
                            reinterpret_cast<const llaisys::fp16_t *>(in->data()),
@@ -80,5 +154,13 @@ void linear(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias) {
     default:
         EXCEPTION_UNSUPPORTED_DATATYPE(type);
     }
+}
+} // namespace
+
+namespace llaisys::ops {
+void linear(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias) {
+    // 接口层：先校验参数，再分发内核实现。
+    validate_linear_args(out, in, weight, bias);
+    dispatch_linear_kernel(out, in, weight, bias);
 }
 } // namespace llaisys::ops

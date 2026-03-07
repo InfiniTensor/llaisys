@@ -4,13 +4,29 @@
 #include "../tensor.h"
 
 __C {
+    // Qwen2 model meta info
     struct LlaisysQwen2Meta {
+        // Data type of the model weights. Only supports int8 and float16 for now.
         llaisysDataType_t dtype;
+        // Model hyperparameters
+        // nlayer: number of layers
+        // hs: hidden size
+        // nh: number of attention heads（Q头）
+        // nkvh: number of key/value heads
+        // dh: head dimension
+        // di: intermediate dimension
+        // maxseq: maximum sequence length
+        // voc: vocabulary size
         size_t nlayer, hs, nh, nkvh, dh, di, maxseq, voc;
+        // Sampling parameters
+        // epsilon: sampling parameter epsilon
+        // theta: sampling parameter theta
+        // end_token: end token ID
         float epsilon, theta;
         int64_t end_token;
     };
 
+    // Forward declaration of the model implementation, which is hidden from the API users.
     struct LlaisysQwen2Weights {
         llaisysTensor_t in_embed;
         llaisysTensor_t out_embed;
