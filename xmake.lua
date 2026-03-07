@@ -25,6 +25,16 @@ option("cpu-avx2")
     set_description("Whether to enable AVX2/FMA for CPU operators")
 option_end()
 
+option("openblas")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Whether to enable OpenBLAS backend for CPU linear f32")
+option_end()
+
+if has_config("openblas") then
+    add_requires("openblas", {optional = true})
+end
+
 if has_config("nv-gpu") then
     add_defines("ENABLE_NVIDIA_API")
     includes("xmake/nvidia.lua")

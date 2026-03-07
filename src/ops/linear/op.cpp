@@ -2,12 +2,18 @@
 
 #include "../../utils.hpp"
 
+#include <vector>
+
 #if defined(_OPENMP)
 #include <omp.h>
 #endif
 
 #if defined(__AVX2__)
 #include <immintrin.h>
+#endif
+
+#if defined(ENABLE_OPENBLAS)
+#include <cblas.h>
 #endif
 
 namespace {
@@ -52,6 +58,37 @@ inline float dot_f32(const float *a, const float *b, size_t k) {
 
 void linear_impl_f32(float *out_ptr, const float *in_ptr, const float *weight_ptr, const float *bias_ptr,
                      size_t M, size_t K, size_t N) {
+#if defined(ENABLE_OPENBLAS)
+    // out = in * weight^T，weight 当前布局是 [N, K]，因此 GEMM 里用 TransB。
+    cblas_sgemm(CblasRowMajor,
+                CblasNoTrans,
+                CblasTrans,
+                static_cast<int>(M),
+                static_cast<int>(N),
+                static_cast<int>(K),
+                1.0f,
+                in_ptr,
+                static_cast<int>(K),
+                weight_ptr,
+                static_cast<int>(K),
+                0.0f,
+                out_ptr,
+                static_cast<int>(N));
+
+    if (bias_ptr) {
+#if defined(_OPENMP)
+#pragma omp parallel for schedule(static)
+#endif
+        for (ptrdiff_t m = 0; m < static_cast<ptrdiff_t>(M); ++m) {
+            float *out_row = out_ptr + static_cast<size_t>(m) * N;
+            for (size_t n = 0; n < N; ++n) {
+                out_row[n] += bias_ptr[n];
+            }
+        }
+    }
+    return;
+#endif
+
 #if defined(_OPENMP)
 // 线程按行切分（m 维）：每个线程写不同 out_row，无写冲突。
 #pragma omp parallel for schedule(static)
@@ -91,6 +128,106 @@ void linear_impl(T *out_ptr, const T *in_ptr, const T *weight_ptr, const T *bias
             }
             // 转换回目标类型
             out_ptr[static_cast<size_t>(m) * N + n] = llaisys::utils::cast<T>(sum);
+        }
+    }
+}
+
+template <typename LowpT>
+void linear_impl_lowp_fast(LowpT *out_ptr, const LowpT *in_ptr, const LowpT *weight_ptr, const LowpT *bias_ptr,
+                           size_t M, size_t K, size_t N) {
+    // 低精度专用路径：将低精度张量批量转换为 float 后计算，避免在最内层循环重复 cast。
+    std::vector<float> weight_f(N * K);
+#if defined(_OPENMP)
+#pragma omp parallel for schedule(static)
+#endif
+    for (ptrdiff_t idx = 0; idx < static_cast<ptrdiff_t>(N * K); ++idx) {
+        weight_f[static_cast<size_t>(idx)] = llaisys::utils::cast<float>(weight_ptr[static_cast<size_t>(idx)]);
+    }
+
+    std::vector<float> bias_f;
+    if (bias_ptr) {
+        bias_f.resize(N);
+#if defined(_OPENMP)
+#pragma omp parallel for schedule(static)
+#endif
+        for (ptrdiff_t n = 0; n < static_cast<ptrdiff_t>(N); ++n) {
+            bias_f[static_cast<size_t>(n)] = llaisys::utils::cast<float>(bias_ptr[static_cast<size_t>(n)]);
+        }
+    }
+
+#if defined(ENABLE_OPENBLAS)
+    std::vector<float> in_f(M * K);
+    std::vector<float> out_f(M * N);
+
+#if defined(_OPENMP)
+#pragma omp parallel for schedule(static)
+#endif
+    for (ptrdiff_t idx = 0; idx < static_cast<ptrdiff_t>(M * K); ++idx) {
+        in_f[static_cast<size_t>(idx)] = llaisys::utils::cast<float>(in_ptr[static_cast<size_t>(idx)]);
+    }
+
+    cblas_sgemm(CblasRowMajor,
+                CblasNoTrans,
+                CblasTrans,
+                static_cast<int>(M),
+                static_cast<int>(N),
+                static_cast<int>(K),
+                1.0f,
+                in_f.data(),
+                static_cast<int>(K),
+                weight_f.data(),
+                static_cast<int>(K),
+                0.0f,
+                out_f.data(),
+                static_cast<int>(N));
+
+    if (bias_ptr) {
+#if defined(_OPENMP)
+#pragma omp parallel for schedule(static)
+#endif
+        for (ptrdiff_t m = 0; m < static_cast<ptrdiff_t>(M); ++m) {
+            float *out_row = out_f.data() + static_cast<size_t>(m) * N;
+            for (size_t n = 0; n < N; ++n) {
+                out_row[n] += bias_f[n];
+            }
+        }
+    }
+
+#if defined(_OPENMP)
+#pragma omp parallel for schedule(static)
+#endif
+    for (ptrdiff_t idx = 0; idx < static_cast<ptrdiff_t>(M * N); ++idx) {
+        out_ptr[static_cast<size_t>(idx)] = llaisys::utils::cast<LowpT>(out_f[static_cast<size_t>(idx)]);
+    }
+    return;
+#endif
+
+    // 无 OpenBLAS 时，复用 SIMD/标量点积内核，仍保持 float 累加。
+#if defined(_OPENMP)
+#pragma omp parallel
+#endif
+    {
+        std::vector<float> in_row_f(K);
+#if defined(_OPENMP)
+#pragma omp for schedule(static)
+#endif
+        for (ptrdiff_t m = 0; m < static_cast<ptrdiff_t>(M); ++m) {
+            const size_t m_u = static_cast<size_t>(m);
+            const LowpT *in_row_lowp = in_ptr + m_u * K;
+            LowpT *out_row = out_ptr + m_u * N;
+
+            for (size_t k = 0; k < K; ++k) {
+                in_row_f[k] = llaisys::utils::cast<float>(in_row_lowp[k]);
+            }
+
+            for (size_t n = 0; n < N; ++n) {
+                const float *w_row = weight_f.data() + n * K;
+                float sum = dot_f32(in_row_f.data(), w_row, K);
+                if (bias_ptr) {
+                    sum += bias_f[n];
+                }
+                out_row[n] = llaisys::utils::cast<LowpT>(sum);
+            }
         }
     }
 }
@@ -140,17 +277,17 @@ void dispatch_linear_kernel(llaisys::tensor_t out, llaisys::tensor_t in, llaisys
                                bias ? reinterpret_cast<const float *>(bias->data()) : nullptr,
                                M, K, N);
     case LLAISYS_DTYPE_F16:
-        return linear_impl(reinterpret_cast<llaisys::fp16_t *>(out->data()),
-                           reinterpret_cast<const llaisys::fp16_t *>(in->data()),
-                           reinterpret_cast<const llaisys::fp16_t *>(weight->data()),
-                           bias ? reinterpret_cast<const llaisys::fp16_t *>(bias->data()) : nullptr,
-                           M, K, N);
+        return linear_impl_lowp_fast(reinterpret_cast<llaisys::fp16_t *>(out->data()),
+                                     reinterpret_cast<const llaisys::fp16_t *>(in->data()),
+                                     reinterpret_cast<const llaisys::fp16_t *>(weight->data()),
+                                     bias ? reinterpret_cast<const llaisys::fp16_t *>(bias->data()) : nullptr,
+                                     M, K, N);
     case LLAISYS_DTYPE_BF16:
-        return linear_impl(reinterpret_cast<llaisys::bf16_t *>(out->data()),
-                           reinterpret_cast<const llaisys::bf16_t *>(in->data()),
-                           reinterpret_cast<const llaisys::bf16_t *>(weight->data()),
-                           bias ? reinterpret_cast<const llaisys::bf16_t *>(bias->data()) : nullptr,
-                           M, K, N);
+        return linear_impl_lowp_fast(reinterpret_cast<llaisys::bf16_t *>(out->data()),
+                                     reinterpret_cast<const llaisys::bf16_t *>(in->data()),
+                                     reinterpret_cast<const llaisys::bf16_t *>(weight->data()),
+                                     bias ? reinterpret_cast<const llaisys::bf16_t *>(bias->data()) : nullptr,
+                                     M, K, N);
     default:
         EXCEPTION_UNSUPPORTED_DATATYPE(type);
     }

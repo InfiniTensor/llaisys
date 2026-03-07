@@ -49,6 +49,10 @@ target("llaisys-ops-cpu")
             add_cxflags("-mavx2", "-mfma")
         end
     end
+    if has_config("openblas") then
+        add_defines("ENABLE_OPENBLAS")
+        add_packages("openblas")
+    end
 
     add_files("../src/ops/*/cpu/*.cpp")
 
