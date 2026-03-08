@@ -74,6 +74,9 @@ target("llaisys-device")
     set_kind("static")
     add_deps("llaisys-utils")
     add_deps("llaisys-device-cpu")
+    if has_config("nv-gpu") then
+        add_deps("llaisys-device-nvidia")
+    end
 
     set_languages("cxx17")
     set_warnings("all", "error")
@@ -208,6 +211,7 @@ target("llaisys")
         else
             add_cxflags("-fopenmp")
             add_ldflags("-fopenmp")
+            add_syslinks("gomp")
         end
     end
     if has_config("cpu-avx2") and is_arch("x64", "x86_64") then

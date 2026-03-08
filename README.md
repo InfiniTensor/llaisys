@@ -382,7 +382,7 @@ python test/test_runtime.py --device nvidia
 ### Implement CUDA Operators
 Create a `nvdia/` sub-directory in each operator source directory and implement a cuda version. Check `src/ops/add/op.cpp` to see how to include your cuda implementations. Remeber to define the compiling procedures in the xmake files. Run the operator tests with `--device nvidia` flag to test your CUDA implementation.
 
-You can use CUDA libraries like cuBLAS, cuDNN, etc. to accelerate your operators. Check their documentations to see how to use them. You can store extra device resources in `src/device/nvidia/nvidia_resource.cu`.
+You can use CUDA libraries like cuBLAS, cuDNN, etc. to accelerate your operators. Check their documentations to see how to use them. You can store extra device resources in `src/device/nvidia/nvidia_resource.cpp`.
 
 Modify your model codes to support CUDA inference. 
 

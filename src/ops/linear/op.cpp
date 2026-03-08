@@ -1,15 +1,16 @@
+#if defined(__AVX2__)
+#include <immintrin.h>
+#endif
+
 #include "op.hpp"
 
+#include "../../core/llaisys_core.hpp"
 #include "../../utils.hpp"
 
 #include <vector>
 
 #if defined(_OPENMP)
 #include <omp.h>
-#endif
-
-#if defined(__AVX2__)
-#include <immintrin.h>
 #endif
 
 #if defined(ENABLE_OPENBLAS)
@@ -256,8 +257,8 @@ void validate_linear_args(llaisys::tensor_t out, llaisys::tensor_t in, llaisys::
     if (bias) {
         CHECK_ARGUMENT(bias->shape()[0] == out->shape()[1], "Linear: bias.shape[0] must equal out.shape[1].");
     }
-    // 目前仅支持CPU设备
-    if (out->deviceType() != LLAISYS_DEVICE_CPU) {
+    // 目前支持 CPU / NVIDIA
+    if (out->deviceType() != LLAISYS_DEVICE_CPU && out->deviceType() != LLAISYS_DEVICE_NVIDIA) {
         EXCEPTION_UNSUPPORTED_DEVICE;
     }
 }
@@ -267,6 +268,60 @@ void dispatch_linear_kernel(llaisys::tensor_t out, llaisys::tensor_t in, llaisys
     const size_t K = in->shape()[1];     // in列数
     const size_t N = weight->shape()[0]; // weight行数
     const auto type = in->dtype();
+
+    if (out->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+        auto &ctx = llaisys::core::context();
+        ctx.setDevice(out->deviceType(), out->deviceId());
+        const auto *api = ctx.runtime().api();
+
+        const size_t out_bytes = out->numel() * out->elementSize();
+        const size_t in_bytes = in->numel() * in->elementSize();
+        const size_t w_bytes = weight->numel() * weight->elementSize();
+        const size_t b_bytes = bias ? (bias->numel() * bias->elementSize()) : 0;
+
+        std::vector<std::byte> h_out(out_bytes);
+        std::vector<std::byte> h_in(in_bytes);
+        std::vector<std::byte> h_w(w_bytes);
+        std::vector<std::byte> h_b;
+        if (bias) {
+            h_b.resize(b_bytes);
+        }
+
+        api->memcpy_sync(h_in.data(), in->data(), in_bytes, LLAISYS_MEMCPY_D2H);
+        api->memcpy_sync(h_w.data(), weight->data(), w_bytes, LLAISYS_MEMCPY_D2H);
+        if (bias) {
+            api->memcpy_sync(h_b.data(), bias->data(), b_bytes, LLAISYS_MEMCPY_D2H);
+        }
+
+        switch (type) {
+        case LLAISYS_DTYPE_F32:
+            linear_impl_f32(reinterpret_cast<float *>(h_out.data()),
+                            reinterpret_cast<const float *>(h_in.data()),
+                            reinterpret_cast<const float *>(h_w.data()),
+                            bias ? reinterpret_cast<const float *>(h_b.data()) : nullptr,
+                            M, K, N);
+            break;
+        case LLAISYS_DTYPE_F16:
+            linear_impl_lowp_fast(reinterpret_cast<llaisys::fp16_t *>(h_out.data()),
+                                  reinterpret_cast<const llaisys::fp16_t *>(h_in.data()),
+                                  reinterpret_cast<const llaisys::fp16_t *>(h_w.data()),
+                                  bias ? reinterpret_cast<const llaisys::fp16_t *>(h_b.data()) : nullptr,
+                                  M, K, N);
+            break;
+        case LLAISYS_DTYPE_BF16:
+            linear_impl_lowp_fast(reinterpret_cast<llaisys::bf16_t *>(h_out.data()),
+                                  reinterpret_cast<const llaisys::bf16_t *>(h_in.data()),
+                                  reinterpret_cast<const llaisys::bf16_t *>(h_w.data()),
+                                  bias ? reinterpret_cast<const llaisys::bf16_t *>(h_b.data()) : nullptr,
+                                  M, K, N);
+            break;
+        default:
+            EXCEPTION_UNSUPPORTED_DATATYPE(type);
+        }
+
+        api->memcpy_sync(out->data(), h_out.data(), out_bytes, LLAISYS_MEMCPY_H2D);
+        return;
+    }
 
     // 运行时 dtype 分发：f32 用特化快路径，f16/bf16 走模板通用路径。
     switch (type) {

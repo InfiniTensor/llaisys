@@ -1,6 +1,9 @@
 #include "op.hpp"
 
+#include "../../core/llaisys_core.hpp"
 #include "../../utils.hpp"
+
+#include <vector>
 
 namespace {
 template <typename T>
@@ -40,12 +43,54 @@ void argmax(tensor_t max_idx, tensor_t max_val, tensor_t vals) {
                    "Argmax: max_idx and max_val must have exactly one element.");
     CHECK_ARGUMENT(vals->numel() > 0, "Argmax: vals must not be empty.");
 
-    if (vals->deviceType() != LLAISYS_DEVICE_CPU) {
-        EXCEPTION_UNSUPPORTED_DEVICE;
-    }
+    CHECK_ARGUMENT(vals->deviceType() == LLAISYS_DEVICE_CPU || vals->deviceType() == LLAISYS_DEVICE_NVIDIA,
+                   "Argmax: only cpu/nvidia are supported.");
 
     auto numel = vals->numel();
     auto type = vals->dtype();
+
+    if (vals->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+        auto &ctx = llaisys::core::context();
+        ctx.setDevice(vals->deviceType(), vals->deviceId());
+        const auto *api = ctx.runtime().api();
+
+        const size_t vals_bytes = vals->numel() * vals->elementSize();
+        const size_t val_bytes = max_val->elementSize();
+
+        std::vector<std::byte> h_vals(vals_bytes);
+        std::vector<std::byte> h_max_val(val_bytes);
+        int64_t h_idx = 0;
+
+        api->memcpy_sync(h_vals.data(), vals->data(), vals_bytes, LLAISYS_MEMCPY_D2H);
+
+        switch (type) {
+        case LLAISYS_DTYPE_F32:
+            argmax_impl(&h_idx,
+                        reinterpret_cast<float *>(h_max_val.data()),
+                        reinterpret_cast<const float *>(h_vals.data()),
+                        numel);
+            break;
+        case LLAISYS_DTYPE_F16:
+            argmax_impl(&h_idx,
+                        reinterpret_cast<llaisys::fp16_t *>(h_max_val.data()),
+                        reinterpret_cast<const llaisys::fp16_t *>(h_vals.data()),
+                        numel);
+            break;
+        case LLAISYS_DTYPE_BF16:
+            argmax_impl(&h_idx,
+                        reinterpret_cast<llaisys::bf16_t *>(h_max_val.data()),
+                        reinterpret_cast<const llaisys::bf16_t *>(h_vals.data()),
+                        numel);
+            break;
+        default:
+            EXCEPTION_UNSUPPORTED_DATATYPE(type);
+        }
+
+        api->memcpy_sync(max_idx->data(), &h_idx, sizeof(int64_t), LLAISYS_MEMCPY_H2D);
+        api->memcpy_sync(max_val->data(), h_max_val.data(), val_bytes, LLAISYS_MEMCPY_H2D);
+        return;
+    }
+
     // 获取数据指针，并调用相应的数据类型处理函数， 使max_idx->data()的数据类型强制转换为int64_t*
     auto idx_ptr = reinterpret_cast<int64_t *>(max_idx->data());
 

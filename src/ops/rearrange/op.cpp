@@ -1,6 +1,9 @@
 #include "op.hpp"
 
+#include "../../core/llaisys_core.hpp"
 #include "../../utils.hpp"
+
+#include <vector>
 
 namespace {
 template <typename T>
@@ -65,17 +68,51 @@ void rearrange(tensor_t out, tensor_t in) {
     CHECK_ARGUMENT(out->shape() == in->shape(),
                    "rearrange: out and in must have the same shape.");
 
-    // 设备检查
-    if (out->deviceType() != LLAISYS_DEVICE_CPU) {
-        EXCEPTION_UNSUPPORTED_DEVICE;
-    }
-
     size_t ndim = out->ndim();
     auto type = out->dtype();
 
     // 获取步长信息
     const auto &in_strides = in->strides();
     const auto &shape = out->shape();
+
+    if (out->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+        auto &ctx = llaisys::core::context();
+        ctx.setDevice(out->deviceType(), out->deviceId());
+        const auto *api = ctx.runtime().api();
+
+        const size_t out_bytes = out->numel() * out->elementSize();
+        const size_t in_bytes = in->numel() * in->elementSize();
+        std::vector<std::byte> h_out(out_bytes), h_in(in_bytes);
+        api->memcpy_sync(h_in.data(), in->data(), in_bytes, LLAISYS_MEMCPY_D2H);
+
+        switch (type) {
+        case LLAISYS_DTYPE_F32:
+            rearrange_impl(reinterpret_cast<float *>(h_out.data()),
+                           reinterpret_cast<const float *>(h_in.data()),
+                           shape, in_strides, ndim);
+            break;
+        case LLAISYS_DTYPE_F16:
+            rearrange_impl(reinterpret_cast<llaisys::fp16_t *>(h_out.data()),
+                           reinterpret_cast<const llaisys::fp16_t *>(h_in.data()),
+                           shape, in_strides, ndim);
+            break;
+        case LLAISYS_DTYPE_BF16:
+            rearrange_impl(reinterpret_cast<llaisys::bf16_t *>(h_out.data()),
+                           reinterpret_cast<const llaisys::bf16_t *>(h_in.data()),
+                           shape, in_strides, ndim);
+            break;
+        default:
+            EXCEPTION_UNSUPPORTED_DATATYPE(type);
+        }
+
+        api->memcpy_sync(out->data(), h_out.data(), out_bytes, LLAISYS_MEMCPY_H2D);
+        return;
+    }
+
+    // 设备检查
+    if (out->deviceType() != LLAISYS_DEVICE_CPU) {
+        EXCEPTION_UNSUPPORTED_DEVICE;
+    }
 
     // dtype 分发
     switch (type) {

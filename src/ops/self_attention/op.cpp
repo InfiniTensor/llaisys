@@ -1,6 +1,9 @@
 #include "op.hpp"
+#include "../../core/llaisys_core.hpp"
 #include <cmath>
 #include <limits>
+
+#include <vector>
 
 namespace {
 template <typename T>
@@ -122,25 +125,100 @@ void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float
     CHECK_ARGUMENT(nhead % nkvhead == 0,
                    "SelfAttention: q.shape[1] (nhead) must be divisible by k.shape[1] (nkvhead).");
 
-    // 检查设备类型
-    if (attn_val->deviceType() != LLAISYS_DEVICE_CPU) {
-        EXCEPTION_UNSUPPORTED_DEVICE;
-    }
-
     switch (dtype) {
     case LLAISYS_DTYPE_F32:
+        if (attn_val->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+            auto &ctx = llaisys::core::context();
+            ctx.setDevice(attn_val->deviceType(), attn_val->deviceId());
+            const auto *api = ctx.runtime().api();
+
+            const size_t out_bytes = attn_val->numel() * attn_val->elementSize();
+            const size_t q_bytes = q->numel() * q->elementSize();
+            const size_t k_bytes = k->numel() * k->elementSize();
+            const size_t v_bytes = v->numel() * v->elementSize();
+            std::vector<std::byte> h_out(out_bytes), h_q(q_bytes), h_k(k_bytes), h_v(v_bytes);
+
+            api->memcpy_sync(h_q.data(), q->data(), q_bytes, LLAISYS_MEMCPY_D2H);
+            api->memcpy_sync(h_k.data(), k->data(), k_bytes, LLAISYS_MEMCPY_D2H);
+            api->memcpy_sync(h_v.data(), v->data(), v_bytes, LLAISYS_MEMCPY_D2H);
+
+            self_attention_impl(reinterpret_cast<float *>(h_out.data()),
+                                reinterpret_cast<const float *>(h_q.data()),
+                                reinterpret_cast<const float *>(h_k.data()),
+                                reinterpret_cast<const float *>(h_v.data()),
+                                seqlen, nhead, d, total_len, nkvhead, dv, scale);
+            api->memcpy_sync(attn_val->data(), h_out.data(), out_bytes, LLAISYS_MEMCPY_H2D);
+            return;
+        }
+        if (attn_val->deviceType() != LLAISYS_DEVICE_CPU) {
+            EXCEPTION_UNSUPPORTED_DEVICE;
+        }
         return self_attention_impl(reinterpret_cast<float *>(attn_val->data()),
                                    reinterpret_cast<const float *>(q->data()),
                                    reinterpret_cast<const float *>(k->data()),
                                    reinterpret_cast<const float *>(v->data()),
                                    seqlen, nhead, d, total_len, nkvhead, dv, scale);
+
     case LLAISYS_DTYPE_F16:
+        if (attn_val->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+            auto &ctx = llaisys::core::context();
+            ctx.setDevice(attn_val->deviceType(), attn_val->deviceId());
+            const auto *api = ctx.runtime().api();
+
+            const size_t out_bytes = attn_val->numel() * attn_val->elementSize();
+            const size_t q_bytes = q->numel() * q->elementSize();
+            const size_t k_bytes = k->numel() * k->elementSize();
+            const size_t v_bytes = v->numel() * v->elementSize();
+            std::vector<std::byte> h_out(out_bytes), h_q(q_bytes), h_k(k_bytes), h_v(v_bytes);
+
+            api->memcpy_sync(h_q.data(), q->data(), q_bytes, LLAISYS_MEMCPY_D2H);
+            api->memcpy_sync(h_k.data(), k->data(), k_bytes, LLAISYS_MEMCPY_D2H);
+            api->memcpy_sync(h_v.data(), v->data(), v_bytes, LLAISYS_MEMCPY_D2H);
+
+            self_attention_impl(reinterpret_cast<llaisys::fp16_t *>(h_out.data()),
+                                reinterpret_cast<const llaisys::fp16_t *>(h_q.data()),
+                                reinterpret_cast<const llaisys::fp16_t *>(h_k.data()),
+                                reinterpret_cast<const llaisys::fp16_t *>(h_v.data()),
+                                seqlen, nhead, d, total_len, nkvhead, dv, scale);
+            api->memcpy_sync(attn_val->data(), h_out.data(), out_bytes, LLAISYS_MEMCPY_H2D);
+            return;
+        }
+        if (attn_val->deviceType() != LLAISYS_DEVICE_CPU) {
+            EXCEPTION_UNSUPPORTED_DEVICE;
+        }
         return self_attention_impl(reinterpret_cast<llaisys::fp16_t *>(attn_val->data()),
                                    reinterpret_cast<const llaisys::fp16_t *>(q->data()),
                                    reinterpret_cast<const llaisys::fp16_t *>(k->data()),
                                    reinterpret_cast<const llaisys::fp16_t *>(v->data()),
                                    seqlen, nhead, d, total_len, nkvhead, dv, scale);
+
     case LLAISYS_DTYPE_BF16:
+        if (attn_val->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+            auto &ctx = llaisys::core::context();
+            ctx.setDevice(attn_val->deviceType(), attn_val->deviceId());
+            const auto *api = ctx.runtime().api();
+
+            const size_t out_bytes = attn_val->numel() * attn_val->elementSize();
+            const size_t q_bytes = q->numel() * q->elementSize();
+            const size_t k_bytes = k->numel() * k->elementSize();
+            const size_t v_bytes = v->numel() * v->elementSize();
+            std::vector<std::byte> h_out(out_bytes), h_q(q_bytes), h_k(k_bytes), h_v(v_bytes);
+
+            api->memcpy_sync(h_q.data(), q->data(), q_bytes, LLAISYS_MEMCPY_D2H);
+            api->memcpy_sync(h_k.data(), k->data(), k_bytes, LLAISYS_MEMCPY_D2H);
+            api->memcpy_sync(h_v.data(), v->data(), v_bytes, LLAISYS_MEMCPY_D2H);
+
+            self_attention_impl(reinterpret_cast<llaisys::bf16_t *>(h_out.data()),
+                                reinterpret_cast<const llaisys::bf16_t *>(h_q.data()),
+                                reinterpret_cast<const llaisys::bf16_t *>(h_k.data()),
+                                reinterpret_cast<const llaisys::bf16_t *>(h_v.data()),
+                                seqlen, nhead, d, total_len, nkvhead, dv, scale);
+            api->memcpy_sync(attn_val->data(), h_out.data(), out_bytes, LLAISYS_MEMCPY_H2D);
+            return;
+        }
+        if (attn_val->deviceType() != LLAISYS_DEVICE_CPU) {
+            EXCEPTION_UNSUPPORTED_DEVICE;
+        }
         return self_attention_impl(reinterpret_cast<llaisys::bf16_t *>(attn_val->data()),
                                    reinterpret_cast<const llaisys::bf16_t *>(q->data()),
                                    reinterpret_cast<const llaisys::bf16_t *>(k->data()),

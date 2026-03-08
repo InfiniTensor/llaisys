@@ -1,8 +1,11 @@
 #include "op.hpp"
 
+#include "../../core/llaisys_core.hpp"
 #include <cmath>
 
 #include "../../utils.hpp"
+
+#include <vector>
 
 namespace {
 template <typename T>
@@ -40,14 +43,54 @@ void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps) {
     size_t norm_dim = out->shape().back();
     CHECK_ARGUMENT(weight->ndim() == 1 && weight->shape()[0] == norm_dim,
                    "RMSNorm: weight must be 1D with size equal to the last dimension of in/out.");
-    if (out->deviceType() != LLAISYS_DEVICE_CPU) {
-        EXCEPTION_UNSUPPORTED_DEVICE;
-    }
-
     // outer_size: number of RMSNorm operations to perform
     // norm_dim: size of each RMSNorm operation
     size_t outer_size = out->numel() / norm_dim;
     auto type = out->dtype();
+
+    if (out->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+        auto &ctx = llaisys::core::context();
+        ctx.setDevice(out->deviceType(), out->deviceId());
+        const auto *api = ctx.runtime().api();
+
+        const size_t out_bytes = out->numel() * out->elementSize();
+        const size_t in_bytes = in->numel() * in->elementSize();
+        const size_t w_bytes = weight->numel() * weight->elementSize();
+
+        std::vector<std::byte> h_out(out_bytes), h_in(in_bytes), h_w(w_bytes);
+        api->memcpy_sync(h_in.data(), in->data(), in_bytes, LLAISYS_MEMCPY_D2H);
+        api->memcpy_sync(h_w.data(), weight->data(), w_bytes, LLAISYS_MEMCPY_D2H);
+
+        switch (type) {
+        case LLAISYS_DTYPE_F32:
+            rms_norm_impl(reinterpret_cast<float *>(h_out.data()),
+                          reinterpret_cast<const float *>(h_in.data()),
+                          reinterpret_cast<const float *>(h_w.data()),
+                          outer_size, norm_dim, eps);
+            break;
+        case LLAISYS_DTYPE_F16:
+            rms_norm_impl(reinterpret_cast<llaisys::fp16_t *>(h_out.data()),
+                          reinterpret_cast<const llaisys::fp16_t *>(h_in.data()),
+                          reinterpret_cast<const llaisys::fp16_t *>(h_w.data()),
+                          outer_size, norm_dim, eps);
+            break;
+        case LLAISYS_DTYPE_BF16:
+            rms_norm_impl(reinterpret_cast<llaisys::bf16_t *>(h_out.data()),
+                          reinterpret_cast<const llaisys::bf16_t *>(h_in.data()),
+                          reinterpret_cast<const llaisys::bf16_t *>(h_w.data()),
+                          outer_size, norm_dim, eps);
+            break;
+        default:
+            EXCEPTION_UNSUPPORTED_DATATYPE(type);
+        }
+
+        api->memcpy_sync(out->data(), h_out.data(), out_bytes, LLAISYS_MEMCPY_H2D);
+        return;
+    }
+
+    if (out->deviceType() != LLAISYS_DEVICE_CPU) {
+        EXCEPTION_UNSUPPORTED_DEVICE;
+    }
 
     switch (type) {
     case LLAISYS_DTYPE_F32:

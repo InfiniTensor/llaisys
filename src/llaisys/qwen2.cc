@@ -2,6 +2,8 @@
 
 #include "llaisys_tensor.hpp"
 
+#include "../core/llaisys_core.hpp"
+
 #include "../ops/add/op.hpp"
 #include "../ops/argmax/op.hpp"
 #include "../ops/embedding/op.hpp"
@@ -28,7 +30,56 @@ llaisysTensor_t create_tensor_handle(const std::vector<size_t> &shape,
 }
 
 void zero_tensor(llaisysTensor_t t) {
-    std::memset(t->tensor->data(), 0, t->tensor->numel() * t->tensor->elementSize());
+    const size_t bytes = t->tensor->numel() * t->tensor->elementSize();
+    if (t->tensor->deviceType() == LLAISYS_DEVICE_CPU) {
+        std::memset(t->tensor->data(), 0, bytes);
+        return;
+    }
+
+    auto &ctx = llaisys::core::context();
+    ctx.setDevice(t->tensor->deviceType(), t->tensor->deviceId());
+    const auto *api = ctx.runtime().api();
+    std::vector<std::byte> zeros(bytes, std::byte{0});
+    api->memcpy_sync(t->tensor->data(), zeros.data(), bytes, LLAISYS_MEMCPY_H2D);
+}
+
+void tensor_write_i64(tensor_t t, int64_t value) {
+    if (t->deviceType() == LLAISYS_DEVICE_CPU) {
+        *reinterpret_cast<int64_t *>(t->data()) = value;
+        return;
+    }
+
+    auto &ctx = llaisys::core::context();
+    ctx.setDevice(t->deviceType(), t->deviceId());
+    const auto *api = ctx.runtime().api();
+    api->memcpy_sync(t->data(), &value, sizeof(int64_t), LLAISYS_MEMCPY_H2D);
+}
+
+int64_t tensor_read_i64(tensor_t t) {
+    if (t->deviceType() == LLAISYS_DEVICE_CPU) {
+        return *reinterpret_cast<int64_t *>(t->data());
+    }
+
+    auto &ctx = llaisys::core::context();
+    ctx.setDevice(t->deviceType(), t->deviceId());
+    const auto *api = ctx.runtime().api();
+    int64_t value = 0;
+    api->memcpy_sync(&value, t->data(), sizeof(int64_t), LLAISYS_MEMCPY_D2H);
+    return value;
+}
+
+void tensor_copy_bytes(tensor_t dst, size_t dst_offset, tensor_t src, size_t src_offset, size_t bytes) {
+    auto *dst_ptr = dst->data() + dst_offset;
+    auto *src_ptr = src->data() + src_offset;
+    if (dst->deviceType() == LLAISYS_DEVICE_CPU && src->deviceType() == LLAISYS_DEVICE_CPU) {
+        std::memcpy(dst_ptr, src_ptr, bytes);
+        return;
+    }
+
+    auto &ctx = llaisys::core::context();
+    ctx.setDevice(dst->deviceType(), dst->deviceId());
+    const auto *api = ctx.runtime().api();
+    api->memcpy_sync(dst_ptr, src_ptr, bytes, LLAISYS_MEMCPY_D2D);
 }
 
 struct Qwen2ModelImpl {
@@ -112,8 +163,17 @@ struct Qwen2ModelImpl {
         for (size_t i = 0; i < meta.nlayer; ++i) {
             k_cache[i] = llaisys::Tensor::create({meta.maxseq, meta.nkvh, meta.dh}, meta.dtype, device, device_id);
             v_cache[i] = llaisys::Tensor::create({meta.maxseq, meta.nkvh, meta.dh}, meta.dtype, device, device_id);
-            std::memset(k_cache[i]->data(), 0, k_cache[i]->numel() * k_cache[i]->elementSize());
-            std::memset(v_cache[i]->data(), 0, v_cache[i]->numel() * v_cache[i]->elementSize());
+            if (device == LLAISYS_DEVICE_CPU) {
+                std::memset(k_cache[i]->data(), 0, k_cache[i]->numel() * k_cache[i]->elementSize());
+                std::memset(v_cache[i]->data(), 0, v_cache[i]->numel() * v_cache[i]->elementSize());
+            } else {
+                auto k_handle = new LlaisysTensor{k_cache[i]};
+                auto v_handle = new LlaisysTensor{v_cache[i]};
+                zero_tensor(k_handle);
+                zero_tensor(v_handle);
+                delete k_handle;
+                delete v_handle;
+            }
         }
     }
 
@@ -175,7 +235,7 @@ struct Qwen2ModelImpl {
 
             // Token embedding
             auto token_tensor = llaisys::Tensor::create({1}, LLAISYS_DTYPE_I64, device, device_id);
-            *reinterpret_cast<int64_t *>(token_tensor->data()) = token_id;
+            tensor_write_i64(token_tensor, token_id);
 
             auto x = llaisys::Tensor::create({1, meta.hs}, meta.dtype, device, device_id);
             llaisys::ops::embedding(x, token_tensor, weights.in_embed->tensor);
@@ -201,7 +261,7 @@ struct Qwen2ModelImpl {
 
                 // RoPE
                 auto pos_ids = llaisys::Tensor::create({1}, LLAISYS_DTYPE_I64, device, device_id);
-                *reinterpret_cast<int64_t *>(pos_ids->data()) = static_cast<int64_t>(i);
+                tensor_write_i64(pos_ids, static_cast<int64_t>(i));
 
                 auto q_rot = llaisys::Tensor::create({1, meta.nh, meta.dh}, meta.dtype, device, device_id);
                 auto k_rot = llaisys::Tensor::create({1, meta.nkvh, meta.dh}, meta.dtype, device, device_id);
@@ -211,10 +271,8 @@ struct Qwen2ModelImpl {
 
                 // Update KV cache
                 size_t bytes_per_token = meta.nkvh * meta.dh * x->elementSize();
-                std::byte *k_cache_ptr = k_cache[l]->data() + i * bytes_per_token;
-                std::byte *v_cache_ptr = v_cache[l]->data() + i * bytes_per_token;
-                std::memcpy(k_cache_ptr, k_rot->data(), bytes_per_token);
-                std::memcpy(v_cache_ptr, v->data(), bytes_per_token);
+                tensor_copy_bytes(k_cache[l], i * bytes_per_token, k_rot, 0, bytes_per_token);
+                tensor_copy_bytes(v_cache[l], i * bytes_per_token, v, 0, bytes_per_token);
 
                 // Get all cached K, V for attention
                 auto k_all = k_cache[l]->slice(0, 0, i + 1);
@@ -266,7 +324,7 @@ struct Qwen2ModelImpl {
             auto max_val = llaisys::Tensor::create({1}, meta.dtype, device, device_id);
             llaisys::ops::argmax(max_idx, max_val, logits_1d);
 
-            next_token = *reinterpret_cast<int64_t *>(max_idx->data());
+            next_token = tensor_read_i64(max_idx);
         }
 
         cur_pos = ntoken;
@@ -288,10 +346,6 @@ __C {
         try {
             CHECK_ARGUMENT(meta != nullptr, "Qwen2: meta must not be null.");
             CHECK_ARGUMENT(ndevice >= 1, "Qwen2: must have at least one device.");
-            if (device != LLAISYS_DEVICE_CPU) {
-                EXCEPTION_UNSUPPORTED_DEVICE;
-            }
-
             int device_id = device_ids ? device_ids[0] : 0;
             auto *model = new LlaisysQwen2Model();
             model->impl = new Qwen2ModelImpl(*meta, device, device_id);

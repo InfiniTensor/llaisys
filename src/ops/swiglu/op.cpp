@@ -1,7 +1,10 @@
 #include "op.hpp"
 
+#include "../../core/llaisys_core.hpp"
 #include "../../utils.hpp"
 #include <cmath>
+
+#include <vector>
 
 namespace {
 template <typename T>
@@ -47,13 +50,52 @@ void swiglu(tensor_t out, tensor_t gate, tensor_t up) {
     CHECK_ARGUMENT(out->shape() == gate->shape() && gate->shape() == up->shape(),
                    "SwiGLU: out, gate, and up must have the same shape.");
 
+    size_t total_size = out->numel();
+    auto type = out->dtype();
+
+    if (out->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+        auto &ctx = llaisys::core::context();
+        ctx.setDevice(out->deviceType(), out->deviceId());
+        const auto *api = ctx.runtime().api();
+
+        const size_t out_bytes = out->numel() * out->elementSize();
+        const size_t gate_bytes = gate->numel() * gate->elementSize();
+        const size_t up_bytes = up->numel() * up->elementSize();
+        std::vector<std::byte> h_out(out_bytes), h_gate(gate_bytes), h_up(up_bytes);
+        api->memcpy_sync(h_gate.data(), gate->data(), gate_bytes, LLAISYS_MEMCPY_D2H);
+        api->memcpy_sync(h_up.data(), up->data(), up_bytes, LLAISYS_MEMCPY_D2H);
+
+        switch (type) {
+        case LLAISYS_DTYPE_F32:
+            swiglu_impl(reinterpret_cast<float *>(h_out.data()),
+                        reinterpret_cast<const float *>(h_gate.data()),
+                        reinterpret_cast<const float *>(h_up.data()),
+                        total_size);
+            break;
+        case LLAISYS_DTYPE_F16:
+            swiglu_impl(reinterpret_cast<llaisys::fp16_t *>(h_out.data()),
+                        reinterpret_cast<const llaisys::fp16_t *>(h_gate.data()),
+                        reinterpret_cast<const llaisys::fp16_t *>(h_up.data()),
+                        total_size);
+            break;
+        case LLAISYS_DTYPE_BF16:
+            swiglu_impl(reinterpret_cast<llaisys::bf16_t *>(h_out.data()),
+                        reinterpret_cast<const llaisys::bf16_t *>(h_gate.data()),
+                        reinterpret_cast<const llaisys::bf16_t *>(h_up.data()),
+                        total_size);
+            break;
+        default:
+            EXCEPTION_UNSUPPORTED_DATATYPE(type);
+        }
+
+        api->memcpy_sync(out->data(), h_out.data(), out_bytes, LLAISYS_MEMCPY_H2D);
+        return;
+    }
+
     // 当前仅支持CPU设备
     if (out->deviceType() != LLAISYS_DEVICE_CPU) {
         EXCEPTION_UNSUPPORTED_DEVICE;
     }
-
-    size_t total_size = out->numel();
-    auto type = out->dtype();
 
     // dtype分发：支持F32、F16、BF16
     switch (type) {

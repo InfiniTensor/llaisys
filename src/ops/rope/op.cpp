@@ -1,5 +1,8 @@
 #include "op.hpp"
+#include "../../core/llaisys_core.hpp"
 #include <cmath>
+
+#include <vector>
 
 namespace {
 template <typename T>
@@ -18,13 +21,13 @@ void rope_impl(T *out_ptr, const T *in_ptr, const int64_t *pos_ids,
             // 每个(s, h)对应一个长度为dim的向量，base就是这个向量的起始索引，dim是每个头的向量长度
             size_t base = (s * seq_len + h) * dim;
             for (size_t d = 0; d < half_dim; ++d) {
-                float exponent = (2.0f * static_cast<float>(d)) / static_cast<float>(dim);
-                float angle = static_cast<float>(pos_id) / std::pow(theta, exponent);
-                float cos_angle = std::cos(angle);
-                float sin_angle = std::sin(angle);
+                const double exponent = (2.0 * static_cast<double>(d)) / static_cast<double>(dim);
+                const double angle = static_cast<double>(pos_id) / std::pow(static_cast<double>(theta), exponent);
+                const double cos_angle = std::cos(angle);
+                const double sin_angle = std::sin(angle);
                 // original values (split half/half)
-                float x1 = llaisys::utils::cast<float>(in_ptr[base + d]);
-                float x2 = llaisys::utils::cast<float>(in_ptr[base + half_dim + d]);
+                const double x1 = static_cast<double>(llaisys::utils::cast<float>(in_ptr[base + d]));
+                const double x2 = static_cast<double>(llaisys::utils::cast<float>(in_ptr[base + half_dim + d]));
                 // apply rotation
                 out_ptr[base + d] = llaisys::utils::cast<T>(x1 * cos_angle - x2 * sin_angle);
                 out_ptr[base + half_dim + d] = llaisys::utils::cast<T>(x2 * cos_angle + x1 * sin_angle);
@@ -60,13 +63,51 @@ void rope(tensor_t out, tensor_t in, tensor_t pos_ids, float theta) {
     size_t dim = in->shape()[2];
     CHECK_ARGUMENT(dim % 2 == 0, "Rope: the last dimension must be even.");
 
+    // 获取数据类型用于分发
+    auto type = in->dtype();
+
+    if (out->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+        auto &ctx = llaisys::core::context();
+        ctx.setDevice(out->deviceType(), out->deviceId());
+        const auto *api = ctx.runtime().api();
+
+        const size_t p_bytes = pos_ids->numel() * pos_ids->elementSize();
+        std::vector<int64_t> h_pos(pos_ids->numel());
+        api->memcpy_sync(h_pos.data(), pos_ids->data(), p_bytes, LLAISYS_MEMCPY_D2H);
+
+        switch (type) {
+        case LLAISYS_DTYPE_F32: {
+            std::vector<float> h_in(in->numel()), h_out(out->numel());
+            api->memcpy_sync(h_in.data(), in->data(), in->numel() * sizeof(float), LLAISYS_MEMCPY_D2H);
+            rope_impl(h_out.data(), h_in.data(), h_pos.data(), in->shape()[0], in->shape()[1], dim, theta);
+            api->memcpy_sync(out->data(), h_out.data(), out->numel() * sizeof(float), LLAISYS_MEMCPY_H2D);
+            break;
+        }
+        case LLAISYS_DTYPE_F16: {
+            std::vector<llaisys::fp16_t> h_in(in->numel()), h_out(out->numel());
+            api->memcpy_sync(h_in.data(), in->data(), in->numel() * sizeof(llaisys::fp16_t), LLAISYS_MEMCPY_D2H);
+            rope_impl(h_out.data(), h_in.data(), h_pos.data(), in->shape()[0], in->shape()[1], dim, theta);
+            api->memcpy_sync(out->data(), h_out.data(), out->numel() * sizeof(llaisys::fp16_t), LLAISYS_MEMCPY_H2D);
+            break;
+        }
+        case LLAISYS_DTYPE_BF16: {
+            std::vector<llaisys::bf16_t> h_in(in->numel()), h_out(out->numel());
+            api->memcpy_sync(h_in.data(), in->data(), in->numel() * sizeof(llaisys::bf16_t), LLAISYS_MEMCPY_D2H);
+            rope_impl(h_out.data(), h_in.data(), h_pos.data(), in->shape()[0], in->shape()[1], dim, theta);
+            api->memcpy_sync(out->data(), h_out.data(), out->numel() * sizeof(llaisys::bf16_t), LLAISYS_MEMCPY_H2D);
+            break;
+        }
+        default:
+            EXCEPTION_UNSUPPORTED_DATATYPE(type);
+        }
+
+        return;
+    }
+
     // 检查设备类型
     if (out->deviceType() != LLAISYS_DEVICE_CPU) {
         EXCEPTION_UNSUPPORTED_DEVICE;
     }
-
-    // 获取数据类型用于分发
-    auto type = in->dtype();
 
     // 获取数据指针并调用相应的数据类型处理函数
     switch (type) {
