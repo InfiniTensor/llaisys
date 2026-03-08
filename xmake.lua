@@ -3,6 +3,12 @@ set_encodings("utf-8")
 
 add_includedirs("include")
 
+-- 全局开启 OpenMP 支持和编译器最高级别优化
+add_cxflags("-fopenmp", "-O3")
+add_ldflags("-fopenmp")
+add_shflags("-fopenmp")
+add_syslinks("gomp") -- 显式链接 GNU OpenMP 库
+
 -- CPU --
 includes("xmake/cpu.lua")
 

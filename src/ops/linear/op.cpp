@@ -27,7 +27,8 @@ void linear_cpu_kernel(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias
     }
 
     // 3. 矩阵乘法 Loop
-    // 注意：这个循环在处理 (512, 4096) 这种大矩阵时，CPU 上慢是正常的！请耐心等待。
+    // 注意:此处加入 OpenMP 多线程加速
+    #pragma omp parallel for
     for(size_t i = 0; i < M; i++){
         for(size_t j = 0; j < N; j++){
             float sum = 0.0f;
