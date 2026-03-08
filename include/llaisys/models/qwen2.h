@@ -73,6 +73,11 @@ __C {
 
     __export llaisysTensor_t llaisysQwen2ModelGetWeight(struct LlaisysQwen2Model * model, int kind, size_t layer);
 
-    __export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model * model, int64_t *token_ids, size_t ntoken);
+    __export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model * model,
+                                            int64_t *token_ids,
+                                            size_t ntoken,
+                                            int top_k,
+                                            float top_p,
+                                            float temperature);
 }
 #endif // LLAISYS_MODELS_QWEN2_H

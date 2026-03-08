@@ -200,10 +200,21 @@ class Qwen2:
         tokens = list(inputs)
         max_new_tokens = 128 if max_new_tokens is None else int(max_new_tokens)
 
+        top_k = int(top_k)
+        top_p = float(top_p)
+        temperature = float(temperature)
+
         for _ in range(max_new_tokens):
             arr = (ctypes.c_int64 * len(tokens))(*tokens)
             next_token = int(
-                LIB_LLAISYS.llaisysQwen2ModelInfer(self._model, arr, len(tokens))
+                LIB_LLAISYS.llaisysQwen2ModelInfer(
+                    self._model,
+                    arr,
+                    len(tokens),
+                    ctypes.c_int(top_k),
+                    ctypes.c_float(top_p),
+                    ctypes.c_float(temperature),
+                )
             )
             tokens.append(next_token)
             if self._end_token >= 0 and next_token == self._end_token:

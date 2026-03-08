@@ -11,6 +11,7 @@
 #include "../ops/rms_norm/op.hpp"
 #include "../ops/rope/op.hpp"
 #include "../ops/self_attention/op.hpp"
+#include "../ops/sampling/op.hpp"
 #include "../ops/swiglu/op.hpp"
 #include "../utils.hpp"
 
@@ -217,7 +218,7 @@ struct Qwen2ModelImpl {
         delete out_b;
     }
 
-    int64_t infer_next(const int64_t *token_ids, size_t ntoken) {
+    int64_t infer_next(const int64_t *token_ids, size_t ntoken, int top_k, float top_p, float temperature) {
         if (ntoken == 0) {
             return meta.end_token;
         }
@@ -318,13 +319,11 @@ struct Qwen2ModelImpl {
             auto logits = llaisys::Tensor::create({1, meta.voc}, meta.dtype, device, device_id);
             llaisys::ops::linear(logits, x_norm_final, weights.out_embed->tensor, out_b->tensor);
 
-            // Argmax for next token
+            // Sampling for next token (argmax when top_k<=1 or temperature<=0)
             auto logits_1d = logits->view({meta.voc});
-            auto max_idx = llaisys::Tensor::create({1}, LLAISYS_DTYPE_I64, device, device_id);
-            auto max_val = llaisys::Tensor::create({1}, meta.dtype, device, device_id);
-            llaisys::ops::argmax(max_idx, max_val, logits_1d);
-
-            next_token = tensor_read_i64(max_idx);
+            auto sampled_idx = llaisys::Tensor::create({1}, LLAISYS_DTYPE_I64, device, device_id);
+            llaisys::ops::sample(sampled_idx, logits_1d, temperature, top_k, top_p);
+            next_token = tensor_read_i64(sampled_idx);
         }
 
         cur_pos = ntoken;
@@ -433,11 +432,16 @@ __C {
         }
     }
 
-    int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model * model, int64_t *token_ids, size_t ntoken) {
+    int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model * model,
+                                   int64_t *token_ids,
+                                   size_t ntoken,
+                                   int top_k,
+                                   float top_p,
+                                   float temperature) {
         try {
             CHECK_ARGUMENT(model != nullptr, "Qwen2: model must not be null.");
             CHECK_ARGUMENT(token_ids != nullptr, "Qwen2: token_ids must not be null.");
-            return model->impl->infer_next(token_ids, ntoken);
+            return model->impl->infer_next(token_ids, ntoken, top_k, top_p, temperature);
         } catch (...) {
             return -1;
         }

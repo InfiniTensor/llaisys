@@ -60,7 +60,7 @@ def load_models(lib):
     lib.llaisysQwen2ModelGetWeight.argtypes = [ctypes.c_void_p, c_int, c_size_t]
     lib.llaisysQwen2ModelGetWeight.restype = llaisysTensor_t
 
-    lib.llaisysQwen2ModelInfer.argtypes = [ctypes.c_void_p, ctypes.POINTER(c_int64), c_size_t]
+    lib.llaisysQwen2ModelInfer.argtypes = [ctypes.c_void_p, ctypes.POINTER(c_int64), c_size_t, c_int, c_float, c_float]
     lib.llaisysQwen2ModelInfer.restype = c_int64
 
 

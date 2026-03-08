@@ -10,6 +10,7 @@
 #include "../ops/rms_norm/op.hpp"
 #include "../ops/rope/op.hpp"
 #include "../ops/self_attention/op.hpp"
+#include "../ops/sampling/op.hpp"
 #include "../ops/swiglu/op.hpp"
 
 __C {
@@ -39,5 +40,8 @@ __C {
     }
     void llaisysSwiGLU(llaisysTensor_t out, llaisysTensor_t gate, llaisysTensor_t up) {
         llaisys::ops::swiglu(out->tensor, gate->tensor, up->tensor);
+    }
+    void llaisysSample(llaisysTensor_t out_idx, llaisysTensor_t logits, float temperature, int top_k, float top_p) {
+        llaisys::ops::sample(out_idx->tensor, logits->tensor, temperature, top_k, top_p);
     }
 }
