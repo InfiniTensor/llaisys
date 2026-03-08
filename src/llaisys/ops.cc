@@ -9,8 +9,8 @@
 #include "../ops/rearrange/op.hpp"
 #include "../ops/rms_norm/op.hpp"
 #include "../ops/rope/op.hpp"
-#include "../ops/self_attention/op.hpp"
 #include "../ops/sampling/op.hpp"
+#include "../ops/self_attention/op.hpp"
 #include "../ops/swiglu/op.hpp"
 
 __C {
