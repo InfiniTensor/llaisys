@@ -1,15 +1,22 @@
 import argparse
-import hashlib
-import json
+import gc
+import io
+import logging
 import os
 import statistics
-import subprocess
 import sys
 import time
-from typing import Dict, List
 
+import llaisys
+import torch
+from huggingface_hub import snapshot_download
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-PROMPT_PRESETS: Dict[str, str] = {
+from test_utils import llaisys_device, torch_device
+
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+
+PROMPTS = {
     "short": "Who are you?",
     "medium": (
         "Explain the role of KV cache in transformer decoding, and give a short "
@@ -23,374 +30,164 @@ PROMPT_PRESETS: Dict[str, str] = {
     ),
 }
 
-
-JSON_SENTINEL = "__BENCH_JSON__"
-
-
-def is_gpu_device(device: str) -> bool:
-    return device in {"nvidia", "metax"}
+logging.getLogger("transformers.dynamic_module_utils").setLevel(logging.ERROR)
 
 
-def parse_csv_ints(text: str) -> List[int]:
-    return [int(x.strip()) for x in text.split(",") if x.strip()]
+def is_gpu_device(device_name):
+    return device_name in {"nvidia", "metax"}
 
 
-def parse_csv_strings(text: str) -> List[str]:
-    return [x.strip() for x in text.split(",") if x.strip()]
+def parse_csv(text, caster=str):
+    return [caster(x.strip()) for x in text.split(",") if x.strip()]
 
 
-def percentile(values: List[float], q: float) -> float:
-    if not values:
-        return 0.0
-    if len(values) == 1:
-        return values[0]
-    xs = sorted(values)
-    idx = (len(xs) - 1) * q
-    lo = int(idx)
-    hi = min(lo + 1, len(xs) - 1)
-    frac = idx - lo
-    return xs[lo] * (1.0 - frac) + xs[hi] * frac
+def load_hf_model(model_path, device_name):
+    model_id = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
+    if model_path and os.path.isdir(model_path):
+        model_path = os.path.expanduser(model_path)
+        print(f"Loading model from local path: {model_path}")
+    else:
+        print(f"Loading model from Hugging Face: {model_id}")
+        model_path = snapshot_download(model_id)
+
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    kwargs = {"device_map": torch_device(device_name), "trust_remote_code": True}
+    try:
+        model = AutoModelForCausalLM.from_pretrained(model_path, dtype=torch.bfloat16, **kwargs)
+    except TypeError:
+        model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16, **kwargs)
+    return tokenizer, model, model_path
 
 
-def summarize_case(latencies: List[float], new_tokens: List[int]) -> Dict[str, float]:
-    mean_s = statistics.mean(latencies)
-    return {
-        "mean_ms": mean_s * 1000.0,
-        "p50_ms": percentile(latencies, 0.50) * 1000.0,
-        "p95_ms": percentile(latencies, 0.95) * 1000.0,
-        "min_ms": min(latencies) * 1000.0,
-        "max_ms": max(latencies) * 1000.0,
-        "mean_new_tokens": statistics.mean(new_tokens),
-        "tokens_per_sec": (statistics.mean(new_tokens) / mean_s) if mean_s > 0 else 0.0,
-    }
+def load_llaisys_model(model_path, device_name):
+    return llaisys.models.Qwen2(model_path, llaisys_device(device_name))
 
 
-def hash_tokens(tokens: List[int]) -> str:
-    payload = ",".join(str(x) for x in tokens).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
+def sync_torch(device_name):
+    if is_gpu_device(device_name):
+        torch.cuda.synchronize()
 
 
-def run_torch_case(
-    tokenizer,
-    model,
-    prompt: str,
-    max_new_tokens: int,
-    top_k: int,
-    top_p: float,
-    temperature: float,
-    device: str,
-):
-    import torch
+def sync_llaisys(device_name):
+    llaisys.RuntimeAPI(llaisys_device(device_name)).device_synchronize()
 
-    input_content = tokenizer.apply_chat_template(
+
+def build_input_ids(tokenizer, prompt):
+    text = tokenizer.apply_chat_template(
         conversation=[{"role": "user", "content": prompt}],
         add_generation_prompt=True,
         tokenize=False,
     )
-    inputs = tokenizer.encode(input_content, return_tensors="pt").to(model.device)
+    return tokenizer.encode(text)
 
-    if is_gpu_device(device):
-        torch.cuda.synchronize()
+
+def run_torch_case(tokenizer, model, input_ids, max_new_tokens, top_k, top_p, temperature, device_name):
+    inputs = torch.tensor(input_ids, dtype=torch.int64, device=model.device).unsqueeze(0)
+    attention_mask = torch.ones_like(inputs)
+
+    sync_torch(device_name)
     start = time.perf_counter()
     with torch.no_grad():
         outputs = model.generate(
             inputs,
+            attention_mask=attention_mask,
             max_new_tokens=max_new_tokens,
             top_k=top_k,
             top_p=top_p,
             temperature=temperature,
+            pad_token_id=tokenizer.eos_token_id,
         )
-    if is_gpu_device(device):
-        torch.cuda.synchronize()
-    elapsed = time.perf_counter() - start
-
+    sync_torch(device_name)
     out_tokens = outputs[0].tolist()
-    new_tokens = len(out_tokens) - int(inputs.shape[1])
-    return elapsed, new_tokens, out_tokens
+    return time.perf_counter() - start, len(out_tokens) - len(input_ids), out_tokens
 
 
-def run_llaisys_case(
-    tokenizer,
-    model,
-    prompt: str,
-    max_new_tokens: int,
-    top_k: int,
-    top_p: float,
-    temperature: float,
-    device: str,
-):
-    import llaisys
-    from test_utils import llaisys_device
-
-    input_content = tokenizer.apply_chat_template(
-        conversation=[{"role": "user", "content": prompt}],
-        add_generation_prompt=True,
-        tokenize=False,
-    )
-    inputs = tokenizer.encode(input_content)
-
-    api = llaisys.RuntimeAPI(llaisys_device(device))
-    api.device_synchronize()
+def run_llaisys_case(model, input_ids, max_new_tokens, top_k, top_p, temperature, device_name):
+    sync_llaisys(device_name)
     start = time.perf_counter()
     out_tokens = model.generate(
-        inputs,
+        input_ids,
         max_new_tokens=max_new_tokens,
         top_k=top_k,
         top_p=top_p,
         temperature=temperature,
     )
-    api.device_synchronize()
-    elapsed = time.perf_counter() - start
-
-    new_tokens = len(out_tokens) - len(inputs)
-    return elapsed, new_tokens, out_tokens
+    sync_llaisys(device_name)
+    return time.perf_counter() - start, len(out_tokens) - len(input_ids), out_tokens
 
 
-def worker_main(args):
-    from transformers import AutoTokenizer
-
-    model_path = os.path.expanduser(args.model)
-    cases = json.loads(args.cases_json)
-
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-
-    if args.backend == "torch":
-        import torch
-        from transformers import AutoModelForCausalLM
-        from test_utils import torch_device
-
-        model_kwargs = {
-            "device_map": torch_device(args.device),
-            "trust_remote_code": True,
-        }
-        try:
-            model = AutoModelForCausalLM.from_pretrained(
-                model_path,
-                dtype=torch.bfloat16,
-                **model_kwargs,
-            )
-        except TypeError:
-            # Backward compatibility for older Transformers versions.
-            model = AutoModelForCausalLM.from_pretrained(
-                model_path,
-                torch_dtype=torch.bfloat16,
-                **model_kwargs,
-            )
-
-        runner = run_torch_case
-    elif args.backend == "llaisys":
-        import llaisys
-        from test_utils import llaisys_device
-
-        model = llaisys.models.Qwen2(model_path, llaisys_device(args.device))
-        runner = run_llaisys_case
-    else:
-        raise ValueError(f"Unsupported backend: {args.backend}")
-
-    all_results = []
+def benchmark_backend(backend, tokenizer, model, cases, warmup, repeat, top_k, top_p, temperature, device_name):
+    rows = {}
     for case in cases:
-        prompt_name = case["prompt_name"]
-        prompt = case["prompt"]
-        max_new_tokens = int(case["max_new_tokens"])
+        for _ in range(warmup):
+            if backend == "torch":
+                run_torch_case(tokenizer, model, case["input_ids"], case["max_new_tokens"], top_k, top_p, temperature, device_name)
+            else:
+                run_llaisys_case(model, case["input_ids"], case["max_new_tokens"], top_k, top_p, temperature, device_name)
 
-        for _ in range(args.warmup):
-            runner(
-                tokenizer,
-                model,
-                prompt,
-                max_new_tokens,
-                args.top_k,
-                args.top_p,
-                args.temperature,
-                args.device,
-            )
-
-        latencies: List[float] = []
-        generated: List[int] = []
-        first_tokens: List[int] = []
-        for i in range(args.repeat):
-            elapsed, new_tokens, out_tokens = runner(
-                tokenizer,
-                model,
-                prompt,
-                max_new_tokens,
-                args.top_k,
-                args.top_p,
-                args.temperature,
-                args.device,
-            )
+        latencies = []
+        generated = []
+        for _ in range(repeat):
+            if backend == "torch":
+                elapsed, new_tokens, _ = run_torch_case(
+                    tokenizer, model, case["input_ids"], case["max_new_tokens"], top_k, top_p, temperature, device_name
+                )
+            else:
+                elapsed, new_tokens, _ = run_llaisys_case(
+                    model, case["input_ids"], case["max_new_tokens"], top_k, top_p, temperature, device_name
+                )
             latencies.append(elapsed)
             generated.append(new_tokens)
-            if i == 0:
-                first_tokens = out_tokens
 
-        summary = summarize_case(latencies, generated)
-        all_results.append(
-            {
-                "backend": args.backend,
-                "prompt_name": prompt_name,
-                "max_new_tokens": max_new_tokens,
-                **summary,
-                "output_hash": hash_tokens(first_tokens),
-                "output_len": len(first_tokens),
-            }
+        mean_s = statistics.mean(latencies)
+        rows[(case["prompt_name"], case["max_new_tokens"])] = {
+            "mean_ms": mean_s * 1000.0,
+            "mean_new_tokens": statistics.mean(generated),
+            "tokens_per_sec": statistics.mean(generated) / mean_s if mean_s > 0 else 0.0,
+        }
+    return rows
+
+
+def print_report(cases, torch_rows, llaisys_rows):
+    print("\n=== Torch vs LLAISYS Inference Benchmark ===")
+    print("| Case | Torch mean(ms) | Torch tok/s | LLAISYS mean(ms) | LLAISYS tok/s | speedup |")
+    print("|---|---:|---:|---:|---:|---:|")
+
+    torch_total_tokens = 0.0
+    llaisys_total_tokens = 0.0
+    torch_total_seconds = 0.0
+    llaisys_total_seconds = 0.0
+
+    for case in cases:
+        key = (case["prompt_name"], case["max_new_tokens"])
+        torch_row = torch_rows[key]
+        llaisys_row = llaisys_rows[key]
+        speedup = torch_row["mean_ms"] / llaisys_row["mean_ms"] if llaisys_row["mean_ms"] > 0 else 0.0
+
+        print(
+            f"| {case['prompt_name']}/{case['max_new_tokens']} | {torch_row['mean_ms']:.2f} | {torch_row['tokens_per_sec']:.2f} | "
+            f"{llaisys_row['mean_ms']:.2f} | {llaisys_row['tokens_per_sec']:.2f} | {speedup:.2f}x |"
         )
 
-    print(JSON_SENTINEL + json.dumps({"backend": args.backend, "results": all_results}))
+        torch_total_tokens += torch_row["mean_new_tokens"]
+        llaisys_total_tokens += llaisys_row["mean_new_tokens"]
+        torch_total_seconds += torch_row["mean_ms"] / 1000.0
+        llaisys_total_seconds += llaisys_row["mean_ms"] / 1000.0
+
+    torch_total_tok_s = torch_total_tokens / torch_total_seconds if torch_total_seconds > 0 else 0.0
+    llaisys_total_tok_s = llaisys_total_tokens / llaisys_total_seconds if llaisys_total_seconds > 0 else 0.0
+    overall_speedup = llaisys_total_tok_s / torch_total_tok_s if torch_total_tok_s > 0 else 0.0
+
+    print("\n=== Throughput Summary ===")
+    print(f"Torch total throughput   : {torch_total_tok_s:.2f} tok/s")
+    print(f"LLAISYS total throughput : {llaisys_total_tok_s:.2f} tok/s")
+    print(f"Overall speedup          : {overall_speedup:.2f}x")
 
 
-def run_worker_subprocess(
-    backend: str,
-    model: str,
-    device: str,
-    cases: List[Dict[str, object]],
-    warmup: int,
-    repeat: int,
-    top_k: int,
-    top_p: float,
-    temperature: float,
-):
-    cmd = [
-        sys.executable,
-        __file__,
-        "--worker",
-        "--backend",
-        backend,
-        "--model",
-        model,
-        "--device",
-        device,
-        "--cases-json",
-        json.dumps(cases),
-        "--warmup",
-        str(warmup),
-        "--repeat",
-        str(repeat),
-        "--top-k",
-        str(top_k),
-        "--top-p",
-        str(top_p),
-        "--temperature",
-        str(temperature),
-    ]
-    proc = subprocess.run(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        check=False,
-    )
-
-    if proc.returncode != 0:
-        raise RuntimeError(f"{backend} worker failed:\n{proc.stdout}")
-
-    payload = None
-    for line in proc.stdout.splitlines():
-        if line.startswith(JSON_SENTINEL):
-            payload = json.loads(line[len(JSON_SENTINEL):])
-            break
-    if payload is None:
-        raise RuntimeError(f"Failed to parse worker output for {backend}:\n{proc.stdout}")
-    return payload
-
-
-def print_report(rows: List[Dict[str, object]], deterministic: bool, backends: List[str]):
-    key_order = sorted({(r["prompt_name"], r["max_new_tokens"]) for r in rows}, key=lambda x: (x[0], x[1]))
-    row_map = {(r["backend"], r["prompt_name"], r["max_new_tokens"]): r for r in rows}
-
-    print("\n=== Comprehensive Inference Benchmark ===")
-    print("| Case | Backend | mean(ms) | p50(ms) | p95(ms) | new_tokens | tok/s | output_match |")
-    print("|---|---:|---:|---:|---:|---:|---:|---:|")
-
-    for prompt_name, max_new_tokens in key_order:
-        ref_hash = None
-        if deterministic and len(backends) >= 2:
-            ref = row_map.get((backends[0], prompt_name, max_new_tokens))
-            ref_hash = ref["output_hash"] if ref else None
-
-        for backend in backends:
-            row = row_map.get((backend, prompt_name, max_new_tokens))
-            if row is None:
-                continue
-            match = "-"
-            if ref_hash is not None:
-                match = "Y" if row["output_hash"] == ref_hash else "N"
-            case_name = f"{prompt_name}/{max_new_tokens}"
-            print(
-                f"| {case_name} | {backend} | "
-                f"{row['mean_ms']:.2f} | {row['p50_ms']:.2f} | {row['p95_ms']:.2f} | "
-                f"{row['mean_new_tokens']:.1f} | {row['tokens_per_sec']:.2f} | {match} |"
-            )
-
-
-def orchestrator_main(args):
-    prompt_names = parse_csv_strings(args.prompts)
-    max_new_tokens_list = parse_csv_ints(args.max_new_tokens)
-    backends = parse_csv_strings(args.backends)
-
-    for name in prompt_names:
-        if name not in PROMPT_PRESETS:
-            raise ValueError(f"Unknown prompt preset: {name}. Valid keys: {list(PROMPT_PRESETS.keys())}")
-
-    cases = []
-    for prompt_name in prompt_names:
-        for max_new_tokens in max_new_tokens_list:
-            cases.append(
-                {
-                    "prompt_name": prompt_name,
-                    "prompt": PROMPT_PRESETS[prompt_name],
-                    "max_new_tokens": max_new_tokens,
-                }
-            )
-
-    all_rows: List[Dict[str, object]] = []
-    for backend in backends:
-        payload = run_worker_subprocess(
-            backend=backend,
-            model=args.model,
-            device=args.device,
-            cases=cases,
-            warmup=args.warmup,
-            repeat=args.repeat,
-            top_k=args.top_k,
-            top_p=args.top_p,
-            temperature=args.temperature,
-        )
-        all_rows.extend(payload["results"])
-
-    deterministic = (
-        args.top_k == 1
-        and abs(args.top_p - 1.0) < 1e-8
-        and abs(args.temperature - 1.0) < 1e-8
-    )
-    print_report(all_rows, deterministic=deterministic, backends=backends)
-
-    if args.json_out:
-        with open(args.json_out, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "device": args.device,
-                    "backends": backends,
-                    "prompts": prompt_names,
-                    "max_new_tokens": max_new_tokens_list,
-                    "warmup": args.warmup,
-                    "repeat": args.repeat,
-                    "top_k": args.top_k,
-                    "top_p": args.top_p,
-                    "temperature": args.temperature,
-                    "results": all_rows,
-                },
-                f,
-                indent=2,
-            )
-        print(f"\nSaved JSON report to: {args.json_out}")
-
-
-def build_parser():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model", required=True, type=str, help="Path to local model directory.")
+def main():
+    parser = argparse.ArgumentParser(description="Benchmark Torch vs LLAISYS inference throughput.")
+    parser.add_argument("--model", required=True, type=str)
     parser.add_argument("--device", default="nvidia", choices=["cpu", "nvidia", "metax"], type=str)
-    parser.add_argument("--backends", default="torch,llaisys", type=str)
     parser.add_argument("--prompts", default="short,medium,long", type=str)
     parser.add_argument("--max-new-tokens", default="32,64,128", type=str)
     parser.add_argument("--warmup", default=2, type=int)
@@ -398,18 +195,44 @@ def build_parser():
     parser.add_argument("--top-k", default=1, type=int)
     parser.add_argument("--top-p", default=1.0, type=float)
     parser.add_argument("--temperature", default=1.0, type=float)
-    parser.add_argument("--json-out", default="", type=str)
+    args = parser.parse_args()
 
-    parser.add_argument("--worker", action="store_true")
-    parser.add_argument("--backend", default="", choices=["", "torch", "llaisys"])
-    parser.add_argument("--cases-json", default="", type=str)
-    return parser
+    top_k, top_p, temperature = args.top_k, args.top_p, args.temperature
+
+    prompt_names = parse_csv(args.prompts)
+    max_new_tokens_list = parse_csv(args.max_new_tokens, int)
+    for name in prompt_names:
+        if name not in PROMPTS:
+            raise ValueError(f"Unknown prompt preset: {name}. Valid keys: {list(PROMPTS.keys())}")
+
+    tokenizer, torch_model, model_path = load_hf_model(args.model, args.device)
+    cases = [
+        {
+            "prompt_name": prompt_name,
+            "max_new_tokens": max_new_tokens,
+            "input_ids": build_input_ids(tokenizer, PROMPTS[prompt_name]),
+        }
+        for prompt_name in prompt_names
+        for max_new_tokens in max_new_tokens_list
+    ]
+
+    torch_rows = benchmark_backend(
+        "torch", tokenizer, torch_model, cases, args.warmup, args.repeat, top_k, top_p, temperature, args.device
+    )
+
+    del torch_model
+    gc.collect()
+    if is_gpu_device(args.device):
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+
+    llaisys_model = load_llaisys_model(model_path, args.device)
+    llaisys_rows = benchmark_backend(
+        "llaisys", tokenizer, llaisys_model, cases, args.warmup, args.repeat, top_k, top_p, temperature, args.device
+    )
+
+    print_report(cases, torch_rows, llaisys_rows)
 
 
 if __name__ == "__main__":
-    parser = build_parser()
-    args = parser.parse_args()
-    if args.worker:
-        worker_main(args)
-    else:
-        orchestrator_main(args)
+    main()

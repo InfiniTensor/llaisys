@@ -35,8 +35,7 @@ __device__ __forceinline__ void warp_argmax(float &max_val, int64_t &max_idx) {
     for (int stride = warpSize / 2; stride > 0; stride >>= 1) {
         const float other_max = __shfl_down_sync(full_mask, max_val, stride, warpSize);
         const int64_t other_idx = __shfl_down_sync(full_mask, max_idx, stride, warpSize);
-        if (other_idx >= 0 &&
-            (other_max > max_val || (other_max == max_val && (max_idx < 0 || other_idx < max_idx)))) {
+        if (other_idx >= 0 && (other_max > max_val || (other_max == max_val && (max_idx < 0 || other_idx < max_idx)))) {
             max_val = other_max;
             max_idx = other_idx;
         }

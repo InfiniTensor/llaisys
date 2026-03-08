@@ -4,17 +4,12 @@
 
 #include <common/maca_bfloat16.h>
 #include <common/maca_fp16.h>
-#include <mcblas/mcblas.h>
 #include <mc_runtime.h>
+#include <mcblas/mcblas.h>
 
 #include <cstddef>
-#include <cstdint>
-#include <math.h>
 
 namespace {
-
-#define LOAD_FLOAT4(value) *(reinterpret_cast<const float4 *>(&(value)))
-#define STORE_FLOAT4(value) *(reinterpret_cast<float4 *>(&(value)))
 
 __host__ __device__ __forceinline__ int ceil_div_int(int x, int y) {
     return (x + y - 1) / y;
@@ -22,13 +17,11 @@ __host__ __device__ __forceinline__ int ceil_div_int(int x, int y) {
 
 constexpr int METAX_WARP_SIZE = 64;
 
-template <typename T>
-__device__ __forceinline__ float to_float(T v) {
+template <typename T> __device__ __forceinline__ float to_float(T v) {
     return static_cast<float>(v);
 }
 
-template <>
-__device__ __forceinline__ float to_float<__half>(__half v) {
+template <> __device__ __forceinline__ float to_float<__half>(__half v) {
     return __half2float(v);
 }
 
@@ -37,26 +30,28 @@ __device__ __forceinline__ float to_float<__maca_bfloat16>(__maca_bfloat16 v) {
     return __bfloat162float(v);
 }
 
-template <typename T>
-__device__ __forceinline__ T from_float(float v) {
+template <typename T> __device__ __forceinline__ T from_float(float v) {
     return static_cast<T>(v);
 }
 
-template <>
-__device__ __forceinline__ __half from_float<__half>(float v) {
+template <> __device__ __forceinline__ __half from_float<__half>(float v) {
     return __float2half(v);
 }
 
 template <>
-__device__ __forceinline__ __maca_bfloat16 from_float<__maca_bfloat16>(float v) {
+__device__ __forceinline__ __maca_bfloat16
+from_float<__maca_bfloat16>(float v) {
     return __float2bfloat16(v);
 }
 
 template <typename T>
-__global__ void add_bias_rowwise_kernel(T *out, const T *bias, size_t M, size_t N) {
-    const size_t idx = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+__global__ void add_bias_rowwise_kernel(T *out, const T *bias, size_t M,
+                                        size_t N) {
+    const size_t idx
+        = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
     const size_t total = M * N;
-    for (size_t i = idx; i < total; i += static_cast<size_t>(blockDim.x) * gridDim.x) {
+    for (size_t i = idx; i < total;
+         i += static_cast<size_t>(blockDim.x) * gridDim.x) {
         const size_t col = i % N;
         out[i] = from_float<T>(to_float(out[i]) + to_float(bias[col]));
     }
@@ -67,7 +62,7 @@ inline void launch_add_bias(T *out, const T *bias, size_t M, size_t N) {
     if (bias == nullptr || M == 0 || N == 0) {
         return;
     }
-    constexpr int block_size = METAX_WARP_SIZE * 8; // 512 threads/block
+    constexpr int block_size = METAX_WARP_SIZE * 8;
     const int grid_size = ceil_div_int(static_cast<int>(M * N), block_size);
     add_bias_rowwise_kernel<<<grid_size, block_size>>>(out, bias, M, N);
 }
@@ -87,23 +82,16 @@ inline mcblasHandle_t get_mcblas_handle() {
     return handle;
 }
 
-inline bool linear_mcblas_f32(float *out,
-                              const float *in,
-                              const float *weight,
-                              const float *bias,
-                              size_t M,
-                              size_t N,
-                              size_t K) {
+inline bool linear_mcblas_f32(float *out, const float *in, const float *weight,
+                              const float *bias, size_t M, size_t N, size_t K) {
     mcblasHandle_t handle = get_mcblas_handle();
     if (handle == nullptr) {
         return false;
     }
 
-    // Keep scalar pointers on host to match this call-site contract.
     if (!mcblas_ok(mcblasSetPointerMode(handle, MCBLAS_POINTER_MODE_HOST))) {
         return false;
     }
-    // Prefer deterministic / reproducible path.
     if (!mcblas_ok(mcblasSetAtomicsMode(handle, MCBLAS_ATOMICS_NOT_ALLOWED))) {
         return false;
     }
@@ -111,8 +99,8 @@ inline bool linear_mcblas_f32(float *out,
     mcblasMath_t math_mode = MCBLAS_PEDANTIC_MATH;
 #ifdef MCBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION
     math_mode = static_cast<mcblasMath_t>(
-        static_cast<int>(math_mode) |
-        static_cast<int>(MCBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION));
+        static_cast<int>(math_mode)
+        | static_cast<int>(MCBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION));
 #endif
     if (!mcblas_ok(mcblasSetMathMode(handle, math_mode))) {
         return false;
@@ -125,65 +113,22 @@ inline bool linear_mcblas_f32(float *out,
     const int ldb = static_cast<int>(K);
     const int ldc = static_cast<int>(N);
     const float alpha = 1.0f;
+    const float beta = 0.0f;
 
-    // Split-K accumulation to reduce long-K (e.g., K=4096/11008) rounding drift.
-    int split_k_parts = 1;
-    if (k >= 8192) {
-        split_k_parts = 32;
-    } else if (k >= 4096) {
-        split_k_parts = 16;
-    } else if (k >= 2048) {
-        split_k_parts = 8;
-    } else if (k >= 1024) {
-        split_k_parts = 4;
-    }
-    const int chunk_k = ceil_div_int(k, split_k_parts);
-
-    for (int part = 0; part < split_k_parts; ++part) {
-        const int k_start = part * chunk_k;
-        if (k_start >= k) {
-            break;
-        }
-        const int k_part = (k_start + chunk_k <= k) ? chunk_k : (k - k_start);
-        const float beta_part = (part == 0) ? 0.0f : 1.0f;
-
-        // Row-major out[M,N] = in[M,K] * weight[N,K]^T
-        // Column-major mapping: C[N,M] = A[N,K] * B[K,M], A=weight(op=T), B=in(op=N).
-        // For split-K, move pointer along K axis, while keeping lda/ldb as full-K stride.
-        const float *weight_part = weight + k_start;
-        const float *in_part = in + k_start;
-
-        const mcblasStatus_t status =
-            mcblasSgemm(handle,
-                        MCBLAS_OP_T,
-                        MCBLAS_OP_N,
-                        m,
-                        n,
-                        k_part,
-                        &alpha,
-                        weight_part,
-                        lda,
-                        in_part,
-                        ldb,
-                        &beta_part,
-                        out,
-                        ldc);
-        if (!mcblas_ok(status)) {
-            return false;
-        }
+    const mcblasStatus_t status
+        = mcblasSgemm(handle, MCBLAS_OP_T, MCBLAS_OP_N, m, n, k, &alpha, weight,
+                      lda, in, ldb, &beta, out, ldc);
+    if (!mcblas_ok(status)) {
+        return false;
     }
 
     launch_add_bias(out, bias, M, N);
     return true;
 }
 
-inline bool linear_mcblas_f16(__half *out,
-                              const __half *in,
-                              const __half *weight,
-                              const __half *bias,
-                              size_t M,
-                              size_t N,
-                              size_t K) {
+inline bool linear_mcblas_f16(__half *out, const __half *in,
+                              const __half *weight, const __half *bias,
+                              size_t M, size_t N, size_t K) {
     mcblasHandle_t handle = get_mcblas_handle();
     if (handle == nullptr) {
         return false;
@@ -221,69 +166,21 @@ inline bool linear_mcblas_f16(__half *out,
     algo = MCBLAS_GEMM_DEFAULT_TENSOR_OP;
 #endif
 
-    // Row-major: out[M,N] = in[M,K] * weight[N,K]^T
-    // Column-major mapping: C[N,M] = A[N,K] * B[K,M], A=weight(op=T), B=in(op=N).
-    mcblasStatus_t status = mcblasGemmEx(handle,
-                                         MCBLAS_OP_T,
-                                         MCBLAS_OP_N,
-                                         m,
-                                         n,
-                                         k,
-                                         &alpha,
-                                         weight,
-                                         MACA_R_16F,
-                                         lda,
-                                         in,
-                                         MACA_R_16F,
-                                         ldb,
-                                         &beta,
-                                         out,
-                                         MACA_R_16F,
-                                         ldc,
-                                         compute_type,
-                                         algo);
+    mcblasStatus_t status
+        = mcblasGemmEx(handle, MCBLAS_OP_T, MCBLAS_OP_N, m, n, k, &alpha,
+                       weight, MACA_R_16F, lda, in, MACA_R_16F, ldb, &beta, out,
+                       MACA_R_16F, ldc, compute_type, algo);
 
-    // Fallback for runtimes that do not support tensor-op algo.
     if (!mcblas_ok(status) && algo != MCBLAS_GEMM_DEFAULT) {
-        status = mcblasGemmEx(handle,
-                              MCBLAS_OP_T,
-                              MCBLAS_OP_N,
-                              m,
-                              n,
-                              k,
-                              &alpha,
-                              weight,
-                              MACA_R_16F,
-                              lda,
-                              in,
-                              MACA_R_16F,
-                              ldb,
-                              &beta,
-                              out,
-                              MACA_R_16F,
-                              ldc,
-                              compute_type,
+        status = mcblasGemmEx(handle, MCBLAS_OP_T, MCBLAS_OP_N, m, n, k, &alpha,
+                              weight, MACA_R_16F, lda, in, MACA_R_16F, ldb,
+                              &beta, out, MACA_R_16F, ldc, compute_type,
                               MCBLAS_GEMM_DEFAULT);
     }
     if (!mcblas_ok(status) && used_fast_compute) {
-        status = mcblasGemmEx(handle,
-                              MCBLAS_OP_T,
-                              MCBLAS_OP_N,
-                              m,
-                              n,
-                              k,
-                              &alpha,
-                              weight,
-                              MACA_R_16F,
-                              lda,
-                              in,
-                              MACA_R_16F,
-                              ldb,
-                              &beta,
-                              out,
-                              MACA_R_16F,
-                              ldc,
-                              MCBLAS_COMPUTE_32F,
+        status = mcblasGemmEx(handle, MCBLAS_OP_T, MCBLAS_OP_N, m, n, k, &alpha,
+                              weight, MACA_R_16F, lda, in, MACA_R_16F, ldb,
+                              &beta, out, MACA_R_16F, ldc, MCBLAS_COMPUTE_32F,
                               MCBLAS_GEMM_DEFAULT);
     }
     if (!mcblas_ok(status)) {
@@ -294,12 +191,9 @@ inline bool linear_mcblas_f16(__half *out,
     return true;
 }
 
-inline bool linear_mcblas_bf16(__maca_bfloat16 *out,
-                               const __maca_bfloat16 *in,
+inline bool linear_mcblas_bf16(__maca_bfloat16 *out, const __maca_bfloat16 *in,
                                const __maca_bfloat16 *weight,
-                               const __maca_bfloat16 *bias,
-                               size_t M,
-                               size_t N,
+                               const __maca_bfloat16 *bias, size_t M, size_t N,
                                size_t K) {
     mcblasHandle_t handle = get_mcblas_handle();
     if (handle == nullptr) {
@@ -338,66 +232,21 @@ inline bool linear_mcblas_bf16(__maca_bfloat16 *out,
     algo = MCBLAS_GEMM_DEFAULT_TENSOR_OP;
 #endif
 
-    mcblasStatus_t status = mcblasGemmEx(handle,
-                                         MCBLAS_OP_T,
-                                         MCBLAS_OP_N,
-                                         m,
-                                         n,
-                                         k,
-                                         &alpha,
-                                         weight,
-                                         MACA_R_16BF,
-                                         lda,
-                                         in,
-                                         MACA_R_16BF,
-                                         ldb,
-                                         &beta,
-                                         out,
-                                         MACA_R_16BF,
-                                         ldc,
-                                         compute_type,
-                                         algo);
+    mcblasStatus_t status
+        = mcblasGemmEx(handle, MCBLAS_OP_T, MCBLAS_OP_N, m, n, k, &alpha,
+                       weight, MACA_R_16BF, lda, in, MACA_R_16BF, ldb, &beta,
+                       out, MACA_R_16BF, ldc, compute_type, algo);
 
     if (!mcblas_ok(status) && algo != MCBLAS_GEMM_DEFAULT) {
-        status = mcblasGemmEx(handle,
-                              MCBLAS_OP_T,
-                              MCBLAS_OP_N,
-                              m,
-                              n,
-                              k,
-                              &alpha,
-                              weight,
-                              MACA_R_16BF,
-                              lda,
-                              in,
-                              MACA_R_16BF,
-                              ldb,
-                              &beta,
-                              out,
-                              MACA_R_16BF,
-                              ldc,
-                              compute_type,
+        status = mcblasGemmEx(handle, MCBLAS_OP_T, MCBLAS_OP_N, m, n, k, &alpha,
+                              weight, MACA_R_16BF, lda, in, MACA_R_16BF, ldb,
+                              &beta, out, MACA_R_16BF, ldc, compute_type,
                               MCBLAS_GEMM_DEFAULT);
     }
     if (!mcblas_ok(status) && used_fast_compute) {
-        status = mcblasGemmEx(handle,
-                              MCBLAS_OP_T,
-                              MCBLAS_OP_N,
-                              m,
-                              n,
-                              k,
-                              &alpha,
-                              weight,
-                              MACA_R_16BF,
-                              lda,
-                              in,
-                              MACA_R_16BF,
-                              ldb,
-                              &beta,
-                              out,
-                              MACA_R_16BF,
-                              ldc,
-                              MCBLAS_COMPUTE_32F,
+        status = mcblasGemmEx(handle, MCBLAS_OP_T, MCBLAS_OP_N, m, n, k, &alpha,
+                              weight, MACA_R_16BF, lda, in, MACA_R_16BF, ldb,
+                              &beta, out, MACA_R_16BF, ldc, MCBLAS_COMPUTE_32F,
                               MCBLAS_GEMM_DEFAULT);
     }
     if (!mcblas_ok(status)) {
@@ -408,97 +257,12 @@ inline bool linear_mcblas_bf16(__maca_bfloat16 *out,
     return true;
 }
 
-template <typename T, typename AccT = float>
-__global__ void sgemm_v4(T *out,
-                         const T *in,
-                         const T *weight,
-                         const T *bias,
-                         size_t M,
-                         size_t N,
-                         size_t K) {
-    constexpr int BM = 64;
-    constexpr int BN = 64;
-    constexpr int BK = 16;
-    constexpr int TM = 4;
-    constexpr int TN = 4;
+#if 0
+// Reference-only hand-written kernel kept for review. It is intentionally not
+// compiled or dispatched in the final MetaX inference path.
+#define LOAD_FLOAT4(value) *(reinterpret_cast<const float4 *>(&(value)))
+#define STORE_FLOAT4(value) *(reinterpret_cast<float4 *>(&(value)))
 
-    const int bx = blockIdx.x;
-    const int by = blockIdx.y;
-    const int tx = threadIdx.x;
-    const int ty = threadIdx.y;
-
-    __shared__ float in_shared[BM][BK];
-    __shared__ float weight_shared[BN][BK];
-
-    AccT sum[TM][TN];
-    for (int i = 0; i < TM; ++i) {
-        for (int j = 0; j < TN; ++j) {
-            sum[i][j] = static_cast<AccT>(0.0);
-        }
-    }
-
-    for (int k0 = 0; k0 < static_cast<int>(K); k0 += BK) {
-        const int tid = ty * blockDim.x + tx;
-        const int nthread = blockDim.x * blockDim.y;
-
-        for (int e = tid; e < BM * BK; e += nthread) {
-            const int r = e / BK;
-            const int c = e % BK;
-            const int global_r = by * BM + r;
-            const int global_c = k0 + c;
-            in_shared[r][c] = (global_r < static_cast<int>(M) && global_c < static_cast<int>(K))
-                                  ? to_float(in[static_cast<size_t>(global_r) * K + static_cast<size_t>(global_c)])
-                                  : 0.0f;
-        }
-
-        for (int e = tid; e < BN * BK; e += nthread) {
-            const int r = e / BK;
-            const int c = e % BK;
-            const int global_r = bx * BN + r;
-            const int global_c = k0 + c;
-            weight_shared[r][c] =
-                (global_r < static_cast<int>(N) && global_c < static_cast<int>(K))
-                    ? to_float(weight[static_cast<size_t>(global_r) * K + static_cast<size_t>(global_c)])
-                    : 0.0f;
-        }
-
-        __syncthreads();
-
-        float in_frag[TM];
-        float weight_frag[TN];
-        for (int kk = 0; kk < BK; ++kk) {
-            for (int i = 0; i < TM; ++i) {
-                in_frag[i] = in_shared[ty * TM + i][kk];
-            }
-            for (int j = 0; j < TN; ++j) {
-                weight_frag[j] = weight_shared[tx * TN + j][kk];
-            }
-            for (int i = 0; i < TM; ++i) {
-                for (int j = 0; j < TN; ++j) {
-                    sum[i][j] += static_cast<AccT>(in_frag[i]) * static_cast<AccT>(weight_frag[j]);
-                }
-            }
-        }
-
-        __syncthreads();
-    }
-
-    for (int i = 0; i < TM; ++i) {
-        for (int j = 0; j < TN; ++j) {
-            const int row = by * BM + ty * TM + i;
-            const int col = bx * BN + tx * TN + j;
-            if (row < static_cast<int>(M) && col < static_cast<int>(N)) {
-                float v = static_cast<float>(sum[i][j]);
-                if (bias != nullptr) {
-                    v += to_float(bias[col]);
-                }
-                out[static_cast<size_t>(row) * N + static_cast<size_t>(col)] = from_float<T>(v);
-            }
-        }
-    }
-}
-
-// 精度过不了
 template <const int BLOCK_SIZE_M,
           const int BLOCK_SIZE_N,
           const int BLOCK_SIZE_K,
@@ -511,8 +275,9 @@ __global__ void sgemm_v7_float32(float *__restrict__ out,
                                  size_t M,
                                  size_t N,
                                  size_t K) {
-    static_assert(BLOCK_SIZE_M == 128 && BLOCK_SIZE_N == 128 && BLOCK_SIZE_K == 8 &&
-                      THREAD_SIZE_X == 8 && THREAD_SIZE_Y == 8,
+    static_assert(BLOCK_SIZE_M == 128 && BLOCK_SIZE_N == 128
+                      && BLOCK_SIZE_K == 8 && THREAD_SIZE_X == 8
+                      && THREAD_SIZE_Y == 8,
                   "v7 is tuned for 128x128x8 tile and 8x8 thread tile.");
 
     const int bx = blockIdx.x;
@@ -610,18 +375,15 @@ __global__ void sgemm_v7_float32(float *__restrict__ out,
 #pragma unroll
         for (int j = 0; j < BLOCK_SIZE_K - 1; ++j) {
             STORE_FLOAT4(frag_a[(j + 1) % 2][0]) = LOAD_FLOAT4(As[load_stage_idx][j + 1][a_tile_index]);
-            STORE_FLOAT4(frag_a[(j + 1) % 2][4]) =
-                LOAD_FLOAT4(As[load_stage_idx][j + 1][a_tile_index + BLOCK_SIZE_M / 2]);
+            STORE_FLOAT4(frag_a[(j + 1) % 2][4]) = LOAD_FLOAT4(As[load_stage_idx][j + 1][a_tile_index + BLOCK_SIZE_M / 2]);
             STORE_FLOAT4(frag_b[(j + 1) % 2][0]) = LOAD_FLOAT4(Bs[load_stage_idx][j + 1][b_tile_index]);
-            STORE_FLOAT4(frag_b[(j + 1) % 2][4]) =
-                LOAD_FLOAT4(Bs[load_stage_idx][j + 1][b_tile_index + BLOCK_SIZE_N / 2]);
+            STORE_FLOAT4(frag_b[(j + 1) % 2][4]) = LOAD_FLOAT4(Bs[load_stage_idx][j + 1][b_tile_index + BLOCK_SIZE_N / 2]);
 
 #pragma unroll
             for (int thread_y = 0; thread_y < THREAD_SIZE_Y; ++thread_y) {
 #pragma unroll
                 for (int thread_x = 0; thread_x < THREAD_SIZE_X; ++thread_x) {
-                    accum[thread_y][thread_x] =
-                        fmaf(frag_a[j % 2][thread_y], frag_b[j % 2][thread_x], accum[thread_y][thread_x]);
+                    accum[thread_y][thread_x] = fmaf(frag_a[j % 2][thread_y], frag_b[j % 2][thread_x], accum[thread_y][thread_x]);
                 }
             }
         }
@@ -656,8 +418,7 @@ __global__ void sgemm_v7_float32(float *__restrict__ out,
         for (int thread_y = 0; thread_y < THREAD_SIZE_Y; ++thread_y) {
 #pragma unroll
             for (int thread_x = 0; thread_x < THREAD_SIZE_X; ++thread_x) {
-                accum[thread_y][thread_x] =
-                    fmaf(frag_a[1][thread_y], frag_b[1][thread_x], accum[thread_y][thread_x]);
+                accum[thread_y][thread_x] = fmaf(frag_a[1][thread_y], frag_b[1][thread_x], accum[thread_y][thread_x]);
             }
         }
     } while (tile_idx < static_cast<int>(K));
@@ -736,81 +497,41 @@ __global__ void sgemm_v7_float32(float *__restrict__ out,
 
 #undef LOAD_FLOAT4
 #undef STORE_FLOAT4
+#endif
 
 } // namespace
 
 namespace llaisys::ops::metax {
 
-void linear(std::byte *out,
-            const std::byte *in,
-            const std::byte *weight,
-            const std::byte *bias,
-            llaisysDataType_t type,
-            size_t M,
-            size_t N,
+void linear(std::byte *out, const std::byte *in, const std::byte *weight,
+            const std::byte *bias, llaisysDataType_t type, size_t M, size_t N,
             size_t K) {
     if (M == 0 || N == 0 || K == 0) {
         return;
     }
 
-    constexpr int BM_V4 = 64;
-    constexpr int BN_V4 = 64;
-    constexpr int TM_V4 = 4;
-    constexpr int TN_V4 = 4;
-    const dim3 block_v4(BN_V4 / TN_V4, BM_V4 / TM_V4);
-    const dim3 grid_v4(static_cast<unsigned int>(ceil_div_int(static_cast<int>(N), BN_V4)),
-                       static_cast<unsigned int>(ceil_div_int(static_cast<int>(M), BM_V4)));
-
     switch (type) {
     case LLAISYS_DTYPE_F32: {
-        sgemm_v4<float, double><<<grid_v4, block_v4>>>(reinterpret_cast<float *>(out),
-                                                       reinterpret_cast<const float *>(in),
-                                                       reinterpret_cast<const float *>(weight),
-                                                       reinterpret_cast<const float *>(bias),
-                                                       M,
-                                                       N,
-                                                       K);
+        const bool ok = linear_mcblas_f32(
+            reinterpret_cast<float *>(out), reinterpret_cast<const float *>(in),
+            reinterpret_cast<const float *>(weight),
+            reinterpret_cast<const float *>(bias), M, N, K);
         break;
     }
     case LLAISYS_DTYPE_F16: {
-        const bool ok = linear_mcblas_f16(reinterpret_cast<__half *>(out),
-                                          reinterpret_cast<const __half *>(in),
-                                          reinterpret_cast<const __half *>(weight),
-                                          reinterpret_cast<const __half *>(bias),
-                                          M,
-                                          N,
-                                          K);
-        if (ok) {
-            break;
-        }
-        sgemm_v4<__half><<<grid_v4, block_v4>>>(reinterpret_cast<__half *>(out),
-                                                reinterpret_cast<const __half *>(in),
-                                                reinterpret_cast<const __half *>(weight),
-                                                reinterpret_cast<const __half *>(bias),
-                                                M,
-                                                N,
-                                                K);
+        const bool ok = linear_mcblas_f16(
+            reinterpret_cast<__half *>(out),
+            reinterpret_cast<const __half *>(in),
+            reinterpret_cast<const __half *>(weight),
+            reinterpret_cast<const __half *>(bias), M, N, K);
         break;
     }
     case LLAISYS_DTYPE_BF16: {
-        const bool ok = linear_mcblas_bf16(reinterpret_cast<__maca_bfloat16 *>(out),
-                                           reinterpret_cast<const __maca_bfloat16 *>(in),
-                                           reinterpret_cast<const __maca_bfloat16 *>(weight),
-                                           reinterpret_cast<const __maca_bfloat16 *>(bias),
-                                           M,
-                                           N,
-                                           K);
-        if (ok) {
-            break;
-        }
-        sgemm_v4<__maca_bfloat16><<<grid_v4, block_v4>>>(
+        const bool ok = linear_mcblas_bf16(
             reinterpret_cast<__maca_bfloat16 *>(out),
             reinterpret_cast<const __maca_bfloat16 *>(in),
             reinterpret_cast<const __maca_bfloat16 *>(weight),
-            reinterpret_cast<const __maca_bfloat16 *>(bias),
-            M,
-            N,
-            K);
+            reinterpret_cast<const __maca_bfloat16 *>(bias), M, N, K);
         break;
     }
     default:

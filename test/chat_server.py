@@ -180,7 +180,14 @@ def create_app(engine: ChatEngine, served_model_name: str) -> FastAPI:
     def chat_web() -> Any:
         if not UI_HTML_PATH.exists():
             raise HTTPException(status_code=404, detail="chat_web.html not found")
-        return FileResponse(UI_HTML_PATH)
+        return FileResponse(
+            UI_HTML_PATH,
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
 
     @app.get("/health")
     def health() -> Dict[str, str]:

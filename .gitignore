@@ -1,22 +1,3 @@
-ARCHITECTURE.md
-ARCHITECTURE_SIMPLE.md
-FAQ_MODEL_AND_BINDING.md
-HOMEWORK3_IMPLEMENTATION_DETAIL.md
-HOMEWORK3_IMPLEMENTATION_GUIDE.md
-HOMEWORK3_WALKTHROUGH.md
-HOW_TO_FIND_HF_MODELING_CODE.md
-INFERENCE_FRAMEWORK_TASK_TABLE.md
-LEARN_MODEL_STRUCTURE_STEPS.md
-LINEAR_OPERATOR_NOTES.md
-MINI_VLLM_PROJECT.md
-OPERATOR_ARCHITECTURE.md
-VLLM_LEARNING_PLAN.md
-PROJECT2_GPU_ROADMAP.md
-README_ZN.md
-METAX_BACKEND_PROGRESS.md
-# 模型权重
-model.safetensors
-*.safetensors
 # 辅助脚本与 IDE/构建生成
 .clangd
 compile_commands.json
@@ -28,7 +9,7 @@ scripts/inspect_safetensors.py
 # -----------------------------------------------------------------------------
 # Xmake cache
 .xmake/
-build/
+build*/
 
 # Binaries
 bin/
