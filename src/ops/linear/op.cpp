@@ -18,7 +18,6 @@ void linear_cpu_kernel(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias
     size_t M;
     if (in->shape().size() == 2) {
         // 情况 A: 单元测试 (2D) [Rows, Hidden]
-        // 你的原版逻辑，保持不变
         M = in->shape()[0]; 
     } else {
         // 情况 B: DeepSeek 推理 (3D) [Batch, Seq, Hidden]
@@ -26,23 +25,48 @@ void linear_cpu_kernel(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias
         M = in->shape()[0] * in->shape()[1];
     }
 
-    // 3. 矩阵乘法 Loop
-    // 注意:此处加入 OpenMP 多线程加速
-    #pragma omp parallel for
-    for(size_t i = 0; i < M; i++){
-        for(size_t j = 0; j < N; j++){
-            float sum = 0.0f;
+    const size_t BLOCK_SIZE = 64;
+
+    #pragma omp parallel for collapse(2)
+    for(size_t i0 = 0; i0 < M; i0 += BLOCK_SIZE){
+        for(size_t j0 = 0; j0 < N; j0 += BLOCK_SIZE){
             
-            // 内积：Input的第i行 * Weight的第j行
-            for(size_t index = 0; index < K; index++){
-                float x_val = utils::cast<float>(in_ptr[index + i * K]);
-                float y_val = utils::cast<float>(weight_ptr[index + j * K]);
-                sum += x_val * y_val;
+            size_t i_end = std::min(i0 + BLOCK_SIZE, M);
+            size_t j_end = std::min(j0 + BLOCK_SIZE, N);
+
+            float block_sum[BLOCK_SIZE][BLOCK_SIZE] = {0.0f};
+
+            for(size_t k0 = 0; k0 < K; k0 += BLOCK_SIZE){
+                size_t k_end = std::min(k0 + BLOCK_SIZE, K);
+
+                for(size_t i = i0; i < i_end; ++i){
+                    for(size_t j = j0; j < j_end; ++j){
+                        float sum = 0.0f;
+                        
+                        // 让编译器在这里执行连续内存的向量化点积
+                        #pragma omp simd reduction(+:sum)
+                        for(size_t k = k0; k < k_end; ++k){
+                            float x_val = utils::cast<float>(in_ptr[k + i * K]);
+                            float y_val = utils::cast<float>(weight_ptr[k + j * K]);
+                            sum += x_val * y_val;
+                        }
+                        block_sum[i - i0][j - j0] += sum;
+                    }
+                }
             }
-            
-            if(bias_ptr) sum += utils::cast<float>(bias_ptr[j]);
-            out_ptr[i * N + j] = utils::cast<T>(sum);
-            
+
+            // 写回目标张量
+            for(size_t i = i0; i < i_end; ++i){
+                for(size_t j = j0; j < j_end; ++j){
+                    float final_val = block_sum[i - i0][j - j0];
+                    if (bias && bias->numel() > 0) {
+                        float b_val = utils::cast<float>(bias_ptr[j]);
+                        final_val += b_val;
+                    }
+                    out_ptr[j + i * N] = utils::cast<T>(final_val);
+                }
+            }
+
         }
     }
 }
