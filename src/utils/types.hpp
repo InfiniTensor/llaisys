@@ -138,5 +138,23 @@ TypeTo cast(TypeFrom val) {
     }
 }
 
+// -------- AVX2 vectorized conversions (operate on 8 elements at once) --------
+// These helper functions are intended for use in SIMD paths and are
+// declared here with descriptive names. Actual implementations should
+// use AVX2 intrinsics to process eight values in parallel.
+//
+// - f16x8_to_f32x8 : convert eight fp16_t values to float
+// - f32x8_to_f16x8 : convert eight float values to fp16_t
+// - bf16x8_to_f32x8: convert eight bf16_t values to float
+// - f32x8_to_bf16x8: convert eight float values to bf16_t
+//
+// Note: names chosen for clarity; no code is provided in this header.
+// --------------------------------------------------------------------------
+
+__m256  f16x8_to_f32x8(__m128i packed_fp16);
+__m128i f32x8_to_f16x8(__m256 packed_f32);
+__m256  bf16x8_to_f32x8(__m128i packed_bf16);
+__m128i f32x8_to_bf16x8(__m256 packed_f32);
+
 } // namespace utils
 } // namespace llaisys
