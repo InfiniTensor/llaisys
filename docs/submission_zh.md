@@ -63,6 +63,9 @@ python test/test_infer.py --device metax --test --model_id trl-internal-testing/
 - 实现报告：[`report_zh.md`](report_zh.md)
 - 复现流程：[`reproduce_zh.md`](reproduce_zh.md)
 - PR 文案：[`pr_zh.md`](pr_zh.md)
-- MetaX 实现说明：[`metax_design_zh.md`](metax_design_zh.md)
-- 面试问答：[`interview_qa_zh.md`](interview_qa_zh.md)
-- 5 分钟讲稿：[`interview_script_5min_zh.md`](interview_script_5min_zh.md)
+
+以上 3 份文档已经覆盖课程提交需要的核心内容：
+
+- `report_zh.md`：实现说明与验证结论
+- `reproduce_zh.md`：最短复现流程
+- `pr_zh.md`：可直接提交的 GitHub PR 标题与正文

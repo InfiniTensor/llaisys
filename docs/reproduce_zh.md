@@ -171,9 +171,6 @@ MetaX 相关测试必须跑在真实沐曦机器上。
 - 报告：[`report_zh.md`](report_zh.md)
 - 复现：[`reproduce_zh.md`](reproduce_zh.md)
 - PR 文案：[`pr_zh.md`](pr_zh.md)
-- 平台实现说明：[`metax_design_zh.md`](metax_design_zh.md)
-- 面试问答：[`interview_qa_zh.md`](interview_qa_zh.md)
-- 5 分钟讲稿：[`interview_script_5min_zh.md`](interview_script_5min_zh.md)
 
 补充说明：
 

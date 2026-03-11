@@ -252,6 +252,3 @@ XMAKE_ROOT=y
 - 提交总览：[`submission_zh.md`](submission_zh.md)
 - 复现流程：[`reproduce_zh.md`](reproduce_zh.md)
 - PR 文案：[`pr_zh.md`](pr_zh.md)
-- MetaX 实现说明：[`metax_design_zh.md`](metax_design_zh.md)
-- 面试问答：[`interview_qa_zh.md`](interview_qa_zh.md)
-- 5 分钟讲稿：[`interview_script_5min_zh.md`](interview_script_5min_zh.md)

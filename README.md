@@ -436,9 +436,6 @@ Support another model type than the one we use for homework in LLAISYS.
 - Report: [docs/report_zh.md](docs/report_zh.md)
 - Reproduce: [docs/reproduce_zh.md](docs/reproduce_zh.md)
 - PR Template: [docs/pr_zh.md](docs/pr_zh.md)
-- MetaX Note: [docs/metax_design_zh.md](docs/metax_design_zh.md)
-- Interview Q&A: [docs/interview_qa_zh.md](docs/interview_qa_zh.md)
-- Interview Script: [docs/interview_script_5min_zh.md](docs/interview_script_5min_zh.md)
 
 ## Current Submission Status For This Fork
 
