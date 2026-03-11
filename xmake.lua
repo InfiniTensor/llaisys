@@ -37,6 +37,9 @@ target("llaisys-device")
     set_kind("static")
     add_deps("llaisys-utils")
     add_deps("llaisys-device-cpu")
+    if has_config("nv-gpu") then
+        add_deps("llaisys-device-nvidia")
+    end
 
     set_languages("cxx17")
     set_warnings("all", "error")
@@ -83,6 +86,9 @@ target_end()
 target("llaisys-ops")
     set_kind("static")
     add_deps("llaisys-ops-cpu")
+    if has_config("nv-gpu") then
+        add_deps("llaisys-ops-nvidia")
+    end
 
     set_languages("cxx17")
     set_warnings("all", "error")
@@ -102,13 +108,23 @@ target("llaisys")
     add_deps("llaisys-core")
     add_deps("llaisys-tensor")
     add_deps("llaisys-ops")
+    if has_config("nv-gpu") then
+        add_rules("cuda")
+        add_files("src/llaisys/cuda_link_stub.cu")
+        add_links("cudart", "cublas", "cudadevrt")
+    end
 
     add_files("src/llaisys/models/qwen2.cpp")
+    add_files("src/llaisys/models/llama.cpp")
 
     set_languages("cxx17")
     set_warnings("all", "error")
     add_files("src/llaisys/*.cc")
     set_installdir(".")
+    if not is_plat("windows") then
+        add_ldflags("-fopenmp", "-lgomp")
+        add_shflags("-fopenmp", "-lgomp")
+    end
 
     
     after_install(function (target)

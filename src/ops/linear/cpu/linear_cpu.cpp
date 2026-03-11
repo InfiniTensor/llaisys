@@ -1,5 +1,6 @@
 #include "linear_cpu.hpp"
 #include "../../../utils.hpp" // 包含类型转换工具
+#include <algorithm>
 #include <type_traits>
 #include <vector>
 
@@ -34,31 +35,36 @@ inline T float_to_val(float v) {
 }
 
 // --- 核心矩阵乘法模板 ---
-template<typename T>
+template <typename T>
 void linear_kernel(T *out, const T *in, const T *weight, const T *bias,
                    size_t M, size_t K, size_t N) {
-    // 遍历 M 行 (Batch * Seq)
-    for (size_t m = 0; m < M; ++m) {
-        // 遍历 N 列 (Output Features)
-        for (size_t n = 0; n < N; ++n) {
-            
-            float sum = 0.0f;
-            // 遍历 K (Input Features) 进行点积
-            // 公式：sum = sum(in[m, k] * weight[n, k])
-            // 注意：weight 形状是 [N, K]，所以取 weight[n, k] 正好对应矩阵 W^T 的第 n 列
-            for (size_t k = 0; k < K; ++k) {
-                float x_val = val_to_float(in[m * K + k]);
-                float w_val = val_to_float(weight[n * K + k]);
-                sum += x_val * w_val;
+    constexpr size_t BLOCK_N = 32;
+    constexpr size_t BLOCK_K = 128;
+
+    // 这里按输出行并行，避免线程之间写同一段 out。
+#pragma omp parallel for schedule(static)
+    for (ptrdiff_t m = 0; m < static_cast<ptrdiff_t>(M); ++m) {
+        for (size_t n0 = 0; n0 < N; n0 += BLOCK_N) {
+            size_t n1 = std::min(n0 + BLOCK_N, N);
+            float partial[BLOCK_N] = {0.0f};
+
+            for (size_t k0 = 0; k0 < K; k0 += BLOCK_K) {
+                size_t k1 = std::min(k0 + BLOCK_K, K);
+                for (size_t k = k0; k < k1; ++k) {
+                    float x_val = val_to_float(in[m * K + k]);
+                    for (size_t n = n0; n < n1; ++n) {
+                        partial[n - n0] += x_val * val_to_float(weight[n * K + k]);
+                    }
+                }
             }
-            
-            // 加上偏置 (如果存在)
-            if (bias) {
-                sum += val_to_float(bias[n]);
+
+            for (size_t n = n0; n < n1; ++n) {
+                float sum = partial[n - n0];
+                if (bias) {
+                    sum += val_to_float(bias[n]);
+                }
+                out[m * N + n] = float_to_val<T>(sum);
             }
-            
-            // 存回结果 (转回对应类型 T)
-            out[m * N + n] = float_to_val<T>(sum);
         }
     }
 }

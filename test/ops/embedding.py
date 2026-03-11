@@ -1,8 +1,12 @@
 import sys
 import os
 
-parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, parent_dir)
+test_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if test_dir not in sys.path:
+    sys.path.insert(0, test_dir)
+from bootstrap import setup_paths
+
+setup_paths(__file__)
 import llaisys
 from test_utils import random_int_tensor, random_tensor, check_equal, benchmark
 
@@ -53,8 +57,8 @@ if __name__ == "__main__":
         "bf16",
     ]
     print(f"Testing Ops.embedding on {args.device}")
-    for idx_shape, embd_shape in testShapes:
-        for dtype_name in testDtype:
+    for dtype_name in testDtype:
+        for idx_shape, embd_shape in testShapes:
             test_op_embedding(
                 idx_shape, embd_shape, dtype_name, args.device, args.profile
             )

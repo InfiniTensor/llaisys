@@ -35,7 +35,8 @@ inline T float_to_val(float v) {
 // --- SwiGLU 核心计算模板 ---
 template<typename T>
 void swiglu_kernel(T *out, const T *gate, const T *up, size_t numel) {
-    for (size_t i = 0; i < numel; ++i) {
+#pragma omp parallel for schedule(static)
+    for (ptrdiff_t i = 0; i < static_cast<ptrdiff_t>(numel); ++i) {
         float g_val = val_to_float(gate[i]);
         float u_val = val_to_float(up[i]);
 

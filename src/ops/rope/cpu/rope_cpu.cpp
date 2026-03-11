@@ -36,10 +36,11 @@ template<typename T>
 void rope_kernel(T *out, const T *in, const int64_t *pos_ids,
                  float theta, size_t seq_len, size_t n_head, size_t head_dim) {
     
-    for (size_t s = 0; s < seq_len; ++s) {
-        int64_t pos = pos_ids[s]; 
-        
-        for (size_t h = 0; h < n_head; ++h) {
+    // 每个 (token, head) 是独立任务，适合直接并行展开。
+#pragma omp parallel for collapse(2) schedule(static)
+    for (ptrdiff_t s = 0; s < static_cast<ptrdiff_t>(seq_len); ++s) {
+        for (ptrdiff_t h = 0; h < static_cast<ptrdiff_t>(n_head); ++h) {
+            int64_t pos = pos_ids[s];
             size_t offset = s * n_head * head_dim + h * head_dim;
             size_t half_dim = head_dim / 2;
             

@@ -27,6 +27,9 @@ void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float
 // 2.7 SwiGLU
 void swiglu(tensor_t out, tensor_t gate, tensor_t up);
 
+// 3.x Random Sample
+int64_t sample(tensor_t logits, float temperature, int top_k, float top_p, uint64_t seed);
+
 // 基础算子
 // 确保你有 add 算子 (通常在 src/ops/add/op.cpp 中实现，如果作业1做过)
 // 如果没有实现 add，你需要在这里声明并去实现它，或者暂时注释掉(但推理会报错)

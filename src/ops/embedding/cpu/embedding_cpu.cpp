@@ -9,7 +9,8 @@ template<typename T>
 void embedding_kernel(T *out, const int64_t *index, const T *weight,
                       size_t num_tokens, size_t vocab_size, size_t hidden_size) {
     // 遍历每一个 token
-    for (size_t i = 0; i < num_tokens; ++i) {
+#pragma omp parallel for schedule(static)
+    for (ptrdiff_t i = 0; i < static_cast<ptrdiff_t>(num_tokens); ++i) {
         // 获取当前要查的词 ID
         int64_t idx = index[i];
         

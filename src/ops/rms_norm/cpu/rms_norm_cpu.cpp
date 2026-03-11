@@ -38,7 +38,8 @@ void rms_norm_kernel(T *out, const T *in, const T *weight,
                      float eps, size_t num_rows, size_t hidden_size) {
     
     // 遍历每一行 (每一个 token)
-    for (size_t i = 0; i < num_rows; ++i) {
+#pragma omp parallel for schedule(static)
+    for (ptrdiff_t i = 0; i < static_cast<ptrdiff_t>(num_rows); ++i) {
         const T *row_in = in + i * hidden_size;
         T *row_out = out + i * hidden_size;
 

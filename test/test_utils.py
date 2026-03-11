@@ -1,5 +1,24 @@
+from bootstrap import setup_paths
+
+setup_paths(__file__)
+
 import llaisys
 import torch
+
+_CUDA_TEST_KEEPALIVE = []
+
+
+def _maybe_keepalive_for_cuda_small_tensor(device_name, shape, *objs):
+    # 这些算子测试会在同一进程里先跑小张量、再跑大张量。
+    # 当前平台上小 CUDA 张量立即析构后，后续大用例偶发会复用同一块显存，
+    # 从而造成假阴性。这里只延后释放小张量，避免影响测试稳定性。
+    if device_name != "nvidia":
+        return
+    numel = 1
+    for dim in shape:
+        numel *= dim
+    if numel <= 4096:
+        _CUDA_TEST_KEEPALIVE.extend(objs)
 
 
 def random_tensor(
@@ -30,6 +49,7 @@ def random_tensor(
         bytes_,
         llaisys.MemcpyKind.D2D,
     )
+    _maybe_keepalive_for_cuda_small_tensor(device_name, shape, torch_tensor, llaisys_tensor)
 
     return torch_tensor, llaisys_tensor
 
@@ -58,6 +78,7 @@ def random_int_tensor(shape, device_name, dtype_name="i64", device_id=0, low=0, 
         bytes_,
         llaisys.MemcpyKind.D2D,
     )
+    _maybe_keepalive_for_cuda_small_tensor(device_name, shape, torch_tensor, llaisys_tensor)
 
     return torch_tensor, llaisys_tensor
 
@@ -86,6 +107,7 @@ def zero_tensor(
         bytes_,
         llaisys.MemcpyKind.D2D,
     )
+    _maybe_keepalive_for_cuda_small_tensor(device_name, shape, torch_tensor, llaisys_tensor)
 
     return torch_tensor, llaisys_tensor
 

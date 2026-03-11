@@ -429,3 +429,61 @@ Introduce Tensor Parallelism to LLAISYS. Shard your model across multiple device
 ## Project #6: Support New Models
 
 Support another model type than the one we use for homework in LLAISYS.
+
+## Chinese Submission Docs
+
+- Report: [docs/report_zh.md](/home/saber/llaisys/docs/report_zh.md)
+- Reproduce: [docs/reproduce_zh.md](/home/saber/llaisys/docs/reproduce_zh.md)
+- PR Template: [docs/pr_zh.md](/home/saber/llaisys/docs/pr_zh.md)
+- Metax Design: [docs/metax_design_zh.md](/home/saber/llaisys/docs/metax_design_zh.md)
+- Interview Q&A: [docs/interview_qa_zh.md](/home/saber/llaisys/docs/interview_qa_zh.md)
+
+## Course Submission View For This Fork
+
+This section is appended for course submission and does not change the original assignment description above.
+
+### Submission Scope
+
+- Finished assignments/projects: Project #1, Project #2, Project #3, Project #6
+- GPU platforms actually delivered in code: CPU + NVIDIA
+- Second platform for course submission: Metax design note only
+
+### Verified Environment
+
+- Validation date: 2026-03-10
+- Platform: PAI DSW NVIDIA instance
+- CUDA: `/usr/local/cuda-12.8`
+- Python: 3.12
+- GPU: NVIDIA A100 80GB
+
+### Verified Models
+
+- `models/DeepSeek-R1-Distill-Qwen-1.5B`
+- `models/TinyLlama-1.1B-Chat-v1.0`
+
+### Verified Commands
+
+```bash
+python test/test_runtime.py --device cpu
+python test/test_tensor.py
+python test/test_ops.py --device cpu
+python test/test_runtime.py --device nvidia
+python test/test_ops.py --device nvidia
+python test/test_infer.py --device cpu --test --model models/DeepSeek-R1-Distill-Qwen-1.5B
+python test/test_infer.py --device nvidia --test --model models/DeepSeek-R1-Distill-Qwen-1.5B
+python test/test_infer.py --device nvidia --test --model models/TinyLlama-1.1B-Chat-v1.0
+```
+
+### Chat Demo
+
+```bash
+llaisys-chat-server --model models/DeepSeek-R1-Distill-Qwen-1.5B --device nvidia --host 127.0.0.1 --port 8000
+llaisys-chat-cli --base-url http://127.0.0.1:8000 --stream
+```
+
+### Submission Docs
+
+- Report: [docs/report_zh.md](/home/saber/llaisys/docs/report_zh.md)
+- Reproduce: [docs/reproduce_zh.md](/home/saber/llaisys/docs/reproduce_zh.md)
+- PR Text: [docs/pr_zh.md](/home/saber/llaisys/docs/pr_zh.md)
+- Interview Preparation: [docs/interview_qa_zh.md](/home/saber/llaisys/docs/interview_qa_zh.md)

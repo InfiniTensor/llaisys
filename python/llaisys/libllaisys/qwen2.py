@@ -4,6 +4,7 @@ from ctypes import (
     c_void_p,
     c_int,
     c_int64,
+    c_uint64,
     c_size_t,
     c_float,
 )
@@ -70,6 +71,12 @@ def load_qwen2_api(lib):
     lib.llaisysQwen2ModelWeights.restype = POINTER(LlaisysQwen2Weights)
     lib.llaisysQwen2ModelWeights.argtypes = [c_void_p]
 
+    lib.llaisysQwen2ModelReset.restype = None
+    lib.llaisysQwen2ModelReset.argtypes = [c_void_p]
+
     # int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model*, int64_t* token_ids, size_t ntoken)
     lib.llaisysQwen2ModelInfer.restype = c_int64
     lib.llaisysQwen2ModelInfer.argtypes = [c_void_p, POINTER(c_int64), c_size_t]
+
+    lib.llaisysQwen2ModelInferSample.restype = c_int64
+    lib.llaisysQwen2ModelInferSample.argtypes = [c_void_p, POINTER(c_int64), c_size_t, c_float, c_int, c_float, c_uint64]

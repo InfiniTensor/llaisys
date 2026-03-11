@@ -153,7 +153,7 @@ void Tensor::debug() const {
     if (this->deviceType() == LLAISYS_DEVICE_CPU) {
         debug_print(this->data(), this->shape(), this->strides(), this->dtype());
     } else {
-        auto tmp_tensor = create({this->_storage->size()}, this->dtype());
+        auto tmp_tensor = create({this->numel()}, this->dtype());
         core::context().runtime().api()->memcpy_sync(
             tmp_tensor->data(),
             this->data(),
@@ -167,12 +167,14 @@ void Tensor::debug() const {
 void Tensor::load(const void *src) {
     // 计算总字节数 = 元素个数 * 单个元素大小
     size_t size = this->numel() * utils::dsize(_meta.dtype);
-    
-    // 获取运行时 API
-    auto api = core::context().runtime().api();
 
-    // 执行同步内存拷贝 (Host -> Device)
-    api->memcpy_sync(this->data(), src, size, LLAISYS_MEMCPY_H2D);
+    // 非 CPU Tensor 必须切到对应 runtime，再做 H2D 拷贝。
+    if (this->deviceType() != LLAISYS_DEVICE_CPU) {
+        core::context().setDevice(this->deviceType(), this->deviceId());
+    }
+    auto api = core::context().runtime().api();
+    auto kind = this->deviceType() == LLAISYS_DEVICE_CPU ? LLAISYS_MEMCPY_H2H : LLAISYS_MEMCPY_H2D;
+    api->memcpy_sync(this->data(), src, size, kind);
 }
 
 // 2. IsContiguous: 判断张量是否在内存中连续紧密排列

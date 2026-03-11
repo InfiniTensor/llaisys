@@ -2,12 +2,27 @@ import os
 import subprocess
 import sys
 
-TEST_OPS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "ops"))
-os.chdir(TEST_OPS_DIR)
+from bootstrap import setup_paths
+
+setup_paths(__file__)
+
+TEST_ROOT = os.path.abspath(os.path.dirname(__file__))
+TEST_OPS_DIR = os.path.join(TEST_ROOT, "ops")
 
 
 def run_tests(args):
     failed = []
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        filter(
+            None,
+            [
+                os.path.join(os.path.dirname(TEST_ROOT), "python"),
+                TEST_ROOT,
+                env.get("PYTHONPATH", ""),
+            ],
+        )
+    )
     for test in [
         "add.py",
         "argmax.py",
@@ -19,7 +34,10 @@ def run_tests(args):
         "swiglu.py",
     ]:
         result = subprocess.run(
-            f"python {test} {args}", text=True, encoding="utf-8", shell=True
+            [sys.executable, os.path.join(TEST_OPS_DIR, test), *sys.argv[1:]],
+            text=True,
+            encoding="utf-8",
+            env=env,
         )
         if result.returncode != 0:
             failed.append(test)

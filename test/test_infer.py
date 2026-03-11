@@ -1,3 +1,7 @@
+from bootstrap import setup_paths
+
+setup_paths(__file__)
+
 import gc
 from test_utils import *
 
@@ -10,37 +14,55 @@ import time
 import llaisys
 import sys
 import io
+from llaisys.chat.service import build_chat_prompt
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 
-def load_hf_model(model_path=None, device_name="cpu"):
-    model_id = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
-
+def resolve_model_path(model_path=None, model_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"):
     if model_path and os.path.isdir(model_path):
         print(f"Loading model from local path: {model_path}")
-    else:
-        print(f"Loading model from Hugging Face: {model_id}")
-        model_path = snapshot_download(model_id)
+        return model_path
+
+    print(f"Loading model from Hugging Face: {model_id}")
+    return snapshot_download(model_id)
+
+
+def load_hf_model(
+    model_path=None,
+    model_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+    device_name="cpu",
+    strict_test=False,
+):
+    model_path = resolve_model_path(model_path, model_id)
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    # 严格一致性校验必须让 HF 与 LLAISYS 处在同一数值精度口径下，
+    # 否则 GPU 上的 bf16 量化误差可能导致贪心解码 token 提前分叉。
+    torch_dtype = torch.float32 if strict_test or device_name == "cpu" else torch.bfloat16
+    device_map = None if device_name == "cpu" else torch_device(device_name)
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
-        torch_dtype=torch.bfloat16,
-        device_map=torch_device(device_name),
+        torch_dtype=torch_dtype,
+        device_map=device_map,
         trust_remote_code=True,
     )
+    if device_name == "cpu":
+        model = model.to(torch_device(device_name))
 
     return tokenizer, model, model_path
+
+
+def build_input_content(prompt, tokenizer):
+    return build_chat_prompt(
+        tokenizer,
+        [{"role": "user", "content": prompt}],
+    )
 
 
 def hf_infer(
     prompt, tokenizer, model, max_new_tokens=128, top_p=0.8, top_k=50, temperature=0.8
 ):
-    input_content = tokenizer.apply_chat_template(
-        conversation=[{"role": "user", "content": prompt}],
-        add_generation_prompt=True,
-        tokenize=False,
-    )
+    input_content = build_input_content(prompt, tokenizer)
     inputs = tokenizer.encode(input_content, return_tensors="pt").to(model.device)
     with torch.no_grad():
         outputs = model.generate(
@@ -55,18 +77,14 @@ def hf_infer(
 
 
 def load_llaisys_model(model_path, device_name):
-    model = llaisys.models.Qwen2(model_path, llaisys_device(device_name))
+    model = llaisys.models.load_model(model_path, llaisys_device(device_name))
     return model
 
 
 def llaisys_infer(
     prompt, tokenizer, model, max_new_tokens=128, top_p=0.8, top_k=50, temperature=0.8
 ):
-    input_content = tokenizer.apply_chat_template(
-        conversation=[{"role": "user", "content": prompt}],
-        add_generation_prompt=True,
-        tokenize=False,
-    )
+    input_content = build_input_content(prompt, tokenizer)
     inputs = tokenizer.encode(input_content)
     outputs = model.generate(
         inputs,
@@ -83,6 +101,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia"], type=str)
     parser.add_argument("--model", default=None, type=str)
+    parser.add_argument(
+        "--model_id",
+        default="deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+        type=str,
+    )
     parser.add_argument("--prompt", default="Who are you?", type=str)
     parser.add_argument("--max_steps", default=128, type=int)
     parser.add_argument("--top_p", default=0.8, type=float)
@@ -96,7 +119,12 @@ if __name__ == "__main__":
     if args.test:
         top_p, top_k, temperature = 1.0, 1, 1.0
 
-    tokenizer, model, model_path = load_hf_model(args.model, args.device)
+    tokenizer, model, model_path = load_hf_model(
+        args.model,
+        args.model_id,
+        args.device,
+        strict_test=args.test,
+    )
 
     # Example prompt
     start_time = time.time()

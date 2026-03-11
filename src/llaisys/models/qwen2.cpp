@@ -1,6 +1,7 @@
 #include "llaisys/models/qwen2.h"
 
 #include "../llaisys_tensor.hpp"
+#include "../../core/context/context.hpp"
 #include "../../ops/ops.hpp"
 #include "../../tensor/tensor.hpp"
 
@@ -51,6 +52,28 @@ inline llaisys::tensor_t slice0(llaisys::tensor_t t, size_t total_len) {
 // View helper (assumes compatible contiguous)
 inline llaisys::tensor_t view(llaisys::tensor_t t, const std::vector<size_t> &shape) {
     return t->view(shape);
+}
+
+inline void copy_bytes(void *dst,
+                       const void *src,
+                       size_t bytes,
+                       llaisysMemcpyKind_t kind,
+                       llaisysDeviceType_t device,
+                       int device_id) {
+    llaisys::core::context().setDevice(device, device_id);
+    llaisys::core::context().runtime().api()->memcpy_sync(dst, src, bytes, kind);
+}
+
+inline int64_t read_i64_scalar(llaisys::tensor_t t,
+                               llaisysDeviceType_t device,
+                               int device_id) {
+    int64_t host_val = -1;
+    if (device == LLAISYS_DEVICE_CPU) {
+        std::memcpy(&host_val, t->data(), sizeof(host_val));
+    } else {
+        copy_bytes(&host_val, t->data(), sizeof(host_val), LLAISYS_MEMCPY_D2H, device, device_id);
+    }
+    return host_val;
 }
 
 } // namespace
@@ -170,17 +193,18 @@ __export struct LlaisysQwen2Weights *llaisysQwen2ModelWeights(struct LlaisysQwen
     return &model->weights;
 }
 
+__export void llaisysQwen2ModelReset(struct LlaisysQwen2Model *model) {
+    if (!model) return;
+    model->past_len = 0;
+}
+
 // One forward pass on a chunk of "new tokens" of length seqlen.
 // It consumes tokens, writes KV into cache, and returns logits for last position.
-static bool qwen2_forward_and_argmax_next(LlaisysQwen2Model *m,
-                                         const int64_t *token_ids,
-                                         size_t seqlen,
-                                         int64_t *out_next_tok) {
-    if (!out_next_tok) return false;
-    *out_next_tok = -1;
-
-    if (!m) return false;
-    if (!token_ids || seqlen == 0) return false;
+static llaisys::tensor_t qwen2_forward_last_logits(LlaisysQwen2Model *m,
+                                                   const int64_t *token_ids,
+                                                   size_t seqlen) {
+    if (!m) return nullptr;
+    if (!token_ids || seqlen == 0) return nullptr;
 
     const auto &meta = m->meta;
     size_t hs   = meta.hs;
@@ -190,14 +214,14 @@ static bool qwen2_forward_and_argmax_next(LlaisysQwen2Model *m,
     size_t di   = meta.di;
     size_t voc  = meta.voc;
 
-    if (m->past_len + seqlen > meta.maxseq) return false;
+    if (m->past_len + seqlen > meta.maxseq) return nullptr;
 
     // ---- Build index tensor [seqlen] int64 ----
     auto idx = make_i64_tensor_1d(seqlen, m->device, m->device_id);
     idx->load(token_ids);
 
     // ---- Embedding: x = embed(tokens) -> [seqlen, hs] ----
-    if (!m->weights.in_embed) return false;
+    if (!m->weights.in_embed) return nullptr;
     auto x = make_tensor({seqlen, hs}, meta.dtype, m->device, m->device_id);
     llaisys::ops::embedding(x, idx, as_tensor(m->weights.in_embed));
 
@@ -209,15 +233,15 @@ static bool qwen2_forward_and_argmax_next(LlaisysQwen2Model *m,
 
     // ---- Transformer blocks ----
     for (size_t l = 0; l < meta.nlayer; ++l) {
-        if (!m->weights.attn_norm_w[l]) return false;
-        if (!m->weights.attn_q_w[l]) return false;
-        if (!m->weights.attn_k_w[l]) return false;
-        if (!m->weights.attn_v_w[l]) return false;
-        if (!m->weights.attn_o_w[l]) return false;
-        if (!m->weights.mlp_norm_w[l]) return false;
-        if (!m->weights.mlp_gate_w[l]) return false;
-        if (!m->weights.mlp_up_w[l]) return false;
-        if (!m->weights.mlp_down_w[l]) return false;
+        if (!m->weights.attn_norm_w[l]) return nullptr;
+        if (!m->weights.attn_q_w[l]) return nullptr;
+        if (!m->weights.attn_k_w[l]) return nullptr;
+        if (!m->weights.attn_v_w[l]) return nullptr;
+        if (!m->weights.attn_o_w[l]) return nullptr;
+        if (!m->weights.mlp_norm_w[l]) return nullptr;
+        if (!m->weights.mlp_gate_w[l]) return nullptr;
+        if (!m->weights.mlp_up_w[l]) return nullptr;
+        if (!m->weights.mlp_down_w[l]) return nullptr;
 
         // 1) attn rmsnorm
         auto x_norm = make_tensor({seqlen, hs}, meta.dtype, m->device, m->device_id);
@@ -248,11 +272,8 @@ static bool qwen2_forward_and_argmax_next(LlaisysQwen2Model *m,
             auto k_dst = m->k_cache[l]->slice(0, m->past_len, m->past_len + seqlen);
             auto v_dst = m->v_cache[l]->slice(0, m->past_len, m->past_len + seqlen);
 
-            // bytes = numel * elementSize
-            std::memcpy(k_dst->data(), q_rope ? k_rope->data() : k_rope->data(),
-                        k_rope->numel() * k_rope->elementSize());
-            std::memcpy(v_dst->data(), v->data(),
-                        v->numel() * v->elementSize());
+            copy_bytes(k_dst->data(), k_rope->data(), k_rope->numel() * k_rope->elementSize(), LLAISYS_MEMCPY_D2D, m->device, m->device_id);
+            copy_bytes(v_dst->data(), v->data(), v->numel() * v->elementSize(), LLAISYS_MEMCPY_D2D, m->device, m->device_id);
         }
 
         size_t total_len = m->past_len + seqlen;
@@ -305,32 +326,39 @@ static bool qwen2_forward_and_argmax_next(LlaisysQwen2Model *m,
     m->past_len += seqlen;
 
     // final norm
-    if (!m->weights.out_norm_w) return false;
+    if (!m->weights.out_norm_w) return nullptr;
     auto x_final = make_tensor({seqlen, hs}, meta.dtype, m->device, m->device_id);
     llaisys::ops::rms_norm(x_final, x, as_tensor(m->weights.out_norm_w), meta.epsilon);
 
     // logits
-    if (!m->weights.out_embed) return false;
+    if (!m->weights.out_embed) return nullptr;
     auto logits = make_tensor({seqlen, voc}, meta.dtype, m->device, m->device_id);
     llaisys::ops::linear(logits, x_final, as_tensor(m->weights.out_embed), nullptr);
 
-    auto logits_last2d = logits->slice(0, seqlen - 1, seqlen);
-    auto logits_last1d = logits_last2d->view({voc});
-
-    auto max_idx = make_tensor({1}, LLAISYS_DTYPE_I64, m->device, m->device_id);
-    auto max_val = make_tensor({1}, meta.dtype, m->device, m->device_id);
-    llaisys::ops::argmax(max_idx, max_val, logits_last1d);
-
-    *out_next_tok = *(reinterpret_cast<int64_t *>(max_idx->data()));
-    return true;
+    return logits->slice(0, seqlen - 1, seqlen)->view({voc});
 }
 
 __export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model *model,
                                        int64_t *token_ids,
                                        size_t ntoken) {
-    int64_t next_tok = -1;
-    bool ok = qwen2_forward_and_argmax_next(model, token_ids, ntoken, &next_tok);
-    return ok ? next_tok : -1;
+    auto logits = qwen2_forward_last_logits(model, token_ids, ntoken);
+    if (!logits) return -1;
+    auto max_idx = make_tensor({1}, LLAISYS_DTYPE_I64, model->device, model->device_id);
+    auto max_val = make_tensor({1}, model->meta.dtype, model->device, model->device_id);
+    llaisys::ops::argmax(max_idx, max_val, logits);
+    return read_i64_scalar(max_idx, model->device, model->device_id);
+}
+
+__export int64_t llaisysQwen2ModelInferSample(struct LlaisysQwen2Model *model,
+                                              int64_t *token_ids,
+                                              size_t ntoken,
+                                              float temperature,
+                                              int top_k,
+                                              float top_p,
+                                              uint64_t seed) {
+    auto logits = qwen2_forward_last_logits(model, token_ids, ntoken);
+    if (!logits) return -1;
+    return llaisys::ops::sample(logits, temperature, top_k, top_p, seed);
 }
 
 

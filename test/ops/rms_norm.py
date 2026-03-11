@@ -1,8 +1,12 @@
 import sys
 import os
 
-parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, parent_dir)
+test_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if test_dir not in sys.path:
+    sys.path.insert(0, test_dir)
+from bootstrap import setup_paths
+
+setup_paths(__file__)
 import llaisys
 import torch
 from test_utils import random_tensor, check_equal, benchmark
@@ -59,8 +63,8 @@ if __name__ == "__main__":
         ("bf16", 1e-2, 1e-2),
     ]
     print(f"Testing Ops.rms_norm on {args.device}")
-    for shape in testShapes:
-        for dtype_name, atol, rtol in testDtypePrec:
+    for dtype_name, atol, rtol in testDtypePrec:
+        for shape in testShapes:
             test_op_rms_norm(shape, dtype_name, atol, rtol, args.device, args.profile)
 
     print("\033[92mTest passed!\033[0m\n")

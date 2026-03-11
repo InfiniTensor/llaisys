@@ -1,3 +1,7 @@
+from bootstrap import setup_paths
+
+setup_paths(__file__)
+
 import llaisys
 
 import torch

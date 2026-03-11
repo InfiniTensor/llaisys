@@ -64,6 +64,7 @@ from .runtime import LlaisysRuntimeAPI, load_runtime
 from .ops import load_ops
 # 注意：qwen2 可能依赖前面的类型，所以放在后面导入
 from .qwen2 import LlaisysQwen2Meta, LlaisysQwen2Weights, load_qwen2_api
+from .llama import LlaisysLlamaMeta, LlaisysLlamaWeights, load_llama_api
 
 # --- 4. 执行函数绑定 ---
 # 将库句柄传递给各个模块，完成 argtypes/restypes 的设置
@@ -71,6 +72,7 @@ load_runtime(LIB_LLAISYS)
 load_tensor(LIB_LLAISYS)
 load_ops(LIB_LLAISYS)
 load_qwen2_api(LIB_LLAISYS)
+load_llama_api(LIB_LLAISYS)
 
 # --- 5. 导出公共符号 (解决 ImportError 的关键) ---
 __all__ = [
@@ -82,5 +84,6 @@ __all__ = [
     "llaisysMemcpyKind_t", "MemcpyKind",
     "llaisysStream_t",
     "LlaisysRuntimeAPI",
-    "LlaisysQwen2Meta", "LlaisysQwen2Weights"
+    "LlaisysQwen2Meta", "LlaisysQwen2Weights",
+    "LlaisysLlamaMeta", "LlaisysLlamaWeights",
 ]
