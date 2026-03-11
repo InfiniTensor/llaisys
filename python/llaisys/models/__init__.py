@@ -1,8 +1,12 @@
 import json
 from pathlib import Path
 
-from .llama import Llama
 from .qwen2 import Qwen2
+
+try:
+    from .llama import Llama
+except ImportError:
+    Llama = None
 
 
 def load_model(model_path, device):
@@ -19,6 +23,9 @@ def load_model(model_path, device):
     if model_type == "qwen2":
         return Qwen2(model_path, device)
     if model_type == "llama":
+        # 当前仓库可能没有同步 llama Python 封装；这里显式报错，避免导入阶段提前失败。
+        if Llama is None:
+            raise RuntimeError("Llama python wrapper is not available in this checkout")
         return Llama(model_path, device)
     raise ValueError(f"Unsupported model_type: {model_type}")
 

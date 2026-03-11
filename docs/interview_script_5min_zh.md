@@ -1,128 +1,17 @@
-# LLAISYS 复试 5 分钟逐句讲稿
+# 5 分钟讲稿（项目 2 第二平台 MetaX/MACA）
 
-这份讲稿按“老师让我介绍一个项目”来写，默认时长约 5 分钟。你不需要一字不差背下来，但建议先按这个版本讲顺，再根据老师兴趣展开。
+大家好，我这次汇报的是 LLAISYS 项目 2 第二平台的落地工作。原来的分支已经完成了 CPU 和 NVIDIA 路径，但第二平台当时还只是 Metax 设计稿。我的目标，是把它推进成沐曦平台上真正可编译、可运行、可测试的实现。
 
-## 版本一：标准 5 分钟讲稿
+我一开始没有直接写代码，而是先做平台识别。仓库根目录有一份沐曦平台说明 PDF，但真正决定实现方式的还是本机 SDK。我在机器上检查了 `mx-smi`、`mxcc --version`、`/opt/maca/include`、`/opt/maca/lib` 和 `/opt/mxdriver/lib`，最后确认这台机器是 `MetaX C500`，`MACA 3.2.1.10`，驱动是 `3.0.11`，编译器是 `mxcc 1.0.0`。
 
-### 第 1 段：开场与项目定位
-老师好，我想介绍一下我在复试准备中重点整理的一个项目，叫做 `LLAISYS`。  
-这个项目本质上是一个教学版的大模型推理系统，目标不是简单调用现成框架，而是从底层去理解一个 AI 系统是怎么搭起来的。  
-它的后端主要是 C++，上层测试和交互是 Python。  
-我这次主要完成了项目 1、2、3、6，也就是 CPU 优化、NVIDIA 后端、聊天服务，以及新模型 TinyLlama 的接入。  
-我觉得这个项目比较能体现我的地方，是我不是只停留在模型调用层，而是从 Tensor、算子、Runtime，一直到模型推理和聊天服务，整条链路都实际看过、改过、验证过。  
+接下来最关键的判断是兼容性。结论不是一句“兼容 CUDA”就能说完。C++ SDK 层面，MetaX 不是 CUDA drop-in，因为它用的是 `mc_runtime` 和 `mcblas`，不是 `cuda_runtime` 和 `cuBLAS`，编译器也不是 `nvcc`。但在 Python 和 PyTorch 这一层，它又保留了 CUDA 语义兼容，我实测 `torch.cuda.is_available()` 是真的，设备名也能读到 `MetaX C500`。所以最终方案不是复用 NVIDIA 后端，而是新增独立 `METAX` 后端，同时让 Hugging Face 对照继续走 `torch.cuda`。
 
-### 第 2 段：系统分层怎么讲
-这个系统我一般会把它分成 5 层来理解。  
-最底层是 Runtime，负责设备、内存、数据拷贝、同步和 stream。  
-再上一层是 Tensor，负责 shape、dtype、stride、storage 这些张量元信息。  
-再往上是算子层，比如 `linear`、`embedding`、`rms_norm`、`rope`、`self_attention`、`swiglu`。  
-再上一层是模型推理层，它会把这些算子按 Transformer 的结构串起来，并且管理 KV cache。  
-最上层就是 Python 包装、测试脚本、聊天服务和 CLI。  
-我比较喜欢这个项目的一点，就是它的分层很清楚，所以我做 GPU 支持和新模型支持的时候，不需要把整个系统全部推翻，只要沿着这条结构去补齐对应层的功能。  
+在实现上，我先扩展了设备抽象，新增 `LLAISYS_DEVICE_METAX`，然后在构建系统里加了 `--metax-gpu=y` 和独立的 `xmake/metax.lua`，统一用 `mxcc` 编译。runtime 这一层，我把设备数量、设备切换、stream、malloc/free、memcpy 这些通用接口，完整映射到了 `mcGetDeviceCount`、`mcSetDevice`、`mcStreamCreateWithFlags`、`mcMalloc`、`mcMemcpy` 这一套 MACA API。
 
-### 第 3 段：项目 1，CPU 优化
-我先说项目 1，也就是 CPU 优化。  
-这里我重点优化的是 `linear`，因为在线性层里基本上承担了大模型大部分的计算量。  
-我的做法是在 CPU 构建里启用 OpenMP，然后把 `linear` 做成按行并行和分块累加，这样可以更好利用多核 CPU，也减少 cache miss。  
-除了 `linear` 以外，我还把 `embedding`、`rms_norm`、`rope`、`swiglu`、`self_attention` 也做了按 token、按 row 或按 head 的并行化。  
-我这里比较注意的一点是，没有去改上层接口，也就是说 Python 测试和模型调用方式不需要跟着一起变。  
-这样做的好处是，上层功能可以保持稳定，底层优化是可替换的。  
+算子部分我采取的是最小可落地策略。`add`、`embedding`、`rms_norm`、`rope`、`swiglu` 我做成了 MetaX kernel；`linear` 直接接 `mcblasGemmEx`，这是推理里最关键的算子；`argmax` 和 `self_attention` 先保留 host fallback，优先把整条链路打通。这样做的原因很简单，这次提交的重点是让第二平台达到“可测试”，而不是一次性把所有算子都做成高性能版本。
 
-### 第 4 段：项目 2，NVIDIA 后端
-第二部分是 NVIDIA 后端，这部分我觉得是整个项目里最像系统工程的内容。  
-我做了两类事情。  
-第一类是 runtime，把 GPU 设备数查询、设备切换、device/host 内存分配、同步和异步拷贝、stream 等能力补齐。  
-第二类是算子，把推理链路上真正需要的 8 个关键算子都接上 NVIDIA 路径，包括 `add`、`argmax`、`embedding`、`linear`、`rms_norm`、`rope`、`self_attention`、`swiglu`。  
-其中 `linear` 我直接用 cuBLAS，因为矩阵乘是标准高性能操作，成熟库更稳。  
-其他算子则根据复杂度选择 CUDA kernel 或 host fallback，先保证正确性，再考虑后续性能优化。  
-这里我实际遇到的一个典型问题，是 GPU 设备指针不能直接用主机侧 `memcpy` 去处理。  
-比如模型权重加载和 KV cache 写回，如果还按 CPU 思路直接拷贝，GPU 路径就会出问题。  
-所以我后来统一改成通过 runtime 的 H2D、D2H、D2D 接口完成。  
+验证顺序我也是按主链路来的。先构建，再跑 `test_runtime.py --device metax`，然后跑 `test_ops.py --device metax`，最后跑 `test_infer.py --device metax --test`。因为本地没有现成可提交的模型目录，我用了一个公开的小模型 `trl-internal-testing/tiny-Qwen2ForCausalLM-2.5` 做严格一致性测试。最后 CPU 基线、MetaX 的 runtime、ops、infer 都通过了，说明这条链路已经真正可用。
 
-### 第 5 段：模型推理和 KV cache
-再往上一层，就是模型推理本身。  
-这里本质上是在做 decoder-only Transformer 的前向推理。  
-输入先经过 tokenizer 变成 token id，然后做 embedding。  
-之后每一层依次做 RMSNorm、QKV 投影、RoPE、写入 KV cache、self-attention、输出投影、残差，再进入 MLP 部分。  
-最后经过最终 norm 和词表投影得到 logits，再选出下一个 token。  
-这里一个关键点是 KV cache。  
-因为自回归生成时，历史 token 的 K/V 没必要每一步都重算，所以第一次会把完整 prompt 一次性送进去建立缓存，后面每一步只送最后一个 token 做增量解码。  
-这样复杂度会明显下降，也是大模型推理系统里非常核心的一个点。  
+这里还有两个比较典型的工程点。第一，`xmake` 在 root 下会直接拒绝运行，所以构建命令必须显式加 `XMAKE_ROOT=y`。第二，我没有把 MetaX 逻辑塞进 NVIDIA 分支，而是全程做独立目录和独立开关，这样可以最大限度降低对 CPU 和 NVIDIA 现有路径的回归风险。
 
-### 第 6 段：项目 3，聊天服务
-项目 3 我做的是把模型真正做成一个可以交互的聊天服务。  
-我新增了采样接口，支持 `temperature`、`top_k`、`top_p`、`seed`。  
-因为如果一直用 argmax，输出会比较死板，更适合测试，不太适合聊天。  
-然后我用 FastAPI 做了一个 OpenAI 风格的接口，核心是 `GET /health` 和 `POST /v1/chat/completions`。  
-这个接口既支持非流式返回，也支持 SSE 流式返回。  
-另外我还写了一个 CLI，能够保存历史消息，持续多轮对话。  
-这里我还专门加了一个全局锁，因为当前课程要求是单用户服务，而且模型对象内部有状态，比如 KV cache。  
-如果两个请求同时进入，很容易把模型状态串起来。  
-所以这里我优先保证正确性和语义清晰。  
-
-### 第 7 段：项目 6，TinyLlama 新模型支持
-项目 6 是接入新模型 TinyLlama。  
-我这里不是简单换一个模型目录就算完成，而是补了一整套 `Llama` 的 C API、ctypes 绑定和 Python 封装。  
-另外我还做了模型工厂，通过读取 `config.json` 里的 `model_type` 自动识别当前模型是 `qwen2` 还是 `llama`。  
-这样上层调用就不需要每次手动分支。  
-在验证 TinyLlama 的过程中，我还遇到过一个挺有代表性的问题。  
-最开始 GPU 严格测试失败了，我一开始也怀疑是不是新模型没支持好。  
-后来我做了分层对比，分别看了 HF 和 LLAISYS 的 token 序列、CPU 和 NVIDIA 的结果，最后发现真正的问题不是后端逻辑错，而是 Hugging Face 在 GPU 上默认跑的是 `bf16`，而我当前后端是 `float32`，两边精度口径不一致，所以贪心解码提前分叉了。  
-后来我在 `--test` 模式下统一强制 Hugging Face 使用 `float32`，这个问题就解决了。  
-我觉得这个问题挺能体现工程排障能力，因为它不是一眼能看出来的算子 bug。  
-
-### 第 8 段：验证结果和总结
-最后我说一下验证。  
-基础的 runtime、tensor、ops 测试，我已经在 CPU 和 NVIDIA 上跑通了。  
-Qwen2 的 CPU 和 NVIDIA 严格一致性测试也通过了。  
-TinyLlama 的 NVIDIA 严格一致性测试通过了，我还补了 CPU 和 NVIDIA 的局部 token 对齐验证，以及真实生成和聊天接口冒烟。  
-聊天服务这边，我不仅验证了接口本身，还解决了一个环境代理导致本地 CLI 请求返回 `502` 的问题。  
-整体来说，这个项目让我对 AI 系统的理解不再停留在“会调模型 API”，而是更偏向“知道模型推理系统从底层到上层是怎么搭起来的”。  
-如果后续继续做，我最想优先优化的是 attention 的 CUDA 实现，以及更高性能的半精度推理路径。  
-我的介绍大概就是这些。  
-
-## 版本二：如果老师打断你，可以优先保住这 6 句话
-
-如果老师中途打断，至少把下面 6 句话讲出来：
-
-1. 这个项目是一个教学版大模型推理系统，我做的是从底层 Tensor 和算子，一直到聊天服务的完整链路。  
-2. 我主要完成了 CPU 优化、NVIDIA 后端、聊天服务和 TinyLlama 接入。  
-3. CPU 侧我重点优化了 `linear`，并且用 OpenMP 并行了多个核心算子。  
-4. GPU 侧我补了 runtime 和 8 个关键算子的 NVIDIA 路径，并处理了显存拷贝和 KV cache 写回。  
-5. 聊天服务我做了 OpenAI 风格接口、SSE 流式返回和单用户串行控制。  
-6. TinyLlama 接入时我还解决了一个 `bf16/f32` 精度口径不一致导致的严格测试分叉问题。  
-
-## 版本三：结尾时老师如果问“你觉得这个项目最能体现什么”
-
-你可以直接说：
-
-我觉得这个项目最能体现两点。  
-第一点是系统理解能力，因为我不是只会调上层模型，而是知道 Runtime、Tensor、算子、KV cache、采样、服务接口这些模块怎么衔接。  
-第二点是工程排障能力，因为我在这个项目里实际解决过显存拷贝、stream 同步、代理 502、TinyLlama 精度口径这些问题。  
-
-## 版本四：你可以提前准备的停顿点
-
-为了让你讲的时候更自然，建议你在下面几个地方主动停一下，方便老师插问：
-
-- 讲完“系统分层”以后停一下  
-老师可能会问：你最熟的是哪一层？
-
-- 讲完“GPU 后端”以后停一下  
-老师可能会问：你为什么不用更多 CUDA kernel？或者为什么用 cuBLAS？
-
-- 讲完“KV cache”以后停一下  
-老师可能会问：为什么后面每一步只送一个 token？
-
-- 讲完“聊天服务”以后停一下  
-老师可能会问：为什么要加锁？为什么选 SSE？
-
-- 讲完“TinyLlama 精度问题”以后停一下  
-老师可能会问：你怎么定位不是后端 bug？
-
-## 最后建议
-
-你真正复试时，不要追求“全文背诵感”，要追求“像你自己真的做过”。  
-最好的状态不是一口气讲满 5 分钟，而是讲到第 3 分钟左右，老师已经开始顺着你的点来问。  
-只要你能把下面这句话讲得自然，这个项目就基本立住了：
-
-“我这个项目不是只做了上层聊天接口，而是从底层 Tensor、算子、Runtime，一直到模型推理、采样、聊天服务和新模型接入都真正做了，并且做了实际验证和问题排查。”  
+如果用一句话总结，我这次完成的工作不是再补一份第二平台说明文档，而是把 MetaX/MACA 真正接进了 LLAISYS，并在真实沐曦机器上把 `runtime -> ops -> infer` 主链路跑到了可提交状态。

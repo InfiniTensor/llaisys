@@ -1,135 +1,257 @@
-# LLAISYS 项目 1/2/3/6 实现报告
+# LLAISYS 项目 2 第二平台（MetaX/MACA）实现报告
 
-## 1. 作业完成情况
-- 项目 1：完成 CPU 算子并行优化，在 `xmake` CPU 构建中启用 OpenMP，并为 `linear`、`embedding`、`rms_norm`、`rope`、`self_attention`、`swiglu` 增加并行路径。
-- 项目 2：完成 NVIDIA runtime 与 8 个关键推理算子的 CUDA 路径；第二平台选择 `Metax`，以设计稿形式提交，不包含可执行实现。
-- 项目 3：完成随机采样、OpenAI 风格聊天服务、SSE 流式输出、单用户串行 CLI。
-- 项目 6：新增 `Llama` / `TinyLlama` 模型支持，并通过模型工厂按 `config.json` 自动识别 `qwen2` 或 `llama`。
+## 1. 提交结论
 
-## 2. 关键实现说明
+本次提交基于 `checkpoint/nvidia-done` 分支，目标是把项目 2 的第二平台从“设计稿”推进到“沐曦平台可实际测试”的状态。当前仓库已经完成以下交付：
 
-### 2.1 CPU 优化
-- 在 CPU 构建规则中启用 OpenMP。
-- `linear` 采用按行并行与分块累加，减少 cache miss，作为主要性能优化点。
-- `embedding`、`rms_norm`、`rope`、`swiglu`、`self_attention` 按 token / row / head 维度展开并行。
-- 保持原有 Python 与 C 接口不变，已有调用代码无需改动。
+- 保留原有 `CPU` 与 `NVIDIA` 设备路径，不改坏已有接口和构建开关。
+- 新增独立 `METAX` 设备类型，不把沐曦实现塞进 `nvidia` 分支里。
+- 打通 MetaX/MACA 的 runtime、资源管理、算子调度和 Python 测试入口。
+- 在真实沐曦机器上完成 `runtime -> ops -> infer` 的顺序验证。
 
-### 2.2 NVIDIA 后端
-- 完成 runtime API：设备数量、设备切换、stream、device/host malloc/free、同步/异步 memcpy。
-- 完成以下 8 个推理算子的 NVIDIA 路径：
-  - `add`
-  - `argmax`
-  - `embedding`
-  - `linear`
-  - `rms_norm`
-  - `rope`
-  - `self_attention`
-  - `swiglu`
-- `linear` 使用 cuBLAS；其余算子使用 CUDA kernel 或 host fallback，优先保证正确性。
-- 权重加载、KV cache 写回、最终 token 读取统一走 runtime memcpy，避免直接对设备指针做主机侧 `memcpy`。
-- NVIDIA 算子统一落到默认 CUDA stream，避免与 Python / PyTorch 默认拷贝链路混用自定义 stream 时出现可见性问题。
+当前分支的真实可验证结论是：`CPU + NVIDIA` 路径仍保留，`MetaX/MACA` 已经从设计说明落地为可编译、可运行、可测试的第二平台。
 
-### 2.3 聊天服务
-- 新增采样接口，支持 `temperature`、`top_k`、`top_p`、`seed`。
-- `Qwen2.generate(...)` 与 `Llama.generate(...)` 都支持采样参数。
-- 新增 `FastAPI` 服务接口：
-  - `GET /health`
-  - `POST /v1/chat/completions`
-- 支持非流式与 SSE 流式返回。
-- 服务端通过单全局锁保证单用户串行，避免多个请求共享同一个模型状态与 KV cache。
+## 2. 平台识别与兼容性判断
 
-### 2.4 TinyLlama 支持
-- 新增 `Llama` C API、ctypes 绑定与 Python 封装。
-- 模型加载统一通过模型工厂完成，不需要上层手动判断 `Qwen2` 或 `Llama`。
-- `test/test_infer.py` 已支持同时验证 Qwen2 与 TinyLlama。
+### 2.1 参考资料
 
-## 3. 实验环境
-- 验证日期：2026-03-10
-- 平台：PAI DSW NVIDIA 实例
-- CUDA：`/usr/local/cuda-12.8`
-- Python：3.12
-- GPU：NVIDIA A100 80GB
-- 本次实测模型：
-  - `models/DeepSeek-R1-Distill-Qwen-1.5B`
-  - `models/TinyLlama-1.1B-Chat-v1.0`
+- 仓库根目录有一份外部 PDF：`[外部] 算子比赛 - 沐曦平台使用说明.pdf`
+- 该文件只作为平台说明参考，不提交进 git，也不能替代本机 `/opt/maca` 下的真实 SDK 头文件和运行库
 
-## 4. 实测结果
+### 2.2 本机环境识别结果
 
-### 4.1 基础测试
-以下命令已在当前环境通过：
-- `python test/test_runtime.py --device cpu`
-- `python test/test_tensor.py`
-- `python test/test_ops.py --device cpu`
-- `python test/test_runtime.py --device nvidia`
-- `python test/test_ops.py --device nvidia`
+2026 年 3 月 11 日在当前机器上确认到如下环境：
 
-### 4.2 Qwen2 推理与聊天验证
-- `python test/test_infer.py --device cpu --test --model models/DeepSeek-R1-Distill-Qwen-1.5B`
-  - 结果：通过
-  - 说明：HF 与 LLAISYS token 级一致
-- `python test/test_infer.py --device nvidia --test --model models/DeepSeek-R1-Distill-Qwen-1.5B`
-  - 结果：通过
-  - 说明：HF 与 LLAISYS token 级一致
-- `python test/test_infer.py --device nvidia --model models/DeepSeek-R1-Distill-Qwen-1.5B --prompt "请用中文介绍一下你自己。"`
-  - 结果：通过
-  - 说明：真实生成链路正常；由于默认走采样，HF 与 LLAISYS 文本不要求逐 token 完全一致
-- 聊天服务验证：
-  - `/health` 返回 `200`
-  - `POST /v1/chat/completions` 非流式返回 `200`
-  - CLI 流式输出正常
+- `mx-smi 2.2.9`
+- `MetaX C500`
+- `MACA 3.2.1.10`
+- 驱动版本 `3.0.11`
+- 编译器 `mxcc 1.0.0`
+- Python `3.10.10`
+- PyTorch `2.6.0+metax3.2.1.3`
+- xmake `v2.8.7+20240401`
 
-### 4.3 TinyLlama 推理与聊天验证
-- `python test/test_infer.py --device nvidia --test --model models/TinyLlama-1.1B-Chat-v1.0`
-  - 结果：通过
-  - 说明：HF 与 LLAISYS token 级一致
-- HF `float32 GPU` 与 LLAISYS `NVIDIA` 前 32 个贪心 token 完全一致
-- LLAISYS `CPU` 与 `NVIDIA` 前 32 个贪心 token 完全一致
-- HF `CPU float32` 与 LLAISYS `CPU` 前 8 个贪心 token 完全一致
-- `python test/test_infer.py --device nvidia --model models/TinyLlama-1.1B-Chat-v1.0 --prompt "Please introduce yourself in one sentence." --max_steps 32`
-  - 结果：通过
-  - 说明：真实生成链路正常；默认采样下，HF 与 LLAISYS 文本不要求逐 token 完全一致
-- TinyLlama 聊天服务验证：
-  - `POST /v1/chat/completions` 返回 `200`
-  - 服务端能正确通过模型工厂加载 `llama`
+本机 SDK 与运行库位置：
 
-### 4.4 端到端结论
-- Qwen2 的 CPU 与 NVIDIA 严格一致性测试都已跑通。
-- TinyLlama 的 NVIDIA 严格一致性已跑通。
-- TinyLlama 在 CPU 侧已完成多轮局部严格校验，验证结果与 NVIDIA 后端一致，没有发现模型实现层面的结构性错误。
-- 新增聊天服务已同时在 `Qwen2` 与 `TinyLlama` 上完成 API 冒烟。
+- 头文件目录：`/opt/maca/include`
+- MACA 运行库目录：`/opt/maca/lib`
+- 驱动运行库目录：`/opt/mxdriver/lib`
 
-## 5. 本次实际踩坑与修复
+### 2.3 CUDA 兼容性判断
 
-### 5.1 本地聊天 CLI 返回 502
-- 现象：CLI 访问 `127.0.0.1:8000` 时返回 `HTTP 502`
-- 原因：当前云环境默认注入了 `HTTP_PROXY/HTTPS_PROXY=http://127.0.0.1:9999`，`urllib` 会把本地请求错误转发给代理
-- 修复：CLI 对 `localhost/127.0.0.1/::1` 自动绕过代理
+结论分两层：
 
-### 5.2 TinyLlama GPU 严格测试首次失败
-- 现象：TinyLlama 在 `--device nvidia --test` 下最初出现 token 提前分叉
-- 原因：测试脚本让 Hugging Face 在 GPU 上默认使用 `bf16`，而当前 LLAISYS 后端使用 `f32`，两边数值精度口径不一致
-- 修复：`test/test_infer.py` 在 `--test` 模式下强制 Hugging Face 使用 `float32`
+- C/C++ SDK 层面不是 CUDA drop-in 兼容，必须单独适配。
+- Python / PyTorch 使用层面保留了 CUDA 命名空间语义，可以继续走 `torch.cuda`。
 
-## 6. Benchmark 记录建议
-推荐在提交课程作业时补充以下 benchmark 数值：
-- `python scripts/benchmark_llaisys.py --device cpu --repeat 20`
-- `python scripts/benchmark_llaisys.py --device nvidia --repeat 20`
-- `python scripts/benchmark_llaisys.py --device nvidia --model /path/to/model --max-new-tokens 64`
+判断依据：
 
-建议至少记录：
-- 机器型号 / CUDA 版本
-- CPU 线程数 / GPU 型号
-- `linear` 平均耗时
-- 一个固定 prompt 的端到端耗时
+- 本机没有可直接复用的 `nvcc`、`nvidia-smi`、`libcudart`、`libcublas` 运行时路径。
+- MetaX 的 C/C++ 接口来自 `<mcr/mc_runtime.h>` 与 `<mcblas/mcblas.h>`，不是 `<cuda_runtime.h>` 与 `<cublas_v2.h>`。
+- `torch.cuda.is_available()` 在本机返回 `True`，并且设备名能显示为 `MetaX C500`，说明 PyTorch 层做了 CUDA 语义兼容。
 
-## 7. 已知限制
-- 第二平台 `Metax` 只提交设计稿，不包含可执行代码。
-- 聊天服务按课程要求设计为单用户串行服务。
-- `self_attention` 在 NVIDIA 路径仍优先保证正确性，后续仍有性能优化空间。
-- TinyLlama 的 CPU 全量 128-step 严格校验在当前环境较慢，因此本次报告保留了已经完成的局部严格校验结果与完整 NVIDIA 严格校验结果。
+因此，本次实现采取的策略是：
 
-## 8. 提交物说明
-- 复现流程见 [reproduce_zh.md](/home/saber/llaisys/docs/reproduce_zh.md)
-- PR 正文见 [pr_zh.md](/home/saber/llaisys/docs/pr_zh.md)
-- 第二平台设计稿见 [metax_design_zh.md](/home/saber/llaisys/docs/metax_design_zh.md)
-- 复试问答整理见 [interview_qa_zh.md](/home/saber/llaisys/docs/interview_qa_zh.md)
+- LLAISYS C/C++ 后端新增独立 `METAX` 分支，单独对接 `mc*` / `mcblas*`。
+- Python 测试对照仍复用 `torch.cuda`，不额外重写 Hugging Face 推理逻辑。
+
+## 3. 实现说明
+
+### 3.1 设备抽象与构建
+
+本次改动先扩展设备抽象，再接入平台构建：
+
+- 在 `llaisysDeviceType_t` 中新增 `LLAISYS_DEVICE_METAX`
+- 保留原 `CPU` 与 `NVIDIA` 枚举值和分发逻辑
+- 在 `xmake.lua` 中新增 `--metax-gpu=y`
+- 新增 `xmake/metax.lua`，统一使用 `mxcc` 编译 `.cu`
+- 共享库链接时单独增加 MetaX link stub，避免设备侧对象未被最终链接
+
+这样处理的好处是：
+
+- CPU 与 NVIDIA 路径的构建选项保持独立
+- 第二平台出问题时不会污染原 NVIDIA 代码路径
+- 后续如果需要继续接第三个平台，可以直接沿用同一抽象方式
+
+### 3.2 Runtime 映射
+
+MetaX runtime 完全按 LLAISYS 现有 runtime 抽象接入，主要映射如下：
+
+| LLAISYS runtime | MACA 接口 |
+| --- | --- |
+| `get_device_count` | `mcGetDeviceCount` |
+| `set_device` | `mcSetDevice` |
+| `device_synchronize` | `mcDeviceSynchronize` |
+| `create_stream` | `mcStreamCreateWithFlags(..., mcStreamNonBlocking)` |
+| `destroy_stream` | `mcStreamDestroy` |
+| `stream_synchronize` | `mcStreamSynchronize` |
+| `malloc_device` | `mcMalloc` |
+| `free_device` | `mcFree` |
+| `malloc_host` | `mcMallocHost` |
+| `free_host` | `mcFreeHost` |
+| `memcpy_sync` | `mcMemcpy` |
+| `memcpy_async` | `mcMemcpyAsync` |
+
+实现细节：
+
+- 错误处理统一转成 `mcGetErrorString` / `mcblasGetStatusString`
+- 关键桥接代码补了中文注释，说明 CUDA 与 MACA 语义差异
+- `mcblasCreate` 前显式保证已经 `mcSetDevice`
+- `mcblas` handle 按线程和设备缓存，并在每次调用前更新 stream
+
+### 3.3 算子策略
+
+MetaX 目录独立放在：
+
+- `src/device/metax/`
+- `src/ops/metax/`
+
+当前算子策略如下：
+
+| 算子 | 当前策略 |
+| --- | --- |
+| `add` | MetaX kernel |
+| `embedding` | MetaX kernel |
+| `linear` | `mcblasGemmEx` + bias kernel |
+| `rms_norm` | MetaX kernel |
+| `rope` | MetaX kernel |
+| `swiglu` | MetaX kernel |
+| `argmax` | host fallback |
+| `self_attention` | host fallback |
+
+其中 `linear` 是本次最关键的部分：
+
+- dtype 映射使用 `MACA_R_32F` / `MACA_R_16F` / `MACA_R_16BF`
+- 计算类型以 `MCBLAS_COMPUTE_32F` 为主
+- 对 `float32` 路径额外切到 `MCBLAS_COMPUTE_32F_PEDANTIC`
+- 数学模式固定为 `MCBLAS_PEDANTIC_MATH`
+
+这样做的原因是 MetaX 与 PyTorch 对照时会有轻微数值漂移，`pedantic` 模式更容易稳定通过当前严格测试。
+
+### 3.4 Python 与测试桥接
+
+Python 层同步做了三件事：
+
+- `DeviceType` 增加 `METAX`
+- `test/test_runtime.py`、`test/test_ops.py`、`test/test_infer.py` 增加 `--device metax`
+- `test/test_utils.py` 中把 MetaX 映射到 `llaisys.DeviceType.METAX`
+
+同时保留一个重要约束：
+
+- `torch_device("metax")` 仍然返回 `torch.device("cuda:N")`
+
+原因是本机 MetaX PyTorch 并没有暴露一个新的 `torch.device("metax")` 命名空间，而是直接复用了 CUDA 语义。
+
+### 3.5 推理模型支持现状
+
+当前分支已经在推理链路上实际验证的是 `Qwen2` 路径。为了保证文档与仓库一致，本报告不再声称当前分支已经完整交付 `TinyLlama/Llama` 作业支持。
+
+本次实际用于严格推理验证的模型是：
+
+- `trl-internal-testing/tiny-Qwen2ForCausalLM-2.5`
+
+选择这个模型的原因是：
+
+- 体积小，适合当前机器快速做严格一致性测试
+- 仓库本地没有现成可直接用于提交验证的模型目录
+- 其 `model_type` 为 `qwen2`，与当前分支已验证的模型实现一致
+
+## 4. 构建与实测结果
+
+### 4.1 构建命令
+
+本机以 root 身份运行，因此 `xmake` 需要带 `XMAKE_ROOT=y`：
+
+```bash
+XMAKE_ROOT=y xmake f --metax-gpu=y -cv
+XMAKE_ROOT=y xmake -r
+XMAKE_ROOT=y xmake install
+```
+
+以上命令已通过。
+
+### 4.2 CPU 基线验证
+
+以下 CPU 命令已在当前仓库通过：
+
+```bash
+python test/test_tensor.py
+python test/test_runtime.py --device cpu
+python test/test_ops.py --device cpu
+python test/test_infer.py --device cpu --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
+```
+
+说明：
+
+- 这部分用于证明 MetaX 接入没有破坏 CPU 基线路径
+- `test_infer.py --device cpu` 已完成 token 级严格一致性校验
+
+### 4.3 MetaX 验证
+
+以下 MetaX 命令已在真实沐曦机器通过：
+
+```bash
+python test/test_runtime.py --device metax
+python test/test_ops.py --device metax
+python test/test_infer.py --device metax --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
+```
+
+验证结果：
+
+- `runtime`：设备检测、内存分配、同步/异步拷贝通过
+- `ops`：当前测试集全部通过
+- `infer`：Hugging Face 与 LLAISYS token 级严格一致
+
+### 4.4 NVIDIA 路径说明
+
+本次提交遵循“不改坏 CPU + NVIDIA 路径”的约束，因此所有 MetaX 代码都走独立分支。  
+但当前机器只有沐曦设备，没有 NVIDIA 硬件，所以本次没有在本机重新跑 `--device nvidia` 的硬件回归。文档只声明：
+
+- NVIDIA 原有实现已被完整阅读并保留
+- 构建开关与代码路径没有被 MetaX 改写
+- 本机未做新的 NVIDIA 实机验证
+
+## 5. 踩坑记录
+
+### 5.1 MetaX 不是 C++ 层 CUDA 直替
+
+最开始的核心判断问题是：MetaX 到底能不能直接拿 CUDA 代码编过去。实际检查后确认不行：
+
+- `<cuda_runtime.h>` 不能作为稳定适配前提
+- `cuBLAS` 也不能直接当成 `mcBLAS`
+
+因此必须走独立后端接入，而不是在 NVIDIA 代码里用宏硬套。
+
+### 5.2 root 用户下 xmake 默认拒绝运行
+
+本机是 root 环境，`xmake` 默认会报错退出，需要显式加：
+
+```bash
+XMAKE_ROOT=y
+```
+
+这个点如果不写进复现文档，提交后很容易直接卡死在构建阶段。
+
+### 5.3 当前环境没有可直接提交的本地模型目录
+
+为了把推理链路先打通，本次使用公开的小型 Qwen2 测试模型：
+
+- `trl-internal-testing/tiny-Qwen2ForCausalLM-2.5`
+
+这样可以先保证 `test/test_infer.py` 的严格一致性校验可复现；如果老师或助教有本地 Qwen2 模型目录，也可以直接替换 `--model` 参数做同样的验证。
+
+## 6. 已知限制
+
+- `argmax` 与 `self_attention` 在 MetaX 侧当前仍是 host fallback，优先保证链路正确性，不追求这一步的性能最优。
+- 当前报告没有新增 NVIDIA 实机回归数据，因为本机没有 NVIDIA 硬件。
+- 当前推理验证聚焦 `Qwen2`；不再沿用旧文档里关于 `TinyLlama/Llama` 的完成声明。
+- 根目录外部 PDF 保持未跟踪状态，不会随仓库提交。
+
+## 7. 提交物索引
+
+- 提交总览：[`submission_zh.md`](submission_zh.md)
+- 复现流程：[`reproduce_zh.md`](reproduce_zh.md)
+- PR 文案：[`pr_zh.md`](pr_zh.md)
+- MetaX 实现说明：[`metax_design_zh.md`](metax_design_zh.md)
+- 面试问答：[`interview_qa_zh.md`](interview_qa_zh.md)
+- 5 分钟讲稿：[`interview_script_5min_zh.md`](interview_script_5min_zh.md)

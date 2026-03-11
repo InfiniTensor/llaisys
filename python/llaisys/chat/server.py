@@ -200,7 +200,7 @@ def create_app(model_path: str, device_name: str = "cpu") -> FastAPI:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True, help="本地模型目录")
-    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia"])
+    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia", "metax"])
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8000, type=int)
     args = parser.parse_args()

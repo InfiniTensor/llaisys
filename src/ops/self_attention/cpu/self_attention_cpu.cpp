@@ -51,9 +51,9 @@ void self_attention_kernel(T *attn_val, const T *q, const T *k, const T *v,
         size_t current_global_pos = total_len - seqlen + t;
         size_t kv_h = h / group_size;
 
-        std::vector<float> scores(total_len, 0.0f);
-        std::vector<float> acc(dv, 0.0f);
-        float max_score = -std::numeric_limits<float>::infinity();
+        std::vector<double> scores(total_len, 0.0);
+        std::vector<double> acc(dv, 0.0);
+        double max_score = -std::numeric_limits<double>::infinity();
 
         for (size_t pos = 0; pos < total_len; ++pos) {
             if (pos > current_global_pos) {
@@ -61,50 +61,51 @@ void self_attention_kernel(T *attn_val, const T *q, const T *k, const T *v,
                 continue;
             }
 
-            float dot = 0.0f;
+            double dot = 0.0;
             size_t q_offset = t * nhead * d + h * d;
             size_t k_offset = pos * nkvhead * d + kv_h * d;
             for (size_t i = 0; i < d; ++i) {
-                dot += val_to_float(q[q_offset + i]) * val_to_float(k[k_offset + i]);
+                dot += static_cast<double>(val_to_float(q[q_offset + i])) *
+                       static_cast<double>(val_to_float(k[k_offset + i]));
             }
 
-            dot *= scale;
+            dot *= static_cast<double>(scale);
             scores[pos] = dot;
             if (dot > max_score) {
                 max_score = dot;
             }
         }
 
-        float sum_exp = 0.0f;
+        double sum_exp = 0.0;
         for (size_t pos = 0; pos < total_len; ++pos) {
-            if (scores[pos] == -std::numeric_limits<float>::infinity()) {
-                scores[pos] = 0.0f;
+            if (scores[pos] == -std::numeric_limits<double>::infinity()) {
+                scores[pos] = 0.0;
                 continue;
             }
             scores[pos] = std::exp(scores[pos] - max_score);
             sum_exp += scores[pos];
         }
 
-        float inv_sum = 1.0f / sum_exp;
+        double inv_sum = 1.0 / sum_exp;
         for (size_t pos = 0; pos < total_len; ++pos) {
             scores[pos] *= inv_sum;
         }
 
         for (size_t pos = 0; pos < total_len; ++pos) {
-            float weight = scores[pos];
-            if (weight == 0.0f) {
+            double weight = scores[pos];
+            if (weight == 0.0) {
                 continue;
             }
 
             size_t v_offset = pos * nkvhead * dv + kv_h * dv;
             for (size_t i = 0; i < dv; ++i) {
-                acc[i] += weight * val_to_float(v[v_offset + i]);
+                acc[i] += weight * static_cast<double>(val_to_float(v[v_offset + i]));
             }
         }
 
         size_t out_offset = t * nhead * dv + h * dv;
         for (size_t i = 0; i < dv; ++i) {
-            attn_val[out_offset + i] = float_to_val<T>(acc[i]);
+            attn_val[out_offset + i] = float_to_val<T>(static_cast<float>(acc[i]));
         }
     }
 }

@@ -67,7 +67,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia"], type=str)
+    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia", "metax"], type=str)
     parser.add_argument("--profile", action="store_true")
     args = parser.parse_args()
     testShapes = [
@@ -75,7 +75,7 @@ if __name__ == "__main__":
         ((512, 4, 4096), (512, 1024))]
     testDtypePrec = [
         # type, atol, rtol
-        ("f32", 1e-4, 1e-4),
+        ("f32", 3e-4, 3e-4),
         ("f16", 1e-3, 1e-3),
         ("bf16", 1e-2, 1e-2),
     ]

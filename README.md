@@ -432,58 +432,54 @@ Support another model type than the one we use for homework in LLAISYS.
 
 ## Chinese Submission Docs
 
-- Report: [docs/report_zh.md](/home/saber/llaisys/docs/report_zh.md)
-- Reproduce: [docs/reproduce_zh.md](/home/saber/llaisys/docs/reproduce_zh.md)
-- PR Template: [docs/pr_zh.md](/home/saber/llaisys/docs/pr_zh.md)
-- Metax Design: [docs/metax_design_zh.md](/home/saber/llaisys/docs/metax_design_zh.md)
-- Interview Q&A: [docs/interview_qa_zh.md](/home/saber/llaisys/docs/interview_qa_zh.md)
+- Overview: [docs/submission_zh.md](docs/submission_zh.md)
+- Report: [docs/report_zh.md](docs/report_zh.md)
+- Reproduce: [docs/reproduce_zh.md](docs/reproduce_zh.md)
+- PR Template: [docs/pr_zh.md](docs/pr_zh.md)
+- MetaX Note: [docs/metax_design_zh.md](docs/metax_design_zh.md)
+- Interview Q&A: [docs/interview_qa_zh.md](docs/interview_qa_zh.md)
+- Interview Script: [docs/interview_script_5min_zh.md](docs/interview_script_5min_zh.md)
 
-## Course Submission View For This Fork
+## Current Submission Status For This Fork
 
 This section is appended for course submission and does not change the original assignment description above.
 
-### Submission Scope
+### Scope
 
-- Finished assignments/projects: Project #1, Project #2, Project #3, Project #6
-- GPU platforms actually delivered in code: CPU + NVIDIA
-- Second platform for course submission: Metax design note only
+- Base branch: `checkpoint/nvidia-done`
+- Main deliverable in this submission: Project #2 second platform on MetaX/MACA
+- Existing CPU + NVIDIA paths are preserved as separate code paths
 
 ### Verified Environment
 
-- Validation date: 2026-03-10
-- Platform: PAI DSW NVIDIA instance
-- CUDA: `/usr/local/cuda-12.8`
-- Python: 3.12
-- GPU: NVIDIA A100 80GB
-
-### Verified Models
-
-- `models/DeepSeek-R1-Distill-Qwen-1.5B`
-- `models/TinyLlama-1.1B-Chat-v1.0`
+- Validation date: 2026-03-11
+- GPU: `MetaX C500`
+- `mx-smi`: `2.2.9`
+- `MACA`: `3.2.1.10`
+- Driver: `3.0.11`
+- Compiler: `mxcc 1.0.0`
+- Python: `3.10.10`
+- PyTorch: `2.6.0+metax3.2.1.3`
 
 ### Verified Commands
 
 ```bash
-python test/test_runtime.py --device cpu
+XMAKE_ROOT=y xmake f --metax-gpu=y -cv
+XMAKE_ROOT=y xmake -r
+XMAKE_ROOT=y xmake install
+
 python test/test_tensor.py
+python test/test_runtime.py --device cpu
 python test/test_ops.py --device cpu
-python test/test_runtime.py --device nvidia
-python test/test_ops.py --device nvidia
-python test/test_infer.py --device cpu --test --model models/DeepSeek-R1-Distill-Qwen-1.5B
-python test/test_infer.py --device nvidia --test --model models/DeepSeek-R1-Distill-Qwen-1.5B
-python test/test_infer.py --device nvidia --test --model models/TinyLlama-1.1B-Chat-v1.0
+python test/test_infer.py --device cpu --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
+
+python test/test_runtime.py --device metax
+python test/test_ops.py --device metax
+python test/test_infer.py --device metax --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
 ```
 
-### Chat Demo
+### Notes
 
-```bash
-llaisys-chat-server --model models/DeepSeek-R1-Distill-Qwen-1.5B --device nvidia --host 127.0.0.1 --port 8000
-llaisys-chat-cli --base-url http://127.0.0.1:8000 --stream
-```
-
-### Submission Docs
-
-- Report: [docs/report_zh.md](/home/saber/llaisys/docs/report_zh.md)
-- Reproduce: [docs/reproduce_zh.md](/home/saber/llaisys/docs/reproduce_zh.md)
-- PR Text: [docs/pr_zh.md](/home/saber/llaisys/docs/pr_zh.md)
-- Interview Preparation: [docs/interview_qa_zh.md](/home/saber/llaisys/docs/interview_qa_zh.md)
+- MetaX is not a C++-level CUDA drop-in platform, so the backend is adapted separately.
+- Hugging Face verification still uses `torch.cuda` semantics because the local MetaX PyTorch build exposes CUDA-compatible device APIs.
+- The external MetaX PDF in the repo root is intentionally kept untracked and is not part of the git submission.

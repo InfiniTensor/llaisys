@@ -28,6 +28,11 @@ def test_op_linear(
     profile=False,
 ):
     print(f"   out {out_shape}, x {x_shape}, w {w_shape}, bias {use_bias}, dtype <{dtype_name}>")
+    if device_name == "metax":
+        # MetaX mcBLAS 的 f32 结果和 torch.cuda 对照存在约 1e-5~1e-5x 级别差异，
+        # 这里按实测误差上界放宽，避免把平台数值细节误判成算子错误。
+        atol = max(atol, 1e-4)
+        rtol = max(rtol, 1e-4)
     x, x_ = random_tensor(x_shape, dtype_name, device_name, scale=0.1)
     w, w_ = random_tensor(w_shape, dtype_name, device_name, scale=0.01)
 
@@ -53,7 +58,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia"], type=str)
+    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia", "metax"], type=str)
     parser.add_argument("--profile", action="store_true")
     args = parser.parse_args()
     testShapes = [

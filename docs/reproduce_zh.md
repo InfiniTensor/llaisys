@@ -1,109 +1,181 @@
-# LLAISYS 复现流程（中文，可直接提交）
+# LLAISYS 项目 2 第二平台复现流程（MetaX/MACA）
 
-## 1. 环境
-- 平台：PAI DSW NVIDIA 实例
-- CUDA：`/usr/local/cuda-12.8`
-- Python：3.10+ 均可，本次实测环境为 Python 3.12
+## 1. 适用范围
 
-## 2. 一键初始化
-在仓库根目录执行：
+本文档对应当前仓库的可提交状态，目标是复现：
+
+- CPU 基线路径
+- MetaX/MACA 第二平台路径
+- `runtime -> ops -> infer` 的完整验证链路
+
+如果你当前机器不是沐曦平台，而是受限沙箱、纯 CPU 或纯 NVIDIA 机器，本文中的 MetaX 测试无法直接复现。
+
+## 2. 环境检查
+
+在仓库根目录先执行下面几组命令，确认平台和工具链是对的：
 
 ```bash
-bash scripts/setup_pai_nvidia.sh
+mx-smi
+mxcc --version
+python --version
+python -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))"
+echo "$LD_LIBRARY_PATH"
+ls /opt/maca/include | head
+ls /opt/maca/lib | head
+ls /opt/mxdriver/lib | head
 ```
 
-如果需要顺手下载模型：
+当前提交所用机器的参考结果：
+
+- `mx-smi 2.2.9`
+- `MetaX C500`
+- `MACA 3.2.1.10`
+- 驱动 `3.0.11`
+- `mxcc version 1.0.0`
+- Python `3.10.10`
+- PyTorch `2.6.0+metax3.2.1.3`
+
+如果 `LD_LIBRARY_PATH` 里没有 MetaX 运行库，建议补上：
 
 ```bash
-bash scripts/setup_pai_nvidia.sh deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B models/DeepSeek-R1-Distill-Qwen-1.5B
-bash scripts/setup_pai_nvidia.sh TinyLlama/TinyLlama-1.1B-Chat-v1.0 models/TinyLlama-1.1B-Chat-v1.0
+export LD_LIBRARY_PATH=/opt/maca/lib:/opt/mxdriver/lib:$LD_LIBRARY_PATH
 ```
 
-## 3. 构建
+## 3. 依赖准备
+
+### 3.1 xmake
+
+当前仓库用 `xmake` 构建。如果系统里没有，可以安装：
+
 ```bash
-xmake -r
-PATH=/usr/local/cuda-12.8/bin:$PATH xmake f --nv-gpu=y -cv
-xmake -r
+apt-get update
+apt-get install -y xmake
 ```
 
-## 4. 基础测试
+注意：如果你以 root 身份运行，后续所有 `xmake` 命令都要额外带上 `XMAKE_ROOT=y`。
 
-### 4.1 CPU
+### 3.2 Python 依赖
+
+当前仓库在 `test/test_infer.py` 的 Hugging Face 路径上需要 `accelerate`：
+
 ```bash
-python test/test_runtime.py --device cpu
+python -m pip install accelerate
+```
+
+## 4. 构建
+
+### 4.1 CPU 默认构建
+
+```bash
+XMAKE_ROOT=y xmake -r
+```
+
+### 4.2 MetaX 构建
+
+```bash
+XMAKE_ROOT=y xmake f --metax-gpu=y -cv
+XMAKE_ROOT=y xmake -r
+XMAKE_ROOT=y xmake install
+```
+
+说明：
+
+- `--metax-gpu=y` 会打开 MetaX 编译路径
+- `.cu` 文件由 `mxcc` 负责编译
+- 安装步骤会把 Python 侧需要的共享库放到可加载位置
+
+## 5. 测试顺序
+
+### 5.1 CPU 基线
+
+```bash
 python test/test_tensor.py
+python test/test_runtime.py --device cpu
 python test/test_ops.py --device cpu
+python test/test_infer.py --device cpu --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
 ```
 
-### 4.2 NVIDIA
+### 5.2 MetaX runtime
+
 ```bash
-python test/test_runtime.py --device nvidia
-python test/test_ops.py --device nvidia
+python test/test_runtime.py --device metax
 ```
 
-## 5. 推理一致性
+预期结果：
 
-### 5.1 Qwen2
+- 设备数大于 0
+- host/device 内存分配正常
+- H2D、D2H、D2D 拷贝通过
+
+### 5.3 MetaX ops
+
 ```bash
-python test/test_infer.py --device cpu --test --model models/DeepSeek-R1-Distill-Qwen-1.5B
-python test/test_infer.py --device nvidia --test --model models/DeepSeek-R1-Distill-Qwen-1.5B
+python test/test_ops.py --device metax
 ```
 
-### 5.2 TinyLlama
+当前实现说明：
+
+- `linear` 走 `mcblasGemmEx`
+- `add`、`embedding`、`rms_norm`、`rope`、`swiglu` 走 MetaX kernel
+- `argmax` 与 `self_attention` 当前是 host fallback
+
+### 5.4 MetaX infer
+
+如果本地没有现成模型目录，直接用公开的小模型：
+
 ```bash
-python test/test_infer.py --device nvidia --test --model models/TinyLlama-1.1B-Chat-v1.0
+python test/test_infer.py --device metax --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
 ```
+
+如果你已经准备好本地 Qwen2 模型目录，也可以这样跑：
+
+```bash
+python test/test_infer.py --device metax --test --model /path/to/local/qwen2_model --prompt hi --max_steps 1
+```
+
+预期结果：
+
+- Hugging Face 和 LLAISYS 的 token 序列严格一致
+- 输出末尾打印 `Test passed!`
+
+## 6. 常见问题
+
+### 6.1 `xmake` 提示 root 用户危险，直接退出
+
+补上环境变量再执行：
+
+```bash
+XMAKE_ROOT=y
+```
+
+例如：
+
+```bash
+XMAKE_ROOT=y xmake f --metax-gpu=y -cv
+```
+
+### 6.2 MetaX 设备在受限环境里不可见
+
+MetaX 相关测试必须跑在真实沐曦机器上。  
+如果当前环境对设备节点、驱动或运行库做了限制，`mcGetDeviceCount` 可能会失败，这不是仓库逻辑错误。
+
+### 6.3 为什么测试里 `metax` 映射成了 `torch.cuda`
+
+因为本机的 MetaX PyTorch 暴露的是 CUDA 语义接口，而不是新的 `torch.device("metax")` 命名空间。  
+所以 Hugging Face 对照仍然走 `torch.cuda`，但 LLAISYS 自己的设备类型是独立 `METAX`。
+
+## 7. 提交建议
+
+如果是直接交作业，建议按下面顺序组织材料：
+
+- 报告：[`report_zh.md`](report_zh.md)
+- 复现：[`reproduce_zh.md`](reproduce_zh.md)
+- PR 文案：[`pr_zh.md`](pr_zh.md)
+- 平台实现说明：[`metax_design_zh.md`](metax_design_zh.md)
+- 面试问答：[`interview_qa_zh.md`](interview_qa_zh.md)
+- 5 分钟讲稿：[`interview_script_5min_zh.md`](interview_script_5min_zh.md)
 
 补充说明：
-- `--test` 模式下脚本会强制让 Hugging Face 侧使用 `float32`。
-- 这样做是为了让 GPU 严格一致性校验与当前 `LLAISYS` 的 `float32` 后端保持同一数值精度口径，避免 `bf16` 带来的 token 提前分叉。
-- 如果你要在 CPU 上继续做 TinyLlama 全量严格校验，也可以执行：
 
-```bash
-python test/test_infer.py --device cpu --test --model models/TinyLlama-1.1B-Chat-v1.0 --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0
-```
-
-## 6. 真实生成验证
-```bash
-python test/test_infer.py --device nvidia --model models/DeepSeek-R1-Distill-Qwen-1.5B --prompt "请用中文介绍一下你自己。"
-python test/test_infer.py --device nvidia --model models/TinyLlama-1.1B-Chat-v1.0 --prompt "Please introduce yourself in one sentence." --max_steps 32
-```
-
-说明：真实生成默认走采样，因此 HF 与 LLAISYS 文本不要求逐 token 完全一致，只要推理链路正常即可。
-
-## 7. 聊天演示
-
-### 7.1 启动服务
-```bash
-llaisys-chat-server --model models/DeepSeek-R1-Distill-Qwen-1.5B --device nvidia --host 127.0.0.1 --port 8000
-```
-
-或者：
-
-```bash
-llaisys-chat-server --model models/TinyLlama-1.1B-Chat-v1.0 --device nvidia --host 127.0.0.1 --port 8000
-```
-
-### 7.2 启动 CLI
-```bash
-llaisys-chat-cli --base-url http://127.0.0.1:8000 --stream
-```
-
-### 7.3 CLI 常用命令
-- `/clear`：清空当前会话
-- `/exit` 或 `/quit`：退出
-
-说明：CLI 已自动对 `localhost/127.0.0.1/::1` 绕过代理，不需要手工处理当前云环境中的 `HTTP_PROXY`。
-
-## 8. Benchmark
-```bash
-python scripts/benchmark_llaisys.py --device cpu --repeat 20
-python scripts/benchmark_llaisys.py --device nvidia --repeat 20
-python scripts/benchmark_llaisys.py --device nvidia --model models/DeepSeek-R1-Distill-Qwen-1.5B --max-new-tokens 64
-```
-
-## 9. 提交建议
-- 报告直接使用 [report_zh.md](/home/saber/llaisys/docs/report_zh.md)
-- PR 正文直接使用 [pr_zh.md](/home/saber/llaisys/docs/pr_zh.md)
-- 第二平台设计说明使用 [metax_design_zh.md](/home/saber/llaisys/docs/metax_design_zh.md)
-- 复试准备材料使用 [interview_qa_zh.md](/home/saber/llaisys/docs/interview_qa_zh.md)
+- 根目录外部 PDF 只阅读，不提交
+- 当前仓库真实验证的是 `Qwen2` 路径，不要在提交文案里继续写旧版 `TinyLlama` 结论

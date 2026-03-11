@@ -4,6 +4,9 @@
 #ifdef ENABLE_NVIDIA_API
 #include "../nvidia/ops_nvidia.cuh"
 #endif
+#ifdef ENABLE_METAX_API
+#include "../metax/ops_metax.cuh"
+#endif
 
 namespace llaisys::ops {
 void embedding(tensor_t out, tensor_t index, tensor_t weight) {
@@ -20,6 +23,10 @@ void embedding(tensor_t out, tensor_t index, tensor_t weight) {
 #ifdef ENABLE_NVIDIA_API
     case LLAISYS_DEVICE_NVIDIA:
         return nvidia::embedding(out->data(), index->data(), weight->data(), num_tokens, vocab_size, hidden_size, out->dtype());
+#endif
+#ifdef ENABLE_METAX_API
+    case LLAISYS_DEVICE_METAX:
+        return metax::embedding(out->data(), index->data(), weight->data(), num_tokens, vocab_size, hidden_size, out->dtype());
 #endif
     default:
         throw std::runtime_error("Embedding: device not supported");

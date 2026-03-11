@@ -7,6 +7,9 @@
 #ifdef ENABLE_NVIDIA_API
 #include "../nvidia/ops_nvidia.cuh"
 #endif
+#ifdef ENABLE_METAX_API
+#include "../metax/ops_metax.cuh"
+#endif
 
 namespace llaisys::ops {
 void add(tensor_t c, tensor_t a, tensor_t b) {
@@ -29,6 +32,10 @@ void add(tensor_t c, tensor_t a, tensor_t b) {
 #ifdef ENABLE_NVIDIA_API
     case LLAISYS_DEVICE_NVIDIA:
         return nvidia::add(c->data(), a->data(), b->data(), c->dtype(), c->numel());
+#endif
+#ifdef ENABLE_METAX_API
+    case LLAISYS_DEVICE_METAX:
+        return metax::add(c->data(), a->data(), b->data(), c->dtype(), c->numel());
 #endif
     default:
         EXCEPTION_UNSUPPORTED_DEVICE;

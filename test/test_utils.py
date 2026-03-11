@@ -10,9 +10,9 @@ _CUDA_TEST_KEEPALIVE = []
 
 def _maybe_keepalive_for_cuda_small_tensor(device_name, shape, *objs):
     # 这些算子测试会在同一进程里先跑小张量、再跑大张量。
-    # 当前平台上小 CUDA 张量立即析构后，后续大用例偶发会复用同一块显存，
-    # 从而造成假阴性。这里只延后释放小张量，避免影响测试稳定性。
-    if device_name != "nvidia":
+    # NVIDIA 和 MetaX 的 PyTorch 对外都暴露为 torch.cuda 语义，
+    # 小张量过早析构时都可能触发显存复用，导致后续大用例出现假阴性。
+    if device_name not in ("nvidia", "metax"):
         return
     numel = 1
     for dim in shape:
@@ -208,7 +208,9 @@ def benchmark(torch_func, llaisys_func, device_name, warmup=10, repeat=100):
 def torch_device(device_name: str, device_id=0):
     if device_name == "cpu":
         return torch.device("cpu")
-    elif device_name == "nvidia":
+    elif device_name in ("nvidia", "metax"):
+        # MetaX 定制版 PyTorch 仍然复用 torch.cuda 命名空间，
+        # 所以测试对照统一走 cuda:N。
         return torch.device(f"cuda:{device_id}")
     else:
         raise ValueError(f"Unsupported device name: {device_name}")
@@ -219,6 +221,8 @@ def llaisys_device(device_name: str):
         return llaisys.DeviceType.CPU
     elif device_name == "nvidia":
         return llaisys.DeviceType.NVIDIA
+    elif device_name == "metax":
+        return llaisys.DeviceType.METAX
     else:
         raise ValueError(f"Unsupported device name: {device_name}")
 
@@ -228,6 +232,8 @@ def device_name(llaisys_device: llaisys.DeviceType):
         return "cpu"
     elif llaisys_device == llaisys.DeviceType.NVIDIA:
         return "nvidia"
+    elif llaisys_device == llaisys.DeviceType.METAX:
+        return "metax"
     else:
         raise ValueError(f"Unsupported llaisys device: {llaisys_device}")
 

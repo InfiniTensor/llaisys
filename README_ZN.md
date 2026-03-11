@@ -430,3 +430,57 @@ python test/test_infer.py --model [dir_path/to/model] --test --device nvidia
 ## 项目#6：支持新模型
 
 在 LLAISYS 中支持除作业所用模型以外的其他模型。
+
+## 当前仓库提交说明
+
+这一节是为当前 fork 的作业提交补充的，不改变上面原始作业描述。
+
+### 当前提交范围
+
+- 基线分支：`checkpoint/nvidia-done`
+- 当前主要交付：项目 2 第二平台 MetaX/MACA
+- 保持原有 `CPU + NVIDIA` 路径独立存在
+
+### 当前机器验证环境
+
+- 验证日期：2026-03-11
+- GPU：`MetaX C500`
+- `mx-smi`：`2.2.9`
+- `MACA`：`3.2.1.10`
+- 驱动：`3.0.11`
+- 编译器：`mxcc 1.0.0`
+- Python：`3.10.10`
+- PyTorch：`2.6.0+metax3.2.1.3`
+
+### 当前已验证命令
+
+```bash
+XMAKE_ROOT=y xmake f --metax-gpu=y -cv
+XMAKE_ROOT=y xmake -r
+XMAKE_ROOT=y xmake install
+
+python test/test_tensor.py
+python test/test_runtime.py --device cpu
+python test/test_ops.py --device cpu
+python test/test_infer.py --device cpu --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
+
+python test/test_runtime.py --device metax
+python test/test_ops.py --device metax
+python test/test_infer.py --device metax --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
+```
+
+### 提交材料入口
+
+- 总览：[`docs/submission_zh.md`](docs/submission_zh.md)
+- 报告：[`docs/report_zh.md`](docs/report_zh.md)
+- 复现：[`docs/reproduce_zh.md`](docs/reproduce_zh.md)
+- PR 文案：[`docs/pr_zh.md`](docs/pr_zh.md)
+- MetaX 实现说明：[`docs/metax_design_zh.md`](docs/metax_design_zh.md)
+- 面试问答：[`docs/interview_qa_zh.md`](docs/interview_qa_zh.md)
+- 5 分钟讲稿：[`docs/interview_script_5min_zh.md`](docs/interview_script_5min_zh.md)
+
+### 说明
+
+- MetaX 在 C++ SDK 层不是 CUDA drop-in 兼容，因此后端必须单独适配
+- PyTorch 层保留了 `torch.cuda` 语义，因此 Hugging Face 对照测试仍复用 CUDA 命名空间
+- 根目录外部 PDF 只作为参考，不纳入 git 提交

@@ -21,7 +21,7 @@ from transformers import AutoTokenizer
 def torch_device(device_name: str):
     if device_name == "cpu":
         return torch.device("cpu")
-    if device_name == "nvidia":
+    if device_name in ("nvidia", "metax"):
         return torch.device("cuda:0")
     raise ValueError(f"Unsupported device: {device_name}")
 
@@ -31,12 +31,14 @@ def llaisys_device(device_name: str):
         return llaisys.DeviceType.CPU
     if device_name == "nvidia":
         return llaisys.DeviceType.NVIDIA
+    if device_name == "metax":
+        return llaisys.DeviceType.METAX
     raise ValueError(f"Unsupported device: {device_name}")
 
 
 def sync_device(device_name: str):
     llaisys.RuntimeAPI(llaisys_device(device_name)).device_synchronize()
-    if device_name == "nvidia":
+    if device_name in ("nvidia", "metax"):
         torch.cuda.synchronize()
 
 
@@ -110,14 +112,14 @@ def benchmark_infer(device_name: str, model_path: str, prompt: str, max_new_toke
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia"])
+    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia", "metax"])
     parser.add_argument("--repeat", default=20, type=int)
     parser.add_argument("--model", default="", help="可选，本地模型目录")
     parser.add_argument("--prompt", default="请用中文介绍一下你自己。")
     parser.add_argument("--max-new-tokens", default=64, type=int)
     args = parser.parse_args()
 
-    if args.device == "nvidia":
+    if args.device in ("nvidia", "metax"):
         os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
 
     benchmark_linear(args.device, args.repeat)

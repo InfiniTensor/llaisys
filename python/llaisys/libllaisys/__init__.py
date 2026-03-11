@@ -57,6 +57,14 @@ def load_shared_library():
 # 加载库实例 (这是全局单例)
 LIB_LLAISYS = load_shared_library()
 
+
+def _has_symbol(lib, name: str) -> bool:
+    try:
+        getattr(lib, name)
+        return True
+    except AttributeError:
+        return False
+
 # --- 3. 导入子模块定义 ---
 # 这些模块定义了 ctypes 类型 (如 llaisysTensor_t) 和加载函数
 from .tensor import llaisysTensor_t, load_tensor
@@ -72,7 +80,9 @@ load_runtime(LIB_LLAISYS)
 load_tensor(LIB_LLAISYS)
 load_ops(LIB_LLAISYS)
 load_qwen2_api(LIB_LLAISYS)
-load_llama_api(LIB_LLAISYS)
+# 当前仓库可能只构建了 Qwen2；缺少 llama 符号时跳过绑定，避免 runtime/ops 测试被阻塞。
+if _has_symbol(LIB_LLAISYS, "llaisysLlamaModelCreate"):
+    load_llama_api(LIB_LLAISYS)
 
 # --- 5. 导出公共符号 (解决 ImportError 的关键) ---
 __all__ = [

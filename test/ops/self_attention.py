@@ -48,6 +48,10 @@ def test_op_self_attention(
     print(
         f"   qlen={qlen} kvlen={kvlen} nh={nh} nkvh={nkvh} hd={hd} dtype <{dtype_name}>"
     )
+    if device_name == "metax":
+        # 这里走的是 MetaX 上的 host fallback，对照 torch.cuda 时会有更明显的 softmax 细微差异。
+        atol = max(atol, 5e-4)
+        rtol = max(rtol, 5e-4)
     q, q_ = random_tensor((qlen, nh, hd), dtype_name, device_name)
     k, k_ = random_tensor((kvlen, nkvh, hd), dtype_name, device_name)
     v, v_ = random_tensor((kvlen, nkvh, hd), dtype_name, device_name)
@@ -70,7 +74,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia"], type=str)
+    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia", "metax"], type=str)
     parser.add_argument("--profile", action="store_true")
     args = parser.parse_args()
     testShapes = [

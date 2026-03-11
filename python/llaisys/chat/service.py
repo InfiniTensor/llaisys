@@ -13,6 +13,8 @@ def _resolve_device(device_name: str) -> DeviceType:
         return DeviceType.CPU
     if device_name == "nvidia":
         return DeviceType.NVIDIA
+    if device_name == "metax":
+        return DeviceType.METAX
     raise ValueError(f"Unsupported device name: {device_name}")
 
 
