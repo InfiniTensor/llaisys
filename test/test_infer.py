@@ -81,6 +81,15 @@ def load_llaisys_model(model_path, device_name):
     return model
 
 
+def release_hf_model(device_name):
+    if device_name == "cpu" or not torch.cuda.is_available():
+        return
+    # HF 模型先在 GPU 上完成一轮生成，再切到 LLAISYS 后端。
+    # 这里显式清空 PyTorch 的缓存显存，避免后续 cudaMalloc 因为缓存未释放而误报 OOM。
+    torch.cuda.empty_cache()
+    torch.cuda.ipc_collect()
+
+
 def llaisys_infer(
     prompt, tokenizer, model, max_new_tokens=128, top_p=0.8, top_k=50, temperature=0.8
 ):
@@ -141,6 +150,7 @@ if __name__ == "__main__":
 
     del model
     gc.collect()
+    release_hf_model(args.device)
 
     print("\n=== Answer ===\n")
     print("Tokens:")
