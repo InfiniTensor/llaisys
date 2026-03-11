@@ -476,11 +476,10 @@ python test/test_infer.py --device metax --test --model_id trl-internal-testing/
 - 复现：[`docs/reproduce_zh.md`](docs/reproduce_zh.md)
 - PR 文案：[`docs/pr_zh.md`](docs/pr_zh.md)
 - MetaX 实现说明：[`docs/metax_design_zh.md`](docs/metax_design_zh.md)
-- 面试问答：[`docs/interview_qa_zh.md`](docs/interview_qa_zh.md)
-- 5 分钟讲稿：[`docs/interview_script_5min_zh.md`](docs/interview_script_5min_zh.md)
+
+  
 
 ### 说明
 
 - MetaX 在 C++ SDK 层不是 CUDA drop-in 兼容，因此后端必须单独适配
 - PyTorch 层保留了 `torch.cuda` 语义，因此 Hugging Face 对照测试仍复用 CUDA 命名空间
-- 根目录外部 PDF 只作为参考，不纳入 git 提交
