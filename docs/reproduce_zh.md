@@ -164,15 +164,3 @@ MetaX 相关测试必须跑在真实沐曦机器上。
 因为本机的 MetaX PyTorch 暴露的是 CUDA 语义接口，而不是新的 `torch.device("metax")` 命名空间。  
 所以 Hugging Face 对照仍然走 `torch.cuda`，但 LLAISYS 自己的设备类型是独立 `METAX`。
 
-## 7. 提交建议
-
-如果是直接交作业，建议按下面顺序组织材料：
-
-- 报告：[`report_zh.md`](report_zh.md)
-- 复现：[`reproduce_zh.md`](reproduce_zh.md)
-- PR 文案：[`pr_zh.md`](pr_zh.md)
-
-补充说明：
-
-- 根目录外部 PDF 只阅读，不提交
-- 当前仓库真实验证的是 `Qwen2` 路径，不要在提交文案里继续写旧版 `TinyLlama` 结论
