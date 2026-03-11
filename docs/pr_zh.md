@@ -1,11 +1,3 @@
-# GitHub PR 提交模板
-
-下面这部分不是代码说明，而是给 GitHub PR 页面直接复制用的标题和正文。
-
-## 标题
-
-`feat: 完成 LLAISYS 项目 2 第二平台 MetaX/MACA 适配`
-
 ## 正文
 
 本 PR 基于 `checkpoint/nvidia-done`，完成 LLAISYS 项目 2 第二平台 `MetaX/MACA` 的实际接入与验证，并补齐课程提交所需中文文档。
