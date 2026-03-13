@@ -4,7 +4,7 @@ import os
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, parent_dir)
 import llaisys
-from test_utils import random_int_tensor, random_tensor, check_equal, benchmark
+from test_utils import random_int_tensor, random_tensor, check_equal, benchmark, get_tolerance
 
 
 def torch_embedding(out, idx, embd):
@@ -15,6 +15,8 @@ def test_op_embedding(
     idx_shape,
     embd_shape,
     dtype_name="f32",
+    atol=1e-5,
+    rtol=1e-5,
     device_name="cpu",
     profile=False,
 ):
@@ -25,7 +27,7 @@ def test_op_embedding(
     torch_embedding(out, idx, embd)
     llaisys.Ops.embedding(out_, idx_, embd_)
 
-    check_equal(out_, out, strict=True)
+    assert check_equal(out_, out, atol=atol, rtol=rtol)
 
     if profile:
         benchmark(
@@ -39,24 +41,20 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia"], type=str)
+    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia", "metax"], type=str)
     parser.add_argument("--profile", action="store_true")
     args = parser.parse_args()
     testShapes = [
         ((1,), (2, 3)),
         ((50,), (512, 4096)),
     ]
-    testDtype = [
-        # type
-        "f32",
-        "f16",
-        "bf16",
-    ]
+    testDtypes = ["f32", "f16", "bf16"]
     print(f"Testing Ops.embedding on {args.device}")
     for idx_shape, embd_shape in testShapes:
-        for dtype_name in testDtype:
+        for dtype_name in testDtypes:
+            atol, rtol = get_tolerance(dtype_name, args.device)
             test_op_embedding(
-                idx_shape, embd_shape, dtype_name, args.device, args.profile
+                idx_shape, embd_shape, dtype_name, atol, rtol, args.device, args.profile
             )
 
     print("\033[92mTest passed!\033[0m\n")

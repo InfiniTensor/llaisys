@@ -5,7 +5,7 @@ parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, parent_dir)
 import llaisys
 import torch
-from test_utils import random_tensor, check_equal, benchmark
+from test_utils import random_tensor, check_equal, benchmark, get_tolerance
 
 
 def torch_add(ans, a, b):
@@ -42,19 +42,15 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia"], type=str)
+    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia", "metax"], type=str)
     parser.add_argument("--profile", action="store_true")
     args = parser.parse_args()
     testShapes = [(2, 3), (512, 4096)]
-    testDtypePrec = [
-        # type, atol, rtol
-        ("f32", 1e-5, 1e-5),
-        ("f16", 1e-3, 1e-3),
-        ("bf16", 1e-3, 1e-3),
-    ]
+    testDtypes = ["f32", "f16", "bf16"]
     print(f"Testing Ops.add on {args.device}")
     for shape in testShapes:
-        for dtype_name, atol, rtol in testDtypePrec:
+        for dtype_name in testDtypes:
+            atol, rtol = get_tolerance(dtype_name, args.device)
             test_op_add(shape, dtype_name, atol, rtol, args.device, args.profile)
 
     print("\033[92mTest passed!\033[0m\n")

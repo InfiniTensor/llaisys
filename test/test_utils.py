@@ -24,11 +24,13 @@ def random_tensor(
 
     api = llaisys.RuntimeAPI(llaisys_device(device_name))
     bytes_ = torch_tensor.numel() * torch_tensor.element_size()
+    # Use H2D for metax since torch tensor is on CPU
+    memcpy_kind = llaisys.MemcpyKind.H2D if device_name == "metax" else llaisys.MemcpyKind.D2D
     api.memcpy_sync(
         llaisys_tensor.data_ptr(),
         torch_tensor.data_ptr(),
         bytes_,
-        llaisys.MemcpyKind.D2D,
+        memcpy_kind,
     )
 
     return torch_tensor, llaisys_tensor
@@ -52,11 +54,13 @@ def random_int_tensor(shape, device_name, dtype_name="i64", device_id=0, low=0, 
 
     api = llaisys.RuntimeAPI(llaisys_device(device_name))
     bytes_ = torch_tensor.numel() * torch_tensor.element_size()
+    # Use H2D for metax since torch tensor is on CPU
+    memcpy_kind = llaisys.MemcpyKind.H2D if device_name == "metax" else llaisys.MemcpyKind.D2D
     api.memcpy_sync(
         llaisys_tensor.data_ptr(),
         torch_tensor.data_ptr(),
         bytes_,
-        llaisys.MemcpyKind.D2D,
+        memcpy_kind,
     )
 
     return torch_tensor, llaisys_tensor
@@ -80,11 +84,13 @@ def zero_tensor(
 
     api = llaisys.RuntimeAPI(llaisys_device(device_name))
     bytes_ = torch_tensor.numel() * torch_tensor.element_size()
+    # Use H2D for metax since torch tensor is on CPU
+    memcpy_kind = llaisys.MemcpyKind.H2D if device_name == "metax" else llaisys.MemcpyKind.D2D
     api.memcpy_sync(
         llaisys_tensor.data_ptr(),
         torch_tensor.data_ptr(),
         bytes_,
-        llaisys.MemcpyKind.D2D,
+        memcpy_kind,
     )
 
     return torch_tensor, llaisys_tensor
@@ -103,11 +109,13 @@ def arrange_tensor(
 
     api = llaisys.RuntimeAPI(llaisys_device(device_name))
     bytes_ = torch_tensor.numel() * torch_tensor.element_size()
+    # Use H2D for metax since torch tensor is on CPU
+    memcpy_kind = llaisys.MemcpyKind.H2D if device_name == "metax" else llaisys.MemcpyKind.D2D
     api.memcpy_sync(
         llaisys_tensor.data_ptr(),
         torch_tensor.data_ptr(),
         bytes_,
-        llaisys.MemcpyKind.D2D,
+        memcpy_kind,
     )
 
     return torch_tensor, llaisys_tensor
@@ -132,20 +140,21 @@ def check_equal(
         else:  # TODO: Support negative strides in the future
             raise ValueError("Negative strides are not supported yet")
 
+    device_name_str = device_name(llaisys_result.device_type())
     tmp = torch.zeros(
         (right + 1,),
         dtype=torch_answer.dtype,
-        device=torch_device(
-            device_name(llaisys_result.device_type()), llaisys_result.device_id()
-        ),
+        device=torch_device(device_name_str, llaisys_result.device_id()),
     )
     result = torch.as_strided(tmp, shape, strides)
     api = llaisys.RuntimeAPI(llaisys_result.device_type())
+    # Use D2H for metax since result tensor is on CPU
+    memcpy_kind = llaisys.MemcpyKind.D2H if device_name_str == "metax" else llaisys.MemcpyKind.D2D
     api.memcpy_sync(
         result.data_ptr(),
         llaisys_result.data_ptr(),
         (right + 1) * tmp.element_size(),
-        llaisys.MemcpyKind.D2D,
+        memcpy_kind,
     )
 
     if strict:
@@ -188,6 +197,10 @@ def torch_device(device_name: str, device_id=0):
         return torch.device("cpu")
     elif device_name == "nvidia":
         return torch.device(f"cuda:{device_id}")
+    elif device_name == "metax":
+        # MetaX uses CPU for PyTorch reference (no NVIDIA driver)
+        # Data will be transferred via LLAISYS runtime API
+        return torch.device("cpu")
     else:
         raise ValueError(f"Unsupported device name: {device_name}")
 
@@ -197,6 +210,8 @@ def llaisys_device(device_name: str):
         return llaisys.DeviceType.CPU
     elif device_name == "nvidia":
         return llaisys.DeviceType.NVIDIA
+    elif device_name == "metax":
+        return llaisys.DeviceType.METAX
     else:
         raise ValueError(f"Unsupported device name: {device_name}")
 
@@ -206,6 +221,8 @@ def device_name(llaisys_device: llaisys.DeviceType):
         return "cpu"
     elif llaisys_device == llaisys.DeviceType.NVIDIA:
         return "nvidia"
+    elif llaisys_device == llaisys.DeviceType.METAX:
+        return "metax"
     else:
         raise ValueError(f"Unsupported llaisys device: {llaisys_device}")
 
@@ -277,3 +294,28 @@ def dtype_name(llaisys_dtype: llaisys.DataType):
         return "bool"
     else:
         raise ValueError(f"Unsupported llaisys dtype: {llaisys_dtype}")
+
+
+def get_tolerance(dtype_name: str, device_name: str):
+    """
+    Get the tolerance (atol, rtol) for numerical comparison based on dtype and device.
+    
+    Args:
+        dtype_name: Data type name (f32, f16, bf16)
+        device_name: Device name (cpu, nvidia, metax)
+    
+    Returns:
+        tuple: (atol, rtol)
+    """
+    base = {
+        "f32": (1e-4, 1e-4),
+        "f16": (1e-3, 1e-3),
+        "bf16": (1e-2, 1e-2),
+    }
+    
+    # MetaX GPU has larger numerical differences compared to CPU reference
+    if device_name == "metax":
+        base["f32"] = (1e-3, 1e-3)
+        base["bf16"] = (1e-2, 1e-2)
+    
+    return base.get(dtype_name, (1e-4, 1e-4))

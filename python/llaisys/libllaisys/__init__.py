@@ -12,10 +12,12 @@ from .llaisys_types import llaisysStream_t
 from .tensor import llaisysTensor_t
 from .tensor import load_tensor
 from .ops import load_ops
+from .models.qwen2 import load_qwen2, LlaisysQwen2Meta, LlaisysQwen2Weights
+from .models.qwen2_tp import load_qwen2_tp
 
 
 def load_shared_library():
-    lib_dir = Path(__file__).parent
+    lib_dir = Path(__file__).parent.resolve()
 
     if sys.platform.startswith("linux"):
         libname = "libllaisys.so"
@@ -26,9 +28,9 @@ def load_shared_library():
     else:
         raise RuntimeError("Unsupported platform")
 
-    lib_path = os.path.join(lib_dir, libname)
+    lib_path = lib_dir / libname
 
-    if not os.path.isfile(lib_path):
+    if not lib_path.is_file():
         raise FileNotFoundError(f"Shared library not found: {lib_path}")
 
     return ctypes.CDLL(str(lib_path))
@@ -38,6 +40,8 @@ LIB_LLAISYS = load_shared_library()
 load_runtime(LIB_LLAISYS)
 load_tensor(LIB_LLAISYS)
 load_ops(LIB_LLAISYS)
+load_qwen2(LIB_LLAISYS)
+load_qwen2_tp(LIB_LLAISYS)
 
 
 __all__ = [
@@ -52,4 +56,6 @@ __all__ = [
     "llaisysMemcpyKind_t",
     "MemcpyKind",
     "llaisysStream_t",
+    "LlaisysQwen2Meta",
+    "LlaisysQwen2Weights",
 ]

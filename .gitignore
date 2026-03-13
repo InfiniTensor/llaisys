@@ -88,3 +88,7 @@ htmlcov/
 Thumbs.db
 ehthumbs.db
 desktop.ini
+
+# Models
+/models/
+/checkpoints/

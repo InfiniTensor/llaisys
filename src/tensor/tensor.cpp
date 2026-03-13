@@ -5,6 +5,8 @@
 #include <cstring>
 #include <numeric>
 #include <sstream>
+#include <cstdlib>
+#include <cstdint>
 
 namespace llaisys {
 
@@ -164,27 +166,168 @@ void Tensor::debug() const {
 }
 
 bool Tensor::isContiguous() const {
-    TO_BE_IMPLEMENTED();
+    if (this->ndim() == 0) {
+        return true;
+    }
+    
+    ptrdiff_t expected_stride = 1;
+    for (size_t i = this->ndim(); i-- > 0;) {
+        if (this->strides()[i] != expected_stride) {
+            return false;
+        }
+        expected_stride *= this->shape()[i];
+    }
+    
     return true;
 }
 
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    size_t ndim = this->ndim();
+    CHECK_ARGUMENT(order.size() == ndim, "Invalid permute order size");
+    
+    std::vector<bool> visited(ndim, false);
+    for (size_t i = 0; i < ndim; ++i) {
+        CHECK_ARGUMENT(order[i] < ndim && !visited[order[i]], "Invalid permute order");
+        visited[order[i]] = true;
+    }
+    
+    TensorMeta new_meta;
+    new_meta.dtype = this->_meta.dtype;
+    new_meta.shape.resize(ndim);
+    new_meta.strides.resize(ndim);
+    
+    for (size_t i = 0; i < ndim; ++i) {
+        new_meta.shape[i] = this->_meta.shape[order[i]];
+        new_meta.strides[i] = this->_meta.strides[order[i]];
+    }
+    
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, this->_storage, this->_offset));
 }
 
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    size_t new_numel = std::accumulate(shape.begin(), shape.end(), size_t(1), std::multiplies<size_t>());
+    CHECK_ARGUMENT(new_numel == this->numel(), "View shape has different number of elements");
+    
+    TensorMeta new_meta;
+    new_meta.dtype = this->_meta.dtype;
+    new_meta.shape = shape;
+    new_meta.strides.resize(shape.size());
+    
+    if (this->isContiguous()) {
+        // 连续张量可以直接重塑
+        size_t ndim = shape.size();
+        if (ndim == 0) {
+            return std::shared_ptr<Tensor>(new Tensor(new_meta, this->_storage, this->_offset));
+        }
+        
+        new_meta.strides[ndim - 1] = 1;
+        for (size_t i = ndim - 1; i-- > 0;) {
+            new_meta.strides[i] = new_meta.strides[i + 1] * new_meta.shape[i + 1];
+        }
+    } else {
+        // 非连续张量需要检查是否可以重塑
+        // 这里只处理可以直接重塑的情况，更复杂的情况需要更详细的检查
+        // 目前只支持将连续的维度合并或拆分
+        size_t this_idx = 0;
+        size_t new_idx = 0;
+        
+        while (this_idx < this->ndim() && new_idx < shape.size()) {
+            size_t this_size = this->shape()[this_idx];
+            ptrdiff_t this_stride = this->strides()[this_idx];
+            
+            size_t new_size = shape[new_idx];
+            size_t combined_size = this_size;
+            ptrdiff_t expected_stride = this_stride * this_size;
+            
+            // 尝试合并多个维度
+            while (this_idx + 1 < this->ndim() && combined_size * this->shape()[this_idx + 1] == new_size) {
+                combined_size *= this->shape()[this_idx + 1];
+                CHECK_ARGUMENT(this->strides()[this_idx + 1] == expected_stride, "Cannot view non-contiguous tensor with this shape");
+                expected_stride *= this->shape()[this_idx + 1];
+                this_idx++;
+            }
+            
+            if (combined_size != new_size) {
+                // 尝试拆分维度
+                CHECK_ARGUMENT(this_size % new_size == 0, "Cannot view non-contiguous tensor with this shape");
+                
+                size_t split_size = this_size / new_size;
+                new_meta.strides[new_idx] = this_stride * split_size;
+                new_idx++;
+                
+                CHECK_ARGUMENT(new_idx < shape.size(), "Cannot view non-contiguous tensor with this shape");
+                
+                new_meta.strides[new_idx] = this_stride;
+                new_meta.shape[new_idx] = split_size;
+            } else {
+                new_meta.strides[new_idx] = this_stride;
+            }
+            
+            this_idx++;
+            new_idx++;
+        }
+        
+        CHECK_ARGUMENT(this_idx == this->ndim() && new_idx == shape.size(), "Cannot view non-contiguous tensor with this shape");
+    }
+    
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, this->_storage, this->_offset));
 }
 
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    CHECK_ARGUMENT(dim < this->ndim(), "Invalid dimension for slice");
+    CHECK_ARGUMENT(start < end && end <= this->shape()[dim], "Invalid slice range");
+    
+    TensorMeta new_meta = this->_meta;
+    new_meta.shape[dim] = end - start;
+    
+    size_t offset = this->_offset + start * this->strides()[dim] * this->elementSize();
+    
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, this->_storage, offset));
 }
 
 void Tensor::load(const void *src_) {
-    TO_BE_IMPLEMENTED();
+    size_t size = this->numel() * this->elementSize();
+    core::context().setDevice(this->deviceType(), this->deviceId());
+    
+    if (this->deviceType() == LLAISYS_DEVICE_CPU) {
+        std::memcpy(this->data(), src_, size);
+    } else {
+        const size_t ALIGNMENT = 64;
+        void *src_aligned = const_cast<void*>(src_);
+        void *temp_buf = nullptr;
+        
+        bool src_aligned_ok = (reinterpret_cast<uintptr_t>(src_) % ALIGNMENT) == 0;
+        bool dst_aligned_ok = (reinterpret_cast<uintptr_t>(this->data()) % ALIGNMENT) == 0;
+        bool size_aligned_ok = (size % ALIGNMENT) == 0;
+        
+        if (!src_aligned_ok || !dst_aligned_ok || !size_aligned_ok) {
+            size_t aligned_size = ((size + ALIGNMENT - 1) / ALIGNMENT) * ALIGNMENT;
+#ifdef _WIN32
+            temp_buf = _aligned_malloc(aligned_size > 0 ? aligned_size : ALIGNMENT, ALIGNMENT);
+            if (temp_buf) {
+#else
+            int ret = posix_memalign(&temp_buf, ALIGNMENT, aligned_size > 0 ? aligned_size : ALIGNMENT);
+            if (ret == 0 && temp_buf) {
+#endif
+                std::memcpy(temp_buf, src_, size);
+                src_aligned = temp_buf;
+            }
+        }
+        
+        core::context().runtime().api()->memcpy_sync(
+            this->data(),
+            src_aligned,
+            size,
+            LLAISYS_MEMCPY_H2D);
+        
+        if (temp_buf) {
+#ifdef _WIN32
+            _aligned_free(temp_buf);
+#else
+            free(temp_buf);
+#endif
+        }
+    }
 }
 
 tensor_t Tensor::contiguous() const {
