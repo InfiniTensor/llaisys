@@ -15,6 +15,24 @@
 
 namespace llaisys::ops {
 
+// M 维度低于此阈值时跳过 OpenMP，避免线程创建/同步开销。
+// 模型推理解码阶段 M=1，若不跳过，每次 linear 调用产生数千次无效 barrier。
+static constexpr size_t OMP_M_THRESHOLD = 32;
+
+// 条件并行 for：当 n >= threshold 时使用 OpenMP 多线程，否则纯串行。
+// 使用 C 级 if 而非 OpenMP if() 子句，后者仍会进入 GOMP 运行时产生开销。
+template<typename F>
+static inline void parallel_for(size_t n, size_t threshold, F&& func) {
+#ifdef _OPENMP
+    if (n >= threshold) {
+        #pragma omp parallel for schedule(static)
+        for (size_t i = 0; i < n; ++i) func(i);
+        return;
+    }
+#endif
+    for (size_t i = 0; i < n; ++i) func(i);
+}
+
 // ============================================================
 // 泛型版本 (fallback): 纯标量, 无 OpenMP, 无 SIMD
 // ============================================================
@@ -85,17 +103,14 @@ void linear_cpu_kernel<float>(tensor_t out, tensor_t in, tensor_t weight, tensor
     get_dims(in, weight, M, K, N);
 
     if (b) {
-#ifdef _OPENMP
-        #pragma omp parallel for schedule(static)
-#endif
-        for (size_t i = 0; i < M; ++i) {
+        parallel_for(M, OMP_M_THRESHOLD, [&](size_t i) {
             float* yrow = Y + i * N;
             size_t j = 0;
             for (; j + 7 < N; j += 8)
                 _mm256_storeu_ps(yrow + j, _mm256_loadu_ps(b + j));
             for (; j < N; ++j)
                 yrow[j] = b[j];
-        }
+        });
     } else {
         std::memset(Y, 0, M * N * sizeof(float));
     }
@@ -115,10 +130,7 @@ void linear_cpu_kernel<float>(tensor_t out, tensor_t in, tensor_t weight, tensor
                 const float* w2 = W + (j0 + 2) * K + k0;
                 const float* w3 = W + (j0 + 3) * K + k0;
 
-#ifdef _OPENMP
-                #pragma omp parallel for schedule(static)
-#endif
-                for (size_t i = 0; i < M; ++i) {
+                parallel_for(M, OMP_M_THRESHOLD, [&](size_t i) {
                     const float* xi = X + i * K + k0;
                     __m256 a00 = _mm256_setzero_ps(), a01 = _mm256_setzero_ps();
                     __m256 a10 = _mm256_setzero_ps(), a11 = _mm256_setzero_ps();
@@ -161,15 +173,13 @@ void linear_cpu_kernel<float>(tensor_t out, tensor_t in, tensor_t weight, tensor
                     Y[i*N + j0+1] += d1;
                     Y[i*N + j0+2] += d2;
                     Y[i*N + j0+3] += d3;
-                }
+                });
             } else {
                 for (size_t jj = 0; jj < jn; ++jj) {
                     const float* wj = W + (j0 + jj) * K + k0;
-#ifdef _OPENMP
-                    #pragma omp parallel for schedule(static)
-#endif
-                    for (size_t i = 0; i < M; ++i)
+                    parallel_for(M, OMP_M_THRESHOLD, [&](size_t i) {
                         Y[i*N + j0 + jj] += utils::avx2_dot(X + i*K + k0, wj, kc);
+                    });
                 }
             }
         }
@@ -197,14 +207,11 @@ void linear_cpu_kernel<llaisys::bf16_t>(tensor_t out, tensor_t in,
     std::vector<float> ybuf(M * N);
 
     if (B) {
-#ifdef _OPENMP
-        #pragma omp parallel for schedule(static)
-#endif
-        for (size_t i = 0; i < M; ++i) {
+        parallel_for(M, OMP_M_THRESHOLD, [&](size_t i) {
             float* yrow = ybuf.data() + i * N;
             for (size_t j = 0; j < N; ++j)
                 yrow[j] = utils::cast<float>(llaisys::bf16_t{B[j]});
-        }
+        });
     } else {
         std::memset(ybuf.data(), 0, M * N * sizeof(float));
     }
@@ -224,10 +231,7 @@ void linear_cpu_kernel<llaisys::bf16_t>(tensor_t out, tensor_t in,
                 const uint16_t* w2 = W + (j0 + 2) * K + k0;
                 const uint16_t* w3 = W + (j0 + 3) * K + k0;
 
-#ifdef _OPENMP
-                #pragma omp parallel for schedule(static)
-#endif
-                for (size_t i = 0; i < M; ++i) {
+                parallel_for(M, OMP_M_THRESHOLD, [&](size_t i) {
                     const uint16_t* xi = X + i * K + k0;
 
                     __m256 a00 = _mm256_setzero_ps(), a01 = _mm256_setzero_ps();
@@ -273,14 +277,11 @@ void linear_cpu_kernel<llaisys::bf16_t>(tensor_t out, tensor_t in,
                     ybuf[i*N + j0 + 1] += d1;
                     ybuf[i*N + j0 + 2] += d2;
                     ybuf[i*N + j0 + 3] += d3;
-                }
+                });
             } else {
                 for (size_t jj = 0; jj < jn; ++jj) {
                     const uint16_t* wj = W + (j0 + jj) * K + k0;
-#ifdef _OPENMP
-                    #pragma omp parallel for schedule(static)
-#endif
-                    for (size_t i = 0; i < M; ++i) {
+                    parallel_for(M, OMP_M_THRESHOLD, [&](size_t i) {
                         const uint16_t* xi = X + i * K + k0;
                         __m256 acc0 = _mm256_setzero_ps();
                         __m256 acc1 = _mm256_setzero_ps();
@@ -299,20 +300,17 @@ void linear_cpu_kernel<llaisys::bf16_t>(tensor_t out, tensor_t in,
                             sum += utils::cast<float>(llaisys::bf16_t{xi[k]})
                                  * utils::cast<float>(llaisys::bf16_t{wj[k]});
                         ybuf[i*N + j0 + jj] += sum;
-                    }
+                    });
                 }
             }
         }
     }
 
     // f32 → bf16 写回
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(static)
-#endif
-    for (size_t idx = 0; idx < M * N; ++idx) {
+    parallel_for(M * N, OMP_M_THRESHOLD, [&](size_t idx) {
         llaisys::bf16_t v = utils::cast<llaisys::bf16_t>(ybuf[idx]);
         Y[idx] = v._v;
-    }
+    });
 }
 
 // ============================================================
@@ -336,14 +334,11 @@ void linear_cpu_kernel<llaisys::fp16_t>(tensor_t out, tensor_t in,
     std::vector<float> ybuf(M * N);
 
     if (B) {
-#ifdef _OPENMP
-        #pragma omp parallel for schedule(static)
-#endif
-        for (size_t i = 0; i < M; ++i) {
+        parallel_for(M, OMP_M_THRESHOLD, [&](size_t i) {
             float* yrow = ybuf.data() + i * N;
             for (size_t j = 0; j < N; ++j)
                 yrow[j] = utils::cast<float>(llaisys::fp16_t{B[j]});
-        }
+        });
     } else {
         std::memset(ybuf.data(), 0, M * N * sizeof(float));
     }
@@ -363,10 +358,7 @@ void linear_cpu_kernel<llaisys::fp16_t>(tensor_t out, tensor_t in,
                 const uint16_t* w2 = W + (j0 + 2) * K + k0;
                 const uint16_t* w3 = W + (j0 + 3) * K + k0;
 
-#ifdef _OPENMP
-                #pragma omp parallel for schedule(static)
-#endif
-                for (size_t i = 0; i < M; ++i) {
+                parallel_for(M, OMP_M_THRESHOLD, [&](size_t i) {
                     const uint16_t* xi = X + i * K + k0;
 
                     __m256 a00 = _mm256_setzero_ps(), a01 = _mm256_setzero_ps();
@@ -412,14 +404,11 @@ void linear_cpu_kernel<llaisys::fp16_t>(tensor_t out, tensor_t in,
                     ybuf[i*N + j0 + 1] += d1;
                     ybuf[i*N + j0 + 2] += d2;
                     ybuf[i*N + j0 + 3] += d3;
-                }
+                });
             } else {
                 for (size_t jj = 0; jj < jn; ++jj) {
                     const uint16_t* wj = W + (j0 + jj) * K + k0;
-#ifdef _OPENMP
-                    #pragma omp parallel for schedule(static)
-#endif
-                    for (size_t i = 0; i < M; ++i) {
+                    parallel_for(M, OMP_M_THRESHOLD, [&](size_t i) {
                         const uint16_t* xi = X + i * K + k0;
                         __m256 acc0 = _mm256_setzero_ps();
                         __m256 acc1 = _mm256_setzero_ps();
@@ -438,20 +427,17 @@ void linear_cpu_kernel<llaisys::fp16_t>(tensor_t out, tensor_t in,
                             sum += utils::cast<float>(llaisys::fp16_t{xi[k]})
                                  * utils::cast<float>(llaisys::fp16_t{wj[k]});
                         ybuf[i*N + j0 + jj] += sum;
-                    }
+                    });
                 }
             }
         }
     }
 
     // f32 → fp16 写回
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(static)
-#endif
-    for (size_t idx = 0; idx < M * N; ++idx) {
+    parallel_for(M * N, OMP_M_THRESHOLD, [&](size_t idx) {
         llaisys::fp16_t v = utils::cast<llaisys::fp16_t>(ybuf[idx]);
         Y_out[idx] = v._v;
-    }
+    });
 }
 
 // ============================================================
