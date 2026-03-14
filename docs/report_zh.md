@@ -1,250 +1,285 @@
-# LLAISYS 项目 2 第二平台（MetaX/MACA）实现报告
+# LLAISYS 课程作业与项目实现报告
 
 ## 1. 提交结论
 
-本次提交的目标是把项目 2 的第二平台从“设计稿”推进到“沐曦平台可实际测试”的状态。当前仓库已经完成以下交付：
+本次提交按完整课程交付组织，覆盖：
 
-- 保留原有 `CPU` 与 `NVIDIA` 设备路径，不改坏已有接口和构建开关。
-- 新增独立 `METAX` 设备类型，不把沐曦实现混写进 `nvidia` 路径。
-- 打通 MetaX/MACA 的 runtime、资源管理、算子调度和 Python 测试入口。
-- 在真实沐曦机器上完成 `runtime -> ops -> infer` 的顺序验证。
+- Assignment #1：Tensor
+- Assignment #2：Operators
+- Assignment #3：Large Language Model Inference
+- Project #1：CPU 优化
+- Project #2：第二平台 MetaX/MACA
+- Project #3：聊天服务
 
-当前实现的真实可验证结论是：`CPU + NVIDIA` 路径仍保留，`MetaX/MACA` 已经从设计说明落地为可编译、可运行、可测试的第二平台。
+最终实现的核心结论是：
 
-## 2. 平台识别与兼容性判断
+- 已完成 Tensor、核心算子与 Qwen2 推理链路实现
+- 已完成 CPU 热点算子优化
+- 已完成第二平台 MetaX/MACA 接入与实机验证
+- 已完成聊天服务接口与流式返回链路
 
+从整体上看，当前仓库已经覆盖了从底层 Tensor、算子、推理流程，到平台适配和上层聊天接口的一条完整实现路径。
 
-### 2.1 本机环境识别结果
+## 2. Assignment #1：Tensor
 
-在实际验证机器上确认到如下环境：
+Assignment #1 的目标是实现 LLAISYS 最基础的数据结构 Tensor。  
+这一部分围绕张量元信息、存储布局与视图变换展开。
 
-- `mx-smi 2.2.9`
-- `MetaX C500`
-- `MACA 3.2.1.10`
-- 驱动版本 `3.0.11`
-- 编译器 `mxcc 1.0.0`
-- Python `3.10.10`
-- PyTorch `2.6.0+metax3.2.1.3`
-- xmake `v2.8.7+20240401`
+完成内容包括：
 
-本机 SDK 与运行库位置：
+- `load`
+- `isContiguous`
+- `view`
+- `permute`
+- `slice`
 
-- 头文件目录：`/opt/maca/include`
-- MACA 运行库目录：`/opt/maca/lib`
-- 驱动运行库目录：`/opt/mxdriver/lib`
+这一阶段的核心收获是：
 
-### 2.2 CUDA 兼容性判断
+- 理解了 `shape`、`stride`、`offset` 与 `storage` 的关系
+- 理解了视图变换和真实数据拷贝的区别
+- 为后续所有算子实现建立了统一的 Tensor 抽象基础
 
-结论分两层：
+当前通过：
 
-- C/C++ SDK 层面不是 CUDA drop-in 兼容，必须单独适配。
-- Python / PyTorch 使用层面保留了 CUDA 命名空间语义，可以继续走 `torch.cuda`。
+```bash
+python test/test_tensor.py
+```
 
-判断依据：
+## 3. Assignment #2：Operators
 
-- 本机没有可直接复用的 `nvcc`、`nvidia-smi`、`libcudart`、`libcublas` 运行时路径。
-- MetaX 的 C/C++ 接口来自 `<mcr/mc_runtime.h>` 与 `<mcblas/mcblas.h>`，不是 `<cuda_runtime.h>` 与 `<cublas_v2.h>`。
-- `torch.cuda.is_available()` 在本机返回 `True`，并且设备名能显示为 `MetaX C500`，说明 PyTorch 层做了 CUDA 语义兼容。
+Assignment #2 的目标是在 CPU 上补齐推理链路所需的关键算子。
 
-因此，本次实现采取的策略是：
+已实现的主要算子包括：
 
-- LLAISYS C/C++ 后端新增独立 `METAX` 后端，单独对接 `mc*` / `mcblas*`。
-- Python 测试对照仍复用 `torch.cuda`，不额外重写 Hugging Face 推理逻辑。
+- `argmax`
+- `embedding`
+- `linear`
+- `rms_norm`
+- `rope`
+- `self_attention`
+- `swiglu`
 
-## 3. 实现说明
+实现时重点保证：
 
-### 3.1 设备抽象与构建
+- 支持 `float32`、`float16`、`bfloat16`
+- 输入输出张量 shape 约束正确
+- Python 测试入口与 C/C++ 实现链路打通
 
-本次改动先扩展设备抽象，再接入平台构建：
+当前通过：
 
-- 在 `llaisysDeviceType_t` 中新增 `LLAISYS_DEVICE_METAX`
-- 保留原 `CPU` 与 `NVIDIA` 枚举值和分发逻辑
+```bash
+python test/test_runtime.py --device cpu
+python test/test_ops.py --device cpu
+```
+
+## 4. Assignment #3：Large Language Model Inference
+
+Assignment #3 的目标是基于前面的 Tensor 与算子，完成一个真正可运行的 Qwen2 推理链路。
+
+完成内容包括：
+
+- Qwen2 配置解析
+- 权重装载与后端权重槽位映射
+- 推理主链路组织
+- 增量生成接口
+- 与 Hugging Face 的 token 级对照验证
+
+这一部分重点解决的问题包括：
+
+- 权重文件如何映射到后端固定结构
+- 推理阶段为什么要做增量解码
+- 如何通过 token 级对照判断实现正确性
+
+当前在本地 CPU 环境通过：
+
+```bash
+python test/test_infer.py --device cpu --test --model models/DeepSeek-R1-Distill-Qwen-1.5B --prompt hi --max_steps 1
+```
+
+## 5. Project #1：CPU 优化
+
+Project #1 的目标是在已有正确实现基础上，对 CPU 路径做热点算子优化。
+
+完成内容包括：
+
+- 在 CPU 构建规则中启用 OpenMP
+- 对 `linear`、`embedding`、`rms_norm`、`rope` 等热点算子进行并行优化
+- 保持接口与功能不变，优先保证正确性
+
+其中 `linear` 是最核心的优化点，因为它在推理阶段调用频繁且计算量大，容易成为 CPU 路径的主要瓶颈。
+
+这一部分的工程策略不是追求极限底层微优化，而是采用课程项目里更合理、可解释、可验证的方式：
+
+- 分块循环
+- 按行或按 token 并行
+- 基于 OpenMP 提升 CPU 多核利用率
+
+## 6. Project #2：第二平台 MetaX/MACA
+
+Project #2 的目标是支持除 CPU / NVIDIA 之外的第二个平台。  
+本次最终选择的平台是沐曦 `MetaX/MACA`。
+
+### 6.1 平台判断
+
+在接入前，首先要回答 MetaX 是否能直接复用原有 CUDA 后端。  
+实际验证后结论是：
+
+- 在 C/C++ SDK 层面，MetaX 不是 CUDA drop-in 兼容平台
+- 在 Python / PyTorch 层面，MetaX 保留了 `torch.cuda` 语义
+
+因此最终采用的策略是：
+
+- C/C++ 后端新增独立 `METAX` 分支
+- Python 对照测试仍然复用 `torch.cuda`
+
+### 6.2 主要实现
+
+完成的核心工作包括：
+
+- 在设备枚举中新增 `METAX`
 - 在 `xmake.lua` 中新增 `--metax-gpu=y`
-- 新增 `xmake/metax.lua`，统一使用 `mxcc` 编译 `.cu`
-- 共享库链接时单独增加 MetaX link stub，避免设备侧对象未被最终链接
+- 新增 `xmake/metax.lua`
+- 接入 MetaX runtime：设备、stream、内存分配、同步/异步拷贝
+- 接入 MetaX 算子路径
 
-这样处理的好处是：
+当前 MetaX 侧的算子策略为：
 
-- CPU 与 NVIDIA 路径的构建选项保持独立
-- 第二平台出问题时不会污染原 NVIDIA 代码路径
-- 后续如果需要继续接第三个平台，可以直接沿用同一抽象方式
+- `add`、`embedding`、`rms_norm`、`rope`、`swiglu`：MetaX kernel
+- `linear`：`mcblasGemmEx` + bias kernel
+- `argmax`、`self_attention`：host fallback
 
-### 3.2 Runtime 映射
+### 6.3 实测结果
 
-MetaX runtime 完全按 LLAISYS 现有 runtime 抽象接入，主要映射如下：
-
-| LLAISYS runtime | MACA 接口 |
-| --- | --- |
-| `get_device_count` | `mcGetDeviceCount` |
-| `set_device` | `mcSetDevice` |
-| `device_synchronize` | `mcDeviceSynchronize` |
-| `create_stream` | `mcStreamCreateWithFlags(..., mcStreamNonBlocking)` |
-| `destroy_stream` | `mcStreamDestroy` |
-| `stream_synchronize` | `mcStreamSynchronize` |
-| `malloc_device` | `mcMalloc` |
-| `free_device` | `mcFree` |
-| `malloc_host` | `mcMallocHost` |
-| `free_host` | `mcFreeHost` |
-| `memcpy_sync` | `mcMemcpy` |
-| `memcpy_async` | `mcMemcpyAsync` |
-
-实现细节：
-
-- 错误处理统一转成 `mcGetErrorString` / `mcblasGetStatusString`
-- 关键桥接代码补了中文注释，说明 CUDA 与 MACA 语义差异
-- `mcblasCreate` 前显式保证已经 `mcSetDevice`
-- `mcblas` handle 按线程和设备缓存，并在每次调用前更新 stream
-
-### 3.3 算子策略
-
-MetaX 目录独立放在：
-
-- `src/device/metax/`
-- `src/ops/metax/`
-
-当前算子策略如下：
-
-| 算子 | 当前策略 |
-| --- | --- |
-| `add` | MetaX kernel |
-| `embedding` | MetaX kernel |
-| `linear` | `mcblasGemmEx` + bias kernel |
-| `rms_norm` | MetaX kernel |
-| `rope` | MetaX kernel |
-| `swiglu` | MetaX kernel |
-| `argmax` | host fallback |
-| `self_attention` | host fallback |
-
-其中 `linear` 是本次最关键的部分：
-
-- dtype 映射使用 `MACA_R_32F` / `MACA_R_16F` / `MACA_R_16BF`
-- 计算类型以 `MCBLAS_COMPUTE_32F` 为主
-- 对 `float32` 路径额外切到 `MCBLAS_COMPUTE_32F_PEDANTIC`
-- 数学模式固定为 `MCBLAS_PEDANTIC_MATH`
-
-这样做的原因是 MetaX 与 PyTorch 对照时会有轻微数值漂移，`pedantic` 模式更容易稳定通过当前严格测试。
-
-### 3.4 Python 与测试桥接
-
-Python 层同步做了三件事：
-
-- `DeviceType` 增加 `METAX`
-- `test/test_runtime.py`、`test/test_ops.py`、`test/test_infer.py` 增加 `--device metax`
-- `test/test_utils.py` 中把 MetaX 映射到 `llaisys.DeviceType.METAX`
-
-同时保留一个重要约束：
-
-- `torch_device("metax")` 仍然返回 `torch.device("cuda:N")`
-
-原因是本机 MetaX PyTorch 并没有暴露一个新的 `torch.device("metax")` 命名空间，而是直接复用了 CUDA 语义。
-
-### 3.5 推理模型支持现状
-
-当前仓库已经在推理链路上实际验证的是 `Qwen2` 路径。为了保证文档与仓库一致，本报告不再声称当前仓库已经完整交付 `TinyLlama/Llama` 作业支持。
-
-本次实际用于严格推理验证的模型是：
-
-- `trl-internal-testing/tiny-Qwen2ForCausalLM-2.5`
-
-选择这个模型的原因是：
-
-- 体积小，适合当前机器快速做严格一致性测试
-- 仓库本地没有现成可直接用于提交验证的模型目录
-- 其 `model_type` 为 `qwen2`，与当前仓库已验证的模型实现一致
-
-## 4. 构建与实测结果
-
-### 4.1 构建命令
-
-本机以 root 身份运行，因此 `xmake` 需要带 `XMAKE_ROOT=y`：
+在真实沐曦机器上完成如下验证：
 
 ```bash
 XMAKE_ROOT=y xmake f --metax-gpu=y -cv
 XMAKE_ROOT=y xmake -r
 XMAKE_ROOT=y xmake install
-```
 
-以上命令已通过。
-
-### 4.2 MetaX 验证
-
-以下 MetaX 命令已在真实沐曦机器通过：
-
-```bash
 python test/test_runtime.py --device metax
 python test/test_ops.py --device metax
 python test/test_infer.py --device metax --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
 ```
 
-验证结果：
+验证结论为：
 
-- `runtime`：设备检测、内存分配、同步/异步拷贝通过
-- `ops`：当前测试集全部通过
-- `infer`：Hugging Face 与 LLAISYS token 级严格一致
+- `runtime` 通过
+- `ops` 通过
+- `infer` 中 Hugging Face 与 LLAISYS token 级严格一致
 
-### 4.3 验证边界说明
+这说明第二平台已经从设计说明推进到真实可测试状态。
 
-当前报告只记录这台沐曦机器上真实复跑的 MetaX 结果。  
-`CPU + NVIDIA` 路径在代码组织上保持独立，但不在当前机器上重复列为实跑结果。其中：
+## 7. Project #3：聊天服务
 
-- CPU 基线不在这台机器上重复展开
-- NVIDIA 相关构建开关与代码路径没有被 MetaX 改写
+Project #3 的目标是让系统从“能生成 token”走向“能以聊天形式对外服务”。
+
+完成内容包括：
+
+- 采样参数链路打通
+- 基于 FastAPI 实现聊天服务接口
+- 基于 SSE 实现流式返回
+- 补齐 CLI 交互入口
+
+这一部分的关键点包括：
+
+- 模型生成参数如何从接口层传到后端
+- 流式输出如何逐步返回新 token
+- 聊天历史如何组织成模型输入 prompt
+
+本地 CPU 环境下已完成最小接口验证：
+
+```bash
+PYTHONPATH=python python -m llaisys.chat.server --model models/DeepSeek-R1-Distill-Qwen-1.5B --device cpu --host 127.0.0.1 --port 8011
+curl --noproxy '*' -s http://127.0.0.1:8011/health
+curl --noproxy '*' -s -X POST http://127.0.0.1:8011/v1/chat/completions -H 'Content-Type: application/json' -d '{"messages":[{"role":"user","content":"你好"}],"stream":false,"max_tokens":8}'
+```
+
+当前已确认：
+
+- `/health` 可正常返回
+- `POST /v1/chat/completions` 可正常返回非流式结果
+
+## 8. 验证环境与边界
+
+### 8.1 本地 CPU 开发环境
+
+- Python：`3.12.3`
+- xmake：`v3.0.7+20260308`
+- 本地模型目录：`models/DeepSeek-R1-Distill-Qwen-1.5B`
+
+### 8.2 沐曦 MetaX 验证环境
+
+- GPU：`MetaX C500`
+- `mx-smi`：`2.2.9`
+- `MACA`：`3.2.1.10`
+- 驱动：`3.0.11`
+- 编译器：`mxcc 1.0.0`
+- Python：`3.10.10`
+- PyTorch：`2.6.0+metax3.2.1.3`
+- xmake：`v2.8.7+20240401`
+
+### 8.3 验证边界说明
+
+- Assignment #1/#2/#3 与 Project #1/#3 以本地 CPU 路径验证为主
+- Project #2 的结论来自真实沐曦机器
 - 当前机器没有 NVIDIA 硬件，因此没有新增 `--device nvidia` 的实机回归数据
+- 当前推理验证聚焦 `Qwen2`
 
-## 5. 踩坑记录
+## 9. 问题与处理
 
-### 5.1 MetaX 不是 C++ 层 CUDA 直替
+### 9.1 Tensor 视图与真实拷贝容易混淆
 
-最开始的核心判断问题是：MetaX 到底能不能直接拿 CUDA 代码编过去。实际检查后确认不行：
+这一问题主要出现在 `view / permute / slice` 的实现阶段。  
+最终通过严格区分 stride 变化和 storage 拷贝逻辑解决。
 
-- `<cuda_runtime.h>` 不能作为稳定适配前提
-- `cuBLAS` 也不能直接当成 `mcBLAS`
+### 9.2 算子正确性与系统链路正确性不是一回事
 
-因此必须走独立后端接入，而不是在 NVIDIA 代码里用宏硬套。
+单个算子通过测试，并不等于完整推理链路一定正确。  
+因此在 Assignment #3 中还需要通过 `infer` 的 token 级对照做最终闭环验证。
 
-### 5.2 root 用户下 xmake 默认拒绝运行
+### 9.3 第二平台不是 CUDA 直替
 
-本机是 root 环境，`xmake` 默认会报错退出，需要显式加：
+这是 Project #2 中最关键的判断问题。  
+如果误判成“只要替换宏就能跑”，后续实现很容易失控。最终通过新增独立 MetaX 后端解决。
+
+### 9.4 root 环境下 xmake 默认拒绝运行
+
+在沐曦平台构建时，需要显式设置：
 
 ```bash
 XMAKE_ROOT=y
 ```
 
-这个点如果不写进复现文档，提交后很容易直接卡死在构建阶段。
+否则构建会直接被阻止。
 
-### 5.3 当前环境没有可直接提交的本地模型目录
+## 10. 已知限制
 
-为了把推理链路先打通，本次使用公开的小型 Qwen2 测试模型：
+- `argmax` 与 `self_attention` 在 MetaX 侧仍为 host fallback
+- 当前推理验证聚焦 `Qwen2`
+- 第二平台已实跑，但不额外展开未在当前机器上重复验证的 CPU / NVIDIA 结果
 
-- `trl-internal-testing/tiny-Qwen2ForCausalLM-2.5`
+## 11. 提交边界说明
 
-这样可以先保证 `test/test_infer.py` 的严格一致性校验可复现；如已有本地 Qwen2 模型目录，也可以直接替换 `--model` 参数做同样的验证。
+为保持课程提交 PR 干净，本次仓库提交只保留：
 
-## 6. 已知限制
-
-- `argmax` 与 `self_attention` 在 MetaX 侧当前仍是 host fallback，优先保证链路正确性，不追求这一步的性能最优。
-- CPU 基线未在当前沐曦机器上重复列为实跑结果。
-- 当前报告没有新增 NVIDIA 实机回归数据，因为本机没有 NVIDIA 硬件。
-- 当前推理验证聚焦 `Qwen2`；不再沿用旧文档里关于 `TinyLlama/Llama` 的完成声明。
-- 根目录外部 PDF 保持未跟踪状态，不会随仓库提交。
-
-## 7. 提交物索引
-
-- 提交总览：[`submission_zh.md`](submission_zh.md)
-- 复现流程：[`reproduce_zh.md`](reproduce_zh.md)
-- PR 文案：[`pr_zh.md`](pr_zh.md)
-
-## 8. 提交边界说明
-
-为保持课程提交 PR 干净，本次仓库提交只保留以下内容：
-
-- 项目 2 第二平台实现代码
+- Assignment / Project 对应实现代码
 - 构建、测试与 Python 桥接相关改动
 - 正式提交文档
 
-以下内容不进入仓库提交：
+未纳入提交的内容包括：
 
 - 本地学习材料
 - 复试问答、讲稿与简历草稿
 - 外部平台说明 PDF
 - 临时排障文档
+
+## 12. 总结
+
+通过本次课程实践，已经完成从 Tensor、算子、推理链路，到 CPU 优化、第二平台接入、聊天服务实现的一整条实现路径。
+
+这个项目的最大收获不是“会调用模型”，而是：
+
+- 真正理解了大模型推理系统的底层组成
+- 学会了从数据结构、算子、模型链路、平台适配到服务接口的系统化实现方式
+- 能够把课程要求的多个模块合并成一个完整、可复现、可提交的系统工程交付

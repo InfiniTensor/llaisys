@@ -437,11 +437,14 @@ python test/test_infer.py --model [dir_path/to/model] --test --device nvidia
 
 ### 当前提交范围
 
-- 当前主要交付：项目 2 第二平台 MetaX/MACA
-- 保持原有 `CPU + NVIDIA` 路径独立存在
+- 当前提交按完整课程交付组织，覆盖作业 1/2/3 与项目 1/2/3
+- 项目 2 的第二平台为 MetaX/MACA
 - 提交中只保留实现代码与正式提交文档
 
-### 当前机器验证环境
+### 当前验证环境
+
+- 本地 CPU 开发环境：Python `3.12.3`，xmake `v3.0.7+20260308`
+- 沐曦 MetaX 环境如下：
 
 - GPU：`MetaX C500`
 - `mx-smi`：`2.2.9`
@@ -454,6 +457,21 @@ python test/test_infer.py --model [dir_path/to/model] --test --device nvidia
 ### 当前已验证命令
 
 ```bash
+## 本地 CPU 路径
+xmake f --nv-gpu=n --metax-gpu=n -cv
+xmake -r
+
+python test/test_tensor.py
+python test/test_runtime.py --device cpu
+python test/test_ops.py --device cpu
+python test/test_infer.py --device cpu --test --model models/DeepSeek-R1-Distill-Qwen-1.5B --prompt hi --max_steps 1
+
+## 聊天服务最小验证
+PYTHONPATH=python python -m llaisys.chat.server --model models/DeepSeek-R1-Distill-Qwen-1.5B --device cpu --host 127.0.0.1 --port 8011
+curl --noproxy '*' -s http://127.0.0.1:8011/health
+curl --noproxy '*' -s -X POST http://127.0.0.1:8011/v1/chat/completions -H 'Content-Type: application/json' -d '{"messages":[{"role":"user","content":"你好"}],"stream":false,"max_tokens":8}'
+
+## 沐曦 MetaX 路径
 XMAKE_ROOT=y xmake f --metax-gpu=y -cv
 XMAKE_ROOT=y xmake -r
 XMAKE_ROOT=y xmake install
@@ -472,6 +490,6 @@ python test/test_infer.py --device metax --test --model_id trl-internal-testing/
 
 ### 说明
 
-- 这里仅列当前沐曦机器上实际复跑的 MetaX 命令，CPU 基线不在这一节重复展开
+- 这里合并列出本地 CPU 路径与沐曦 MetaX 路径的已验证命令
 - MetaX 在 C++ SDK 层不是 CUDA drop-in 兼容，因此后端必须单独适配
 - PyTorch 层保留了 `torch.cuda` 语义，因此 Hugging Face 对照测试仍复用 CUDA 命名空间

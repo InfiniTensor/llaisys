@@ -443,11 +443,14 @@ This section is appended for course submission and does not change the original 
 
 ### Scope
 
-- Main deliverable in this submission: Project #2 second platform on MetaX/MACA
-- Existing CPU + NVIDIA paths are preserved as separate code paths
+- This submission is organized as a complete course delivery covering Assignments 1/2/3 and Projects 1/2/3
+- Project #2 uses MetaX/MACA as the second backend
 - Only implementation code and formal submission docs are tracked for submission
 
 ### Verified Environment
+
+- Local CPU dev environment: Python `3.12.3`, xmake `v3.0.7+20260308`
+- MetaX validation environment:
 
 - GPU: `MetaX C500`
 - `mx-smi`: `2.2.9`
@@ -460,6 +463,21 @@ This section is appended for course submission and does not change the original 
 ### Verified Commands
 
 ```bash
+## Local CPU path
+xmake f --nv-gpu=n --metax-gpu=n -cv
+xmake -r
+
+python test/test_tensor.py
+python test/test_runtime.py --device cpu
+python test/test_ops.py --device cpu
+python test/test_infer.py --device cpu --test --model models/DeepSeek-R1-Distill-Qwen-1.5B --prompt hi --max_steps 1
+
+## Chat service minimal validation
+PYTHONPATH=python python -m llaisys.chat.server --model models/DeepSeek-R1-Distill-Qwen-1.5B --device cpu --host 127.0.0.1 --port 8011
+curl --noproxy '*' -s http://127.0.0.1:8011/health
+curl --noproxy '*' -s -X POST http://127.0.0.1:8011/v1/chat/completions -H 'Content-Type: application/json' -d '{"messages":[{"role":"user","content":"你好"}],"stream":false,"max_tokens":8}'
+
+## MetaX path
 XMAKE_ROOT=y xmake f --metax-gpu=y -cv
 XMAKE_ROOT=y xmake -r
 XMAKE_ROOT=y xmake install
@@ -471,7 +489,7 @@ python test/test_infer.py --device metax --test --model_id trl-internal-testing/
 
 ### Notes
 
-- CPU baseline validation is not repeated in this MetaX reproduction note.
+- This section combines verified local CPU commands and verified MetaX commands.
 - MetaX is not a C++-level CUDA drop-in platform, so the backend is adapted separately.
 - Hugging Face verification still uses `torch.cuda` semantics because the local MetaX PyTorch build exposes CUDA-compatible device APIs.
 - The external MetaX PDF in the repo root is intentionally kept untracked and is not part of the git submission.
