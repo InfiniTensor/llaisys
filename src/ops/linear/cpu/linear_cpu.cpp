@@ -1,12 +1,16 @@
 #include "linear_cpu.hpp"
 
 #include "../../../utils.hpp"
+#include "../../utils.hpp"
 
 #include <cmath>
 
+#include <cblas.h>
+
 template <typename T>
 void linear_(std::byte *out_raw, const std::byte *in_raw, const std::byte *weight_raw, 
-            const size_t M, const size_t N, const size_t K, const std::byte *bias_raw) {
+            const size_t M, const size_t N, const size_t K, const std::byte *bias_raw,
+            llaisysDataType_t dtype) {
     // C[:,M,N] = A[:,M,K] * B[:,K,N]
     // out[:,M,N] = in[:,M,K] * weight[:,N,K]^T + bias[:,M,N]
     T *out = reinterpret_cast<T*>(out_raw);
@@ -14,76 +18,78 @@ void linear_(std::byte *out_raw, const std::byte *in_raw, const std::byte *weigh
     const T *weight = reinterpret_cast<const T*>(weight_raw);
     const T *bias = reinterpret_cast<const T*>(bias_raw);
 
-    // Initialize out to 0
-    for (size_t i = 0; i < M * N; i++) {
-        out[i] =  llaisys::utils::cast<T>(0);
-    }
+    llaisys::ops::utils::OpenBlasCapableArray in_aligned(M*K, in, dtype);
+    llaisys::ops::utils::OpenBlasCapableArray weight_aligned(K*N, weight, dtype);
+    
+    // out_aligned should initially read out to have correct output size, but we really want output as out array
+    // Wait, since OpenBlasCapableArray performs heap allocation and reads input memory:
+    // It's cheaper to initialize it with out_raw (even if uninitialized) instead of OOB bias read
+    llaisys::ops::utils::OpenBlasCapableArray out_aligned(M*N, out, dtype);
 
-    // Only support 2D linear
+    if (out_aligned.dtype() == LLAISYS_DTYPE_F32) {
+        float *A = reinterpret_cast<float*>(in_aligned.data());
+        float *B = reinterpret_cast<float*>(weight_aligned.data());
+        float *C = reinterpret_cast<float*>(out_aligned.data());
 
-    /* 多次转换, 精度不够
-    for (size_t m = 0; m < M; m++) {
-        for (size_t n = 0; n < N; n++) {
-            for (size_t k = 0; k < K; k++) {
-                // out[m][n] += in[m][k] * weight[n][k]
-                if constexpr (std::is_same_v<T, llaisys::bf16_t> || std::is_same_v<T, llaisys::fp16_t>) {
-                    out[m * N + n] = llaisys::utils::cast<T>(
-                            llaisys::utils::cast<float>(out[m * N + n])
-                            + llaisys::utils::cast<float>(in[m *K + k]) 
-                            * llaisys::utils::cast<float>(weight[n * K + k])
-                        );
-                } else {
-                    out[m * N + n] += in[m *K + k] * weight[n * K + k];
+        if (bias != nullptr) {
+            llaisys::ops::utils::OpenBlasCapableArray bias_aligned(N, bias, dtype);
+            float *b_ptr = reinterpret_cast<float*>(bias_aligned.data());
+            for (size_t i = 0; i < M; ++i) {
+                for (size_t j = 0; j < N; ++j) {
+                    C[i * N + j] = b_ptr[j];
                 }
             }
+        } else {
+            for (size_t i = 0; i < M * N; ++i) C[i] = 0.0f;
         }
-    }
 
-    bias 只有一维, 要广播
-    if (bias != nullptr) {
-        for (size_t i = 0; i < M * N; i++) {
-            if constexpr (std::is_same_v<T, llaisys::bf16_t> || std::is_same_v<T, llaisys::fp16_t>) {
-                out[i] = llaisys::utils::cast<T>(
-                            llaisys::utils::cast<float>(out[i])
-                            + llaisys::utils::cast<float>(bias[i])
-                        );
-            } else {
-                out[i] += bias[i];
-            }
-        }
-    }
+        cblas_sgemm(
+            CblasRowMajor,
+            CblasNoTrans,
+            CblasTrans,
+            M, N, K,
+            1.0f,
+            A, K,
+            B, K,
+            1.0f,
+            C, N
+        );
+    } else if (out_aligned.dtype() == LLAISYS_DTYPE_F64) {
+        double *A = reinterpret_cast<double*>(in_aligned.data());
+        double *B = reinterpret_cast<double*>(weight_aligned.data());
+        double *C = reinterpret_cast<double*>(out_aligned.data());
 
-    if (bias != nullptr) {
-        for (size_t m = 0; m < M; m++) {
-            for (size_t n = 0; n < N; n++) {
-                if constexpr (std::is_same_v<T, llaisys::bf16_t> || std::is_same_v<T, llaisys::fp16_t>) {
-                    out[m * N + n] = llaisys::utils::cast<T>(
-                                llaisys::utils::cast<float>(out[m * N + n])
-                                + llaisys::utils::cast<float>(bias[n])
-                            );
-                } else {
-                    out[m * N + n] += bias[n];
+        if (bias != nullptr) {
+            llaisys::ops::utils::OpenBlasCapableArray bias_aligned(N, bias, dtype);
+            double *b_ptr = reinterpret_cast<double*>(bias_aligned.data());
+            for (size_t i = 0; i < M; ++i) {
+                for (size_t j = 0; j < N; ++j) {
+                    C[i * N + j] = b_ptr[j];
                 }
             }
+        } else {
+            for (size_t i = 0; i < M * N; ++i) C[i] = 0.0;
         }
-    }
-    */
 
-    for (size_t m = 0; m < M; m++) {
-        for (size_t n = 0; n < N; n++) {
-            float sum = 0.0f;
-            for (size_t k = 0; k < K; k++) {
-                sum += llaisys::utils::cast<float>(in[m * K + k]) * llaisys::utils::cast<float>(weight[n * K + k]);
-            }
-            if (bias != nullptr) {
-                sum += llaisys::utils::cast<float>(bias[n]);
-            }
-            out[m * N + n] = llaisys::utils::cast<T>(sum);
-        }
+        cblas_dgemm(
+            CblasRowMajor,
+            CblasNoTrans,
+            CblasTrans,
+            M, N, K,
+            1.0,
+            A, K,
+            B, K,
+            1.0,
+            C, N
+        );
+    } else {
+        throw std::invalid_argument("Unsupported data type for linear_");
     }
+
+    out_aligned.cast_back(out);
 }
 
-#define DISPATCH_LINEAR(dtype, ctype) case dtype: linear_<ctype>(out, in, weight, M, N, K, bias); break;
+#define DISPATCH_LINEAR(dtype, ctype) case dtype: linear_<ctype>(out, in, weight, M, N, K, bias, type); break;
 
 namespace llaisys::ops::cpu {
 void linear(std::byte *out, const std::byte *in, const std::byte *weight, const std::byte *bias,

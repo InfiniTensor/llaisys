@@ -27,6 +27,14 @@ target("llaisys-utils")
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end
 
+    if not is_plat("windows") then
+        add_cxflags("-fPIC", "-Wno-unknown-pragmas")
+        add_cxflags("-fopenmp")
+        add_ldflags("-fopenmp")
+    else
+        add_cxxflags("/openmp")
+    end
+
     add_files("src/utils/*.cpp")
 
     on_install(function (target) end)
@@ -105,6 +113,19 @@ target("llaisys")
 
     set_languages("cxx17")
     set_warnings("all", "error")
+
+    -- OpenMP is used in ops; ensure the shared lib links against the OpenMP runtime.
+    if is_plat("windows") and is_compiler("msvc") then
+        add_cxxflags("/openmp")
+    else
+        add_cxxflags("-fopenmp")
+        add_shflags("-fopenmp")
+        -- Ensure the OpenMP runtime and BLAS libraries are included even if --as-needed drops them.
+        add_shflags("-Wl,--no-as-needed")
+        add_shflags("-lgomp")
+        add_shflags("-lopenblas")
+    end
+
     add_files("src/llaisys/*.cc")
     add_files("src/llaisys/models/*.cpp")
     set_installdir(".")

@@ -1,5 +1,10 @@
 #include "llaisys.h"
 
+#include <cstring>
+#include <cstdlib>
+
+#include <type_traits>
+#include <new>
 #include <iostream>
 #include <stdexcept>
 
@@ -13,6 +18,35 @@ struct CustomBFloat16 {
     uint16_t _v;
 };
 typedef struct CustomBFloat16 bf16_t;
+
+struct CustomFloat8 {
+    uint8_t _v;
+};
+typedef struct CustomFloat8 f8_t;
+
+struct CustomComplex16 {
+    fp16_t re;
+    fp16_t im;
+};
+typedef struct CustomComplex16 cp16_t;
+
+struct CustomComplex32 {
+    fp16_t re;
+    fp16_t im;
+};
+typedef struct CustomComplex32 cp32_t;
+
+struct CustomComplex64 {
+    float re;
+    float im;
+};
+typedef struct CustomComplex64 cp64_t;
+
+struct CustomComplex128 {
+    double re;
+    double im;
+};
+typedef struct CustomComplex128 cp128_t;
 
 namespace utils {
 inline size_t dsize(llaisysDataType_t dtype) {
@@ -38,23 +72,23 @@ inline size_t dsize(llaisysDataType_t dtype) {
     case LLAISYS_DTYPE_U64:
         return sizeof(uint64_t);
     case LLAISYS_DTYPE_F8:
-        return 1; // usually 8-bit float (custom)
+        return sizeof(f8_t);
     case LLAISYS_DTYPE_F16:
-        return 2; // 16-bit float
+        return sizeof(fp16_t);
     case LLAISYS_DTYPE_BF16:
-        return 2; // bfloat16
+        return sizeof(bf16_t);
     case LLAISYS_DTYPE_F32:
         return sizeof(float);
     case LLAISYS_DTYPE_F64:
         return sizeof(double);
     case LLAISYS_DTYPE_C16:
-        return 2; // 2 bytes complex (not standard)
+        return sizeof(cp16_t);
     case LLAISYS_DTYPE_C32:
-        return 4; // 4 bytes complex
+        return sizeof(cp32_t);
     case LLAISYS_DTYPE_C64:
-        return 8; // 8 bytes complex
+        return sizeof(cp64_t);
     case LLAISYS_DTYPE_C128:
-        return 16; // 16 bytes complex
+        return sizeof(cp128_t);
     case LLAISYS_DTYPE_INVALID:
     default:
         throw std::invalid_argument("Unsupported or invalid data type.");
@@ -137,24 +171,5 @@ TypeTo cast(TypeFrom val) {
         return static_cast<TypeTo>(val);
     }
 }
-
-// -------- AVX2 vectorized conversions (operate on 8 elements at once) --------
-// These helper functions are intended for use in SIMD paths and are
-// declared here with descriptive names. Actual implementations should
-// use AVX2 intrinsics to process eight values in parallel.
-//
-// - f16x8_to_f32x8 : convert eight fp16_t values to float
-// - f32x8_to_f16x8 : convert eight float values to fp16_t
-// - bf16x8_to_f32x8: convert eight bf16_t values to float
-// - f32x8_to_bf16x8: convert eight float values to bf16_t
-//
-// Note: names chosen for clarity; no code is provided in this header.
-// --------------------------------------------------------------------------
-
-__m256  f16x8_to_f32x8(__m128i packed_fp16);
-__m128i f32x8_to_f16x8(__m256 packed_f32);
-__m256  bf16x8_to_f32x8(__m128i packed_bf16);
-__m128i f32x8_to_bf16x8(__m256 packed_f32);
-
 } // namespace utils
 } // namespace llaisys
