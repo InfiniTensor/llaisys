@@ -1,4 +1,4 @@
-# GitHub PR 提交模板
+# GitHub PR 文案
 
 ## 标题
 
@@ -18,19 +18,14 @@
 - `argmax` 和 `self_attention` 先以 host fallback 保证主链路正确
 - Python 侧补齐 `DeviceType.METAX` 与测试入口
 - 补齐提交总览、实现报告与复现流程
-- 本 PR 只包含实现代码与正式提交文档，本地学习材料、外部 PDF 与 handoff 文档未纳入提交
+- 本 PR 只包含实现代码与正式提交文档，本地学习材料与外部 PDF 未纳入提交
 
-### 验证结果
+### 已验证命令
 
 ```bash
 XMAKE_ROOT=y xmake f --metax-gpu=y -cv
 XMAKE_ROOT=y xmake -r
 XMAKE_ROOT=y xmake install
-
-python test/test_tensor.py
-python test/test_runtime.py --device cpu
-python test/test_ops.py --device cpu
-python test/test_infer.py --device cpu --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
 
 python test/test_runtime.py --device metax
 python test/test_ops.py --device metax
@@ -41,6 +36,7 @@ python test/test_infer.py --device metax --test --model_id trl-internal-testing/
 
 - MetaX 不是 C/C++ 层的 CUDA drop-in 兼容平台，因此采用独立后端适配
 - 当前机器是沐曦 `MetaX C500`，已确认 `MACA 3.2.1.10`、驱动 `3.0.11`、`mxcc 1.0.0`
+- 当前 PR 文案只列当前沐曦机器上实际复跑的 MetaX 命令
 - 当前机器没有 NVIDIA 硬件，因此本次没有新增 `--device nvidia` 的实机回归数据
 - 当前推理验证聚焦 `Qwen2`
 - 根目录外部 PDF 保持未跟踪状态，不提交进仓库

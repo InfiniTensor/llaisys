@@ -4,7 +4,6 @@
 
 本文档对应当前仓库的可提交状态，目标是复现：
 
-- CPU 基线路径
 - MetaX/MACA 第二平台路径
 - `runtime -> ops -> infer` 的完整验证链路
 
@@ -68,14 +67,6 @@ python -m pip install transformers huggingface_hub accelerate
 
 ## 4. 构建
 
-### 4.1 CPU 默认构建
-
-```bash
-XMAKE_ROOT=y xmake -r
-```
-
-### 4.2 MetaX 构建
-
 ```bash
 XMAKE_ROOT=y xmake f --metax-gpu=y -cv
 XMAKE_ROOT=y xmake -r
@@ -90,16 +81,7 @@ XMAKE_ROOT=y xmake install
 
 ## 5. 测试顺序
 
-### 5.1 CPU 基线
-
-```bash
-python test/test_tensor.py
-python test/test_runtime.py --device cpu
-python test/test_ops.py --device cpu
-python test/test_infer.py --device cpu --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
-```
-
-### 5.2 MetaX runtime
+### 5.1 MetaX runtime
 
 ```bash
 python test/test_runtime.py --device metax
@@ -111,7 +93,7 @@ python test/test_runtime.py --device metax
 - host/device 内存分配正常
 - H2D、D2H、D2D 拷贝通过
 
-### 5.3 MetaX ops
+### 5.2 MetaX ops
 
 ```bash
 python test/test_ops.py --device metax
@@ -123,7 +105,7 @@ python test/test_ops.py --device metax
 - `add`、`embedding`、`rms_norm`、`rope`、`swiglu` 走 MetaX kernel
 - `argmax` 与 `self_attention` 当前是 host fallback
 
-### 5.4 MetaX infer
+### 5.3 MetaX infer
 
 如果本地没有现成模型目录，直接用公开的小模型：
 
@@ -141,6 +123,7 @@ python test/test_infer.py --device metax --test --model /path/to/local/qwen2_mod
 
 - Hugging Face 和 LLAISYS 的 token 序列严格一致
 - 输出末尾打印 `Test passed!`
+- 当前机器实测可直接从 Hugging Face 拉取该测试模型；若网络不可用，再改用本地模型目录
 
 ## 6. 常见问题
 

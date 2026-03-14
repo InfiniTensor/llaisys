@@ -5,11 +5,11 @@
 本次提交的目标是把项目 2 的第二平台从“设计稿”推进到“沐曦平台可实际测试”的状态。当前仓库已经完成以下交付：
 
 - 保留原有 `CPU` 与 `NVIDIA` 设备路径，不改坏已有接口和构建开关。
-- 新增独立 `METAX` 设备类型，不把沐曦实现塞进 `nvidia` 分支里。
+- 新增独立 `METAX` 设备类型，不把沐曦实现混写进 `nvidia` 路径。
 - 打通 MetaX/MACA 的 runtime、资源管理、算子调度和 Python 测试入口。
 - 在真实沐曦机器上完成 `runtime -> ops -> infer` 的顺序验证。
 
-当前分支的真实可验证结论是：`CPU + NVIDIA` 路径仍保留，`MetaX/MACA` 已经从设计说明落地为可编译、可运行、可测试的第二平台。
+当前实现的真实可验证结论是：`CPU + NVIDIA` 路径仍保留，`MetaX/MACA` 已经从设计说明落地为可编译、可运行、可测试的第二平台。
 
 ## 2. 平台识别与兼容性判断
 
@@ -48,7 +48,7 @@
 
 因此，本次实现采取的策略是：
 
-- LLAISYS C/C++ 后端新增独立 `METAX` 分支，单独对接 `mc*` / `mcblas*`。
+- LLAISYS C/C++ 后端新增独立 `METAX` 后端，单独对接 `mc*` / `mcblas*`。
 - Python 测试对照仍复用 `torch.cuda`，不额外重写 Hugging Face 推理逻辑。
 
 ## 3. 实现说明
@@ -140,7 +140,7 @@ Python 层同步做了三件事：
 
 ### 3.5 推理模型支持现状
 
-当前分支已经在推理链路上实际验证的是 `Qwen2` 路径。为了保证文档与仓库一致，本报告不再声称当前分支已经完整交付 `TinyLlama/Llama` 作业支持。
+当前仓库已经在推理链路上实际验证的是 `Qwen2` 路径。为了保证文档与仓库一致，本报告不再声称当前仓库已经完整交付 `TinyLlama/Llama` 作业支持。
 
 本次实际用于严格推理验证的模型是：
 
@@ -150,7 +150,7 @@ Python 层同步做了三件事：
 
 - 体积小，适合当前机器快速做严格一致性测试
 - 仓库本地没有现成可直接用于提交验证的模型目录
-- 其 `model_type` 为 `qwen2`，与当前分支已验证的模型实现一致
+- 其 `model_type` 为 `qwen2`，与当前仓库已验证的模型实现一致
 
 ## 4. 构建与实测结果
 
@@ -166,23 +166,7 @@ XMAKE_ROOT=y xmake install
 
 以上命令已通过。
 
-### 4.2 CPU 基线验证
-
-以下 CPU 命令已在当前仓库通过：
-
-```bash
-python test/test_tensor.py
-python test/test_runtime.py --device cpu
-python test/test_ops.py --device cpu
-python test/test_infer.py --device cpu --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
-```
-
-说明：
-
-- 这部分用于证明 MetaX 接入没有破坏 CPU 基线路径
-- `test_infer.py --device cpu` 已完成 token 级严格一致性校验
-
-### 4.3 MetaX 验证
+### 4.2 MetaX 验证
 
 以下 MetaX 命令已在真实沐曦机器通过：
 
@@ -198,14 +182,15 @@ python test/test_infer.py --device metax --test --model_id trl-internal-testing/
 - `ops`：当前测试集全部通过
 - `infer`：Hugging Face 与 LLAISYS token 级严格一致
 
-### 4.4 NVIDIA 路径说明
+### 4.3 验证边界说明
 
-本次提交遵循“不改坏 CPU + NVIDIA 路径”的约束，因此所有 MetaX 代码都走独立分支。  
-但当前机器只有沐曦设备，没有 NVIDIA 硬件，所以本次没有在本机重新跑 `--device nvidia` 的硬件回归。文档只声明：
+当前报告只记录这台沐曦机器上真实复跑的 MetaX 结果。  
+`CPU + NVIDIA` 路径在代码组织上保持独立，但不在当前机器上重复列为实跑结果。其中：
 
+- CPU 基线不在这台机器上重复展开
 - NVIDIA 原有实现已被完整阅读并保留
 - 构建开关与代码路径没有被 MetaX 改写
-- 本机未做新的 NVIDIA 实机验证
+- 当前机器没有 NVIDIA 硬件，因此没有新增 `--device nvidia` 的实机回归数据
 
 ## 5. 踩坑记录
 
@@ -234,11 +219,12 @@ XMAKE_ROOT=y
 
 - `trl-internal-testing/tiny-Qwen2ForCausalLM-2.5`
 
-这样可以先保证 `test/test_infer.py` 的严格一致性校验可复现；如果老师或助教有本地 Qwen2 模型目录，也可以直接替换 `--model` 参数做同样的验证。
+这样可以先保证 `test/test_infer.py` 的严格一致性校验可复现；如已有本地 Qwen2 模型目录，也可以直接替换 `--model` 参数做同样的验证。
 
 ## 6. 已知限制
 
 - `argmax` 与 `self_attention` 在 MetaX 侧当前仍是 host fallback，优先保证链路正确性，不追求这一步的性能最优。
+- CPU 基线未在当前沐曦机器上重复列为实跑结果。
 - 当前报告没有新增 NVIDIA 实机回归数据，因为本机没有 NVIDIA 硬件。
 - 当前推理验证聚焦 `Qwen2`；不再沿用旧文档里关于 `TinyLlama/Llama` 的完成声明。
 - 根目录外部 PDF 保持未跟踪状态，不会随仓库提交。
@@ -262,4 +248,4 @@ XMAKE_ROOT=y
 - 本地学习材料
 - 复试问答、讲稿与简历草稿
 - 外部平台说明 PDF
-- handoff 或临时排障文档
+- 临时排障文档

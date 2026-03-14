@@ -435,7 +435,7 @@ Support another model type than the one we use for homework in LLAISYS.
 - Overview: [docs/submission_zh.md](docs/submission_zh.md)
 - Report: [docs/report_zh.md](docs/report_zh.md)
 - Reproduce: [docs/reproduce_zh.md](docs/reproduce_zh.md)
-- PR Template: [docs/pr_zh.md](docs/pr_zh.md)
+- PR Text: [docs/pr_zh.md](docs/pr_zh.md)
 
 ## Current Submission Status For This Fork
 
@@ -464,11 +464,6 @@ XMAKE_ROOT=y xmake f --metax-gpu=y -cv
 XMAKE_ROOT=y xmake -r
 XMAKE_ROOT=y xmake install
 
-python test/test_tensor.py
-python test/test_runtime.py --device cpu
-python test/test_ops.py --device cpu
-python test/test_infer.py --device cpu --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
-
 python test/test_runtime.py --device metax
 python test/test_ops.py --device metax
 python test/test_infer.py --device metax --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
@@ -476,6 +471,7 @@ python test/test_infer.py --device metax --test --model_id trl-internal-testing/
 
 ### Notes
 
+- CPU baseline validation is not repeated in this MetaX reproduction note.
 - MetaX is not a C++-level CUDA drop-in platform, so the backend is adapted separately.
 - Hugging Face verification still uses `torch.cuda` semantics because the local MetaX PyTorch build exposes CUDA-compatible device APIs.
 - The external MetaX PDF in the repo root is intentionally kept untracked and is not part of the git submission.

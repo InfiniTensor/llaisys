@@ -458,11 +458,6 @@ XMAKE_ROOT=y xmake f --metax-gpu=y -cv
 XMAKE_ROOT=y xmake -r
 XMAKE_ROOT=y xmake install
 
-python test/test_tensor.py
-python test/test_runtime.py --device cpu
-python test/test_ops.py --device cpu
-python test/test_infer.py --device cpu --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
-
 python test/test_runtime.py --device metax
 python test/test_ops.py --device metax
 python test/test_infer.py --device metax --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
@@ -474,11 +469,9 @@ python test/test_infer.py --device metax --test --model_id trl-internal-testing/
 - 报告：[`docs/report_zh.md`](docs/report_zh.md)
 - 复现：[`docs/reproduce_zh.md`](docs/reproduce_zh.md)
 - PR 文案：[`docs/pr_zh.md`](docs/pr_zh.md)
-- MetaX 实现说明：[`docs/metax_design_zh.md`](docs/metax_design_zh.md)
-
-  
 
 ### 说明
 
+- 这里仅列当前沐曦机器上实际复跑的 MetaX 命令，CPU 基线不在这一节重复展开
 - MetaX 在 C++ SDK 层不是 CUDA drop-in 兼容，因此后端必须单独适配
 - PyTorch 层保留了 `torch.cuda` 语义，因此 Hugging Face 对照测试仍复用 CUDA 命名空间
