@@ -91,6 +91,8 @@ desktop.ini
 
 # 忽略模型大文件
 models/
+!python/llaisys/models/
+!python/llaisys/models/*.py
 *.safetensors
 *.bin
 *.pth

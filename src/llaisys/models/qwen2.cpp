@@ -198,8 +198,11 @@ __export void llaisysQwen2ModelReset(struct LlaisysQwen2Model *model) {
     model->past_len = 0;
 }
 
+} // __C
+
 // One forward pass on a chunk of "new tokens" of length seqlen.
 // It consumes tokens, writes KV into cache, and returns logits for last position.
+// 这是 C++ 内部辅助函数，不需要导出成 C API；放到 extern "C" 之外可避免 MSVC 把返回 shared_ptr 当成 C linkage 警告。
 static llaisys::tensor_t qwen2_forward_last_logits(LlaisysQwen2Model *m,
                                                    const int64_t *token_ids,
                                                    size_t seqlen) {
@@ -337,6 +340,8 @@ static llaisys::tensor_t qwen2_forward_last_logits(LlaisysQwen2Model *m,
 
     return logits->slice(0, seqlen - 1, seqlen)->view({voc});
 }
+
+__C {
 
 __export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model *model,
                                        int64_t *token_ids,
