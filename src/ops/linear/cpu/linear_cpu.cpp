@@ -18,13 +18,80 @@ void linear_(std::byte *out_raw, const std::byte *in_raw, const std::byte *weigh
     const T *weight = reinterpret_cast<const T*>(weight_raw);
     const T *bias = reinterpret_cast<const T*>(bias_raw);
 
-    llaisys::ops::utils::OpenBlasCapableArray in_aligned(M*K, in, dtype);
-    llaisys::ops::utils::OpenBlasCapableArray weight_aligned(K*N, weight, dtype);
-    
-    // out_aligned should initially read out to have correct output size, but we really want output as out array
-    // Wait, since OpenBlasCapableArray performs heap allocation and reads input memory:
-    // It's cheaper to initialize it with out_raw (even if uninitialized) instead of OOB bias read
-    llaisys::ops::utils::OpenBlasCapableArray out_aligned(M*N, out, dtype);
+    // Fast path when input is already float/double: avoid allocation/casting overhead.
+    if constexpr (std::is_same_v<T, float>) {
+        float *C = reinterpret_cast<float*>(out);
+        const float *A = reinterpret_cast<const float*>(in);
+        const float *B = reinterpret_cast<const float*>(weight);
+
+        if (bias != nullptr) {
+            // Broadcast bias across all rows.
+#ifdef _OPENMP
+            #pragma omp parallel for if(M * N > 16384)
+#endif
+            for (size_t i = 0; i < M; ++i) {
+                std::memcpy(C + i * N, bias, N * sizeof(float));
+            }
+        } else {
+            std::memset(C, 0, M * N * sizeof(float));
+        }
+
+        cblas_sgemm(
+            CblasRowMajor,
+            CblasNoTrans,
+            CblasTrans,
+            M, N, K,
+            1.0f,
+            A, K,
+            B, K,
+            1.0f,
+            C, N
+        );
+        return;
+    }
+
+    if constexpr (std::is_same_v<T, double>) {
+        double *C = reinterpret_cast<double*>(out);
+        const double *A = reinterpret_cast<const double*>(in);
+        const double *B = reinterpret_cast<const double*>(weight);
+
+        if (bias != nullptr) {
+#ifdef _OPENMP
+            #pragma omp parallel for if(M * N > 16384)
+#endif
+            for (size_t i = 0; i < M; ++i) {
+                std::memcpy(C + i * N, bias, N * sizeof(double));
+            }
+        } else {
+            std::memset(C, 0, M * N * sizeof(double));
+        }
+
+        cblas_dgemm(
+            CblasRowMajor,
+            CblasNoTrans,
+            CblasTrans,
+            M, N, K,
+            1.0,
+            A, K,
+            B, K,
+            1.0,
+            C, N
+        );
+        return;
+    }
+
+    // OpenBLAS itself only supports float/double. For fp16/bf16/int32 we cast into
+    // a float/double buffer for the computation, then cast back to the original type.
+    const llaisysDataType_t storage_dtype =
+        (dtype == LLAISYS_DTYPE_F64 || dtype == LLAISYS_DTYPE_I32) ? LLAISYS_DTYPE_F64 : LLAISYS_DTYPE_F32;
+
+    llaisys::ops::utils::OpenBlasCapableArray in_aligned(M * K, storage_dtype);
+    in_aligned.cast_from(in);
+    llaisys::ops::utils::OpenBlasCapableArray weight_aligned(K * N, storage_dtype);
+    weight_aligned.cast_from(weight);
+
+    // The output buffer is allocated for OpenBLAS use; we fill it explicitly below.
+    llaisys::ops::utils::OpenBlasCapableArray out_aligned(M * N, storage_dtype);
 
     if (out_aligned.dtype() == LLAISYS_DTYPE_F32) {
         float *A = reinterpret_cast<float*>(in_aligned.data());
@@ -32,15 +99,9 @@ void linear_(std::byte *out_raw, const std::byte *in_raw, const std::byte *weigh
         float *C = reinterpret_cast<float*>(out_aligned.data());
 
         if (bias != nullptr) {
-            llaisys::ops::utils::OpenBlasCapableArray bias_aligned(N, bias, dtype);
-            float *b_ptr = reinterpret_cast<float*>(bias_aligned.data());
-            for (size_t i = 0; i < M; ++i) {
-                for (size_t j = 0; j < N; ++j) {
-                    C[i * N + j] = b_ptr[j];
-                }
-            }
+            out_aligned.broadcast_row(bias, M, N);
         } else {
-            for (size_t i = 0; i < M * N; ++i) C[i] = 0.0f;
+            out_aligned.zeros();
         }
 
         cblas_sgemm(
@@ -60,15 +121,9 @@ void linear_(std::byte *out_raw, const std::byte *in_raw, const std::byte *weigh
         double *C = reinterpret_cast<double*>(out_aligned.data());
 
         if (bias != nullptr) {
-            llaisys::ops::utils::OpenBlasCapableArray bias_aligned(N, bias, dtype);
-            double *b_ptr = reinterpret_cast<double*>(bias_aligned.data());
-            for (size_t i = 0; i < M; ++i) {
-                for (size_t j = 0; j < N; ++j) {
-                    C[i * N + j] = b_ptr[j];
-                }
-            }
+            out_aligned.broadcast_row(bias, M, N);
         } else {
-            for (size_t i = 0; i < M * N; ++i) C[i] = 0.0;
+            out_aligned.zeros();
         }
 
         cblas_dgemm(
