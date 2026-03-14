@@ -9,6 +9,9 @@
 #include <cstring>
 #include <algorithm>
 #include <vector>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 namespace llaisys::ops {
 
@@ -66,7 +69,9 @@ static inline void get_dims(tensor_t in, tensor_t weight,
 }
 
 // ============================================================
-// float32 AVX2+FMA 特化
+// float32 AVX2+FMA 特化 (OpenMP 并行化)
+// 保持原始 k0→j0→i 分块顺序以复用 W 块缓存。
+// i 维度行间完全独立，#pragma omp parallel for 在最内层 i 循环上。
 // ============================================================
 template<>
 void linear_cpu_kernel<float>(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias){
@@ -80,6 +85,9 @@ void linear_cpu_kernel<float>(tensor_t out, tensor_t in, tensor_t weight, tensor
     get_dims(in, weight, M, K, N);
 
     if (b) {
+#ifdef _OPENMP
+        #pragma omp parallel for schedule(static)
+#endif
         for (size_t i = 0; i < M; ++i) {
             float* yrow = Y + i * N;
             size_t j = 0;
@@ -107,6 +115,9 @@ void linear_cpu_kernel<float>(tensor_t out, tensor_t in, tensor_t weight, tensor
                 const float* w2 = W + (j0 + 2) * K + k0;
                 const float* w3 = W + (j0 + 3) * K + k0;
 
+#ifdef _OPENMP
+                #pragma omp parallel for schedule(static)
+#endif
                 for (size_t i = 0; i < M; ++i) {
                     const float* xi = X + i * K + k0;
                     __m256 a00 = _mm256_setzero_ps(), a01 = _mm256_setzero_ps();
@@ -154,6 +165,9 @@ void linear_cpu_kernel<float>(tensor_t out, tensor_t in, tensor_t weight, tensor
             } else {
                 for (size_t jj = 0; jj < jn; ++jj) {
                     const float* wj = W + (j0 + jj) * K + k0;
+#ifdef _OPENMP
+                    #pragma omp parallel for schedule(static)
+#endif
                     for (size_t i = 0; i < M; ++i)
                         Y[i*N + j0 + jj] += utils::avx2_dot(X + i*K + k0, wj, kc);
                 }
@@ -163,7 +177,8 @@ void linear_cpu_kernel<float>(tensor_t out, tensor_t in, tensor_t weight, tensor
 }
 
 // ============================================================
-// bfloat16 AVX2 特化
+// bfloat16 AVX2 特化 (OpenMP 并行化)
+// ybuf 作为整体预分配，i 循环写入各自行 ybuf[i*N..i*N+N-1]，行间无竞争。
 // ============================================================
 template<>
 void linear_cpu_kernel<llaisys::bf16_t>(tensor_t out, tensor_t in,
@@ -182,6 +197,9 @@ void linear_cpu_kernel<llaisys::bf16_t>(tensor_t out, tensor_t in,
     std::vector<float> ybuf(M * N);
 
     if (B) {
+#ifdef _OPENMP
+        #pragma omp parallel for schedule(static)
+#endif
         for (size_t i = 0; i < M; ++i) {
             float* yrow = ybuf.data() + i * N;
             for (size_t j = 0; j < N; ++j)
@@ -206,6 +224,9 @@ void linear_cpu_kernel<llaisys::bf16_t>(tensor_t out, tensor_t in,
                 const uint16_t* w2 = W + (j0 + 2) * K + k0;
                 const uint16_t* w3 = W + (j0 + 3) * K + k0;
 
+#ifdef _OPENMP
+                #pragma omp parallel for schedule(static)
+#endif
                 for (size_t i = 0; i < M; ++i) {
                     const uint16_t* xi = X + i * K + k0;
 
@@ -256,6 +277,9 @@ void linear_cpu_kernel<llaisys::bf16_t>(tensor_t out, tensor_t in,
             } else {
                 for (size_t jj = 0; jj < jn; ++jj) {
                     const uint16_t* wj = W + (j0 + jj) * K + k0;
+#ifdef _OPENMP
+                    #pragma omp parallel for schedule(static)
+#endif
                     for (size_t i = 0; i < M; ++i) {
                         const uint16_t* xi = X + i * K + k0;
                         __m256 acc0 = _mm256_setzero_ps();
@@ -282,6 +306,9 @@ void linear_cpu_kernel<llaisys::bf16_t>(tensor_t out, tensor_t in,
     }
 
     // f32 → bf16 写回
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
     for (size_t idx = 0; idx < M * N; ++idx) {
         llaisys::bf16_t v = utils::cast<llaisys::bf16_t>(ybuf[idx]);
         Y[idx] = v._v;
@@ -289,7 +316,8 @@ void linear_cpu_kernel<llaisys::bf16_t>(tensor_t out, tensor_t in,
 }
 
 // ============================================================
-// float16 AVX2 特化
+// float16 AVX2 特化 (OpenMP 并行化)
+// ybuf 作为整体预分配，i 循环写入各自行 ybuf[i*N..i*N+N-1]，行间无竞争。
 // ============================================================
 template<>
 void linear_cpu_kernel<llaisys::fp16_t>(tensor_t out, tensor_t in,
@@ -308,6 +336,9 @@ void linear_cpu_kernel<llaisys::fp16_t>(tensor_t out, tensor_t in,
     std::vector<float> ybuf(M * N);
 
     if (B) {
+#ifdef _OPENMP
+        #pragma omp parallel for schedule(static)
+#endif
         for (size_t i = 0; i < M; ++i) {
             float* yrow = ybuf.data() + i * N;
             for (size_t j = 0; j < N; ++j)
@@ -332,6 +363,9 @@ void linear_cpu_kernel<llaisys::fp16_t>(tensor_t out, tensor_t in,
                 const uint16_t* w2 = W + (j0 + 2) * K + k0;
                 const uint16_t* w3 = W + (j0 + 3) * K + k0;
 
+#ifdef _OPENMP
+                #pragma omp parallel for schedule(static)
+#endif
                 for (size_t i = 0; i < M; ++i) {
                     const uint16_t* xi = X + i * K + k0;
 
@@ -382,6 +416,9 @@ void linear_cpu_kernel<llaisys::fp16_t>(tensor_t out, tensor_t in,
             } else {
                 for (size_t jj = 0; jj < jn; ++jj) {
                     const uint16_t* wj = W + (j0 + jj) * K + k0;
+#ifdef _OPENMP
+                    #pragma omp parallel for schedule(static)
+#endif
                     for (size_t i = 0; i < M; ++i) {
                         const uint16_t* xi = X + i * K + k0;
                         __m256 acc0 = _mm256_setzero_ps();
@@ -408,6 +445,9 @@ void linear_cpu_kernel<llaisys::fp16_t>(tensor_t out, tensor_t in,
     }
 
     // f32 → fp16 写回
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
     for (size_t idx = 0; idx < M * N; ++idx) {
         llaisys::fp16_t v = utils::cast<llaisys::fp16_t>(ybuf[idx]);
         Y_out[idx] = v._v;
