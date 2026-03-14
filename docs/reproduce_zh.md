@@ -18,7 +18,7 @@
 mx-smi
 mxcc --version
 python --version
-python -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))"
+python -c "import torch; print(torch.__version__); ok = torch.cuda.is_available(); print(ok); print(torch.cuda.get_device_name(0) if ok else 'no visible metax device')"
 echo "$LD_LIBRARY_PATH"
 ls /opt/maca/include | head
 ls /opt/maca/lib | head
@@ -51,6 +51,8 @@ export LD_LIBRARY_PATH=/opt/maca/lib:/opt/mxdriver/lib:$LD_LIBRARY_PATH
 apt-get update
 apt-get install -y xmake
 ```
+
+如果系统源里没有 `xmake` 包，需要改用 xmake 官方安装方式；只要最终 `xmake --version` 可用即可。
 
 注意：如果你以 root 身份运行，后续所有 `xmake` 命令都要额外带上 `XMAKE_ROOT=y`。
 
