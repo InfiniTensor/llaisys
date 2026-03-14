@@ -25,7 +25,7 @@ ls /opt/maca/lib | head
 ls /opt/mxdriver/lib | head
 ```
 
-当前提交所用机器的参考结果：
+参考环境：
 
 - `mx-smi 2.2.9`
 - `MetaX C500`
@@ -56,11 +56,13 @@ apt-get install -y xmake
 
 ### 3.2 Python 依赖
 
-当前仓库在 `test/test_infer.py` 的 Hugging Face 路径上需要 `accelerate`：
+当前仓库在 `test/test_infer.py` 的 Hugging Face 路径上至少需要以下 Python 依赖：
 
 ```bash
-python -m pip install accelerate
+python -m pip install transformers huggingface_hub accelerate
 ```
+
+如果当前平台已经预装对应版本，可以跳过这一步。
 
 ## 4. 构建
 
@@ -163,4 +165,3 @@ MetaX 相关测试必须跑在真实沐曦机器上。
 
 因为本机的 MetaX PyTorch 暴露的是 CUDA 语义接口，而不是新的 `torch.device("metax")` 命名空间。  
 所以 Hugging Face 对照仍然走 `torch.cuda`，但 LLAISYS 自己的设备类型是独立 `METAX`。
-

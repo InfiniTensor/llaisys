@@ -1,6 +1,12 @@
+# GitHub PR 提交模板
+
+## 标题
+
+`feat: support MetaX/MACA as the second backend for project 2`
+
 ## 正文
 
-本 PR 基于 `checkpoint/nvidia-done`，完成 LLAISYS 项目 2 第二平台 `MetaX/MACA` 的实际接入与验证，并补齐课程提交所需中文文档。
+本 PR 完成 LLAISYS 项目 2 第二平台 `MetaX/MACA` 的实际接入与验证，并补齐课程提交所需中文文档。
 
 ### 主要改动
 
@@ -11,7 +17,8 @@
 - `linear` 对接 `mcblasGemmEx`
 - `argmax` 和 `self_attention` 先以 host fallback 保证主链路正确
 - Python 侧补齐 `DeviceType.METAX` 与测试入口
-- 补齐提交总览、实现报告、复现流程和 PR 模板
+- 补齐提交总览、实现报告与复现流程
+- 本 PR 只包含实现代码与正式提交文档，本地学习材料、外部 PDF 与 handoff 文档未纳入提交
 
 ### 验证结果
 

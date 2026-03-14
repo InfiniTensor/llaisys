@@ -437,13 +437,12 @@ python test/test_infer.py --model [dir_path/to/model] --test --device nvidia
 
 ### 当前提交范围
 
-- 基线分支：`checkpoint/nvidia-done`
 - 当前主要交付：项目 2 第二平台 MetaX/MACA
 - 保持原有 `CPU + NVIDIA` 路径独立存在
+- 提交中只保留实现代码与正式提交文档
 
 ### 当前机器验证环境
 
-- 验证日期：2026-03-11
 - GPU：`MetaX C500`
 - `mx-smi`：`2.2.9`
 - `MACA`：`3.2.1.10`

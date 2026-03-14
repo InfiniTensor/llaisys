@@ -443,13 +443,12 @@ This section is appended for course submission and does not change the original 
 
 ### Scope
 
-- Base branch: `checkpoint/nvidia-done`
 - Main deliverable in this submission: Project #2 second platform on MetaX/MACA
 - Existing CPU + NVIDIA paths are preserved as separate code paths
+- Only implementation code and formal submission docs are tracked for submission
 
 ### Verified Environment
 
-- Validation date: 2026-03-11
 - GPU: `MetaX C500`
 - `mx-smi`: `2.2.9`
 - `MACA`: `3.2.1.10`

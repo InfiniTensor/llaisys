@@ -2,7 +2,7 @@
 
 ## 1. 当前提交范围
 
-当前仓库基于 `checkpoint/nvidia-done`，本次新增并已落地的内容是：
+本次提交新增并已落地的内容是：
 
 - 项目 2 第二平台：MetaX/MACA
 - 目标状态：从“设计稿”推进到“真实机器上可测试”
@@ -11,8 +11,6 @@
 当前文档全部按这个范围组织，不再沿用旧版“Metax 仅设计稿”或“TinyLlama 已完整交付”的表述。
 
 ## 2. 本机验证环境
-
-验证日期：2026 年 3 月 11 日
 
 - GPU：`MetaX C500`
 - `mx-smi`：`2.2.9`
@@ -52,6 +50,7 @@ python test/test_infer.py --device metax --test --model_id trl-internal-testing/
 
 ## 4. 关键说明
 
+- 为保持 PR 干净，本次提交只包含实现代码与正式提交文档；本地学习材料、外部 PDF 与 handoff 文档均未纳入仓库
 - MetaX 不是 C++ 层的 CUDA drop-in 兼容平台，因此后端必须单独适配
 - PyTorch 层保留 `torch.cuda` 语义，因此 Hugging Face 对照测试仍可继续复用 CUDA 命名空间
 - 当前推理验证聚焦 `Qwen2`
