@@ -188,8 +188,7 @@ python test/test_infer.py --device metax --test --model_id trl-internal-testing/
 `CPU + NVIDIA` 路径在代码组织上保持独立，但不在当前机器上重复列为实跑结果。其中：
 
 - CPU 基线不在这台机器上重复展开
-- NVIDIA 原有实现已被完整阅读并保留
-- 构建开关与代码路径没有被 MetaX 改写
+- NVIDIA 相关构建开关与代码路径没有被 MetaX 改写
 - 当前机器没有 NVIDIA 硬件，因此没有新增 `--device nvidia` 的实机回归数据
 
 ## 5. 踩坑记录

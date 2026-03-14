@@ -107,23 +107,23 @@ python test/test_ops.py --device metax
 
 ### 5.3 MetaX infer
 
-如果本地没有现成模型目录，直接用公开的小模型：
-
-```bash
-python test/test_infer.py --device metax --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
-```
-
-如果你已经准备好本地 Qwen2 模型目录，也可以这样跑：
+推荐优先使用本地 Qwen2 模型目录：
 
 ```bash
 python test/test_infer.py --device metax --test --model /path/to/local/qwen2_model --prompt hi --max_steps 1
+```
+
+如果当前机器网络可用，也可以直接使用公开的小模型：
+
+```bash
+python test/test_infer.py --device metax --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
 ```
 
 预期结果：
 
 - Hugging Face 和 LLAISYS 的 token 序列严格一致
 - 输出末尾打印 `Test passed!`
-- 当前机器实测可直接从 Hugging Face 拉取该测试模型；若网络不可用，再改用本地模型目录
+- 如果网络不可用，应改用本地模型目录继续验证
 
 ## 6. 常见问题
 
