@@ -93,14 +93,18 @@ public:
         if (dtype_ == LLAISYS_DTYPE_F32) {
             float* base = reinterpret_cast<float*>(data_);
             cast_helper(src, base, cols);
-            #pragma omp parallel for if(numel_ > 65536)
+#ifdef _OPENMP
+            #pragma omp parallel for if(numel_ > 16384)
+#endif
             for (size_t r = 1; r < rows; ++r) {
                 std::memcpy(base + r * cols, base, cols * sizeof(float));
             }
         } else {
             double* base = reinterpret_cast<double*>(data_);
             cast_helper(src, base, cols);
-            #pragma omp parallel for if(numel_ > 65536)
+#ifdef _OPENMP
+            #pragma omp parallel for if(numel_ > 16384)
+#endif
             for (size_t r = 1; r < rows; ++r) {
                 std::memcpy(base + r * cols, base, cols * sizeof(double));
             }
@@ -118,7 +122,7 @@ public:
             __m256 zero = _mm256_setzero_ps();
 
 #ifdef _OPENMP
-            #pragma omp parallel for if(numel_ > 65536)
+            #pragma omp parallel for if(numel_ > 16384)
 #endif
             for (size_t i = 0; i < last_block_start; i += 8) {
                 _mm256_store_ps(fdata + i, zero);
@@ -133,7 +137,7 @@ public:
             __m256d zero = _mm256_setzero_pd();
 
 #ifdef _OPENMP
-            #pragma omp parallel for if(numel_ > 65536)
+            #pragma omp parallel for if(numel_ > 16384)
 #endif
             for (size_t i = 0; i < last_block_start; i += 4) {
                 _mm256_store_pd(ddata + i, zero);
@@ -212,7 +216,7 @@ public:
                 size_t last_block_start = numel_ - (numel_ % 8);
 
 #ifdef _OPENMP
-                #pragma omp parallel for if(numel_ > 65536)
+                #pragma omp parallel for if(numel_ > 16384)
 #endif
                 for (size_t i = 0; i < last_block_start; i += 8) {
                     __m256d d1 = _mm256_load_pd(data_double + i);
@@ -249,7 +253,7 @@ private:
             const uint16_t* raw_src = reinterpret_cast<const uint16_t*>(static_cast<const void*>(src));
 
 #ifdef _OPENMP
-            #pragma omp parallel for if(n > 65536)
+            #pragma omp parallel for if(n > 16384)
 #endif
             for (size_t i = 0; i < last_block_start; i += 16) {
                 __m256i vfp16 = _mm256_loadu_si256((const __m256i*)(raw_src + i));
@@ -267,7 +271,7 @@ private:
             const uint16_t* raw_src = reinterpret_cast<const uint16_t*>(static_cast<const void*>(src));
 
 #ifdef _OPENMP
-            #pragma omp parallel for if(n > 65536)
+            #pragma omp parallel for if(n > 16384)
 #endif
             for (size_t i = 0; i < last_block_start; i += 16) {
                 __m256i vbf16 = _mm256_loadu_si256((const __m256i*)(raw_src + i));
@@ -297,7 +301,7 @@ private:
             const size_t last_block_start = n - (n % 8);
 
 #ifdef _OPENMP
-            #pragma omp parallel for if(n > 65536)
+            #pragma omp parallel for if(n > 16384)
 #endif
             for (size_t i = 0; i < last_block_start; i += 8) {
                 __m256i vi = _mm256_loadu_si256((__m256i*)(src + i));
