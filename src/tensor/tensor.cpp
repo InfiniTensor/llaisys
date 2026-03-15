@@ -31,7 +31,7 @@ tensor_t Tensor::create(const std::vector<size_t> &shape,
     size_t total_elems = stride;
     size_t dtype_size = utils::dsize(dtype);
 
-    // 针对cpu的性能优化：runtime是cuda，但需要cpu内存，直接创建，而不需要将runtime切换到cpu再分配内存
+    // Fast path for host tensors when the active runtime is non-CPU.
     if (device_type == LLAISYS_DEVICE_CPU && core::context().runtime().deviceType() != LLAISYS_DEVICE_CPU) {
         auto storage = core::context().runtime().allocateHostStorage(total_elems * dtype_size);
         return std::shared_ptr<Tensor>(new Tensor(meta, storage));
@@ -169,27 +169,20 @@ void Tensor::debug() const {
     }
 }
 
-// 连续：指元素在内存中排布方式与tensor按行优先展开的顺序一致
-// 判断公式：stride[i] = stride[i+1] * shape[i+1]
 bool Tensor::isContiguous() const {
-    const auto& tensor_shape = shape();
-    const auto& tensor_strides =strides();
-    const size_t& tensor_ndim = ndim();
+    const auto &tensor_shape = shape();
+    const auto &tensor_strides = strides();
+    const size_t &tensor_ndim = ndim();
 
-    // 标量总是连续的
     if (tensor_ndim == 0 || tensor_ndim == 1) {
         return true;
     }
 
-    // size_t dtype_size = elementSize(); ×
-    // pytorch中以元素数量为单位，而不是字节
-    // 一维张量的步长必须为1
     if (tensor_ndim == 1) {
         return tensor_strides[0] == 1;
     }
     ptrdiff_t expected_stride = 1;
 
-    // 从后往前检查(逐步升维)
     for (ptrdiff_t i = static_cast<ptrdiff_t>(tensor_ndim) - 1; i >= 0; i--) {
         if (tensor_strides[i] != expected_stride) {
             return false;
@@ -199,47 +192,37 @@ bool Tensor::isContiguous() const {
     return true;
 }
 
-// 重排序列维度：不复制数据，需要调整shape和strides
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
     CHECK_ARGUMENT(order.size() == ndim(), "order size != tensor ndim");
 
-    // 检查每个维度是否只出现一次
     std::vector<bool> used(ndim(), false);
-    for (auto index:order) {
+    for (auto index : order) {
         CHECK_ARGUMENT(index < ndim(), "order index out of dim range");
         CHECK_ARGUMENT(!used[index], "index repition");
         used[index] = true;
     }
 
-    // 1. 创建新的meta
     llaisys::TensorMeta new_meta = _meta;
     for (size_t i = 0; i < order.size(); ++i) {
         new_meta.shape[i] = _meta.shape[order[i]];
         new_meta.strides[i] = _meta.strides[order[i]];
     }
 
-    // 不需要复制为新的数据，所以storage不用改变
     return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, _offset));
 }
 
-// view:改变张量的形状，不复制数据
-// offset不变，根据新的shape计算新的strides
-// 连续型数据张量：直接重塑meta即可
-// 非连续：还没想明白
+// View reshapes metadata only and requires a contiguous tensor.
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    // 检查元素总数
     size_t new_numel = 1;
     for (auto num : shape) {
         new_numel *= num;
     }
     CHECK_ARGUMENT(new_numel == numel(), "view size match");
 
-    // 如果张量是连续的，直接重塑即可
     if (isContiguous()) {
         TensorMeta new_meta = _meta;
         new_meta.shape = shape;
 
-        // 计算新的 strides（从后往前）
         new_meta.strides.resize(shape.size());
         ptrdiff_t stride = 1;
         for (int i = static_cast<int>(shape.size()) - 1; i >= 0; i--) {
@@ -250,45 +233,31 @@ tensor_t Tensor::view(const std::vector<size_t> &shape) const {
         return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, _offset));
     }
 
-    // 非连续张量暂时不支持
     return nullptr;
 }
 
-// 切片：不复制数据只调整shape和offset，在底层和原本张量共享数据
-// stride不变，因为底层内存的位置并没有改动
-// 张量在内存中布局的关键：offset(起始位置)、shape(每个维度的范围)、strides(如何遍历：遍历到不同维度的步长)
+// Slice shares storage and only adjusts shape and offset.
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    // 1. 边界检查
     CHECK_ARGUMENT(dim < ndim(), "dim out of range");
     CHECK_ARGUMENT(start < end, "start must less than end");
     CHECK_ARGUMENT(end <= shape()[dim], "end out of range");
 
-    // 2. 创建新的meta
     llaisys::TensorMeta new_meta = _meta;
     new_meta.shape[dim] = end - start;
 
-    // 3. 计算offset
-    // strides以元素为单位，计算每个维度上元素的偏移量；offset以字节为单位，记录该张量在storage中的起始位置
     size_t new_offset = _offset + start * strides()[dim] * elementSize();
 
     return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, new_offset));
 }
 
 void Tensor::load(const void *src_) {
-    // 设置当前张量所在的设备上下文
     core::context().setDevice(this->deviceType(), this->deviceId());
 
-    // 获取运行时API
     const LlaisysRuntimeAPI *api = core::context().runtime().api();
 
-    // 计算需要拷贝的字节数：元素个数 × 每个元素的字节数
     size_t size_bytes = this->numel() * this->elementSize();
 
-    // 执行从主机到设备的内存拷贝
-    // dst: 张量的设备内存地址 (this->data())
-    // src: 主机内存地址 (src_)
-    // size: 要拷贝的字节数
-    // kind: H2D (Host to Device)
+    // Copy host data into the tensor storage.
     api->memcpy_sync(this->data(), src_, size_bytes, LLAISYS_MEMCPY_H2D);
 }
 
