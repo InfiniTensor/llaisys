@@ -1,0 +1,77 @@
+#include "add_metax.hpp"
+
+#include "../../../utils.hpp"
+
+#include <common/maca_bfloat16.h>
+#include <common/maca_fp16.h>
+#include <mc_runtime.h>
+
+namespace {
+
+__global__ void add_f32_kernel(float *c, const float *a, const float *b, size_t n) {
+    const size_t idx = static_cast<size_t>(blockIdx.x) * static_cast<size_t>(blockDim.x) +
+                       static_cast<size_t>(threadIdx.x);
+    if (idx < n) {
+        c[idx] = a[idx] + b[idx];
+    }
+}
+
+__global__ void add_f16_kernel(__half *c, const __half *a, const __half *b, size_t n) {
+    const size_t idx = static_cast<size_t>(blockIdx.x) * static_cast<size_t>(blockDim.x) +
+                       static_cast<size_t>(threadIdx.x);
+    if (idx < n) {
+        c[idx] = __hadd(a[idx], b[idx]);
+    }
+}
+
+__global__ void add_bf16_kernel(__maca_bfloat16 *c,
+                                const __maca_bfloat16 *a,
+                                const __maca_bfloat16 *b,
+                                size_t n) {
+    const size_t idx = static_cast<size_t>(blockIdx.x) * static_cast<size_t>(blockDim.x) +
+                       static_cast<size_t>(threadIdx.x);
+    if (idx < n) {
+        c[idx] = __hadd(a[idx], b[idx]);
+    }
+}
+
+} // namespace
+
+namespace llaisys::ops::metax {
+
+void add(void *c, const void *a, const void *b, llaisysDataType_t type, size_t numel) {
+    if (numel == 0) {
+        return;
+    }
+
+    const dim3 block(256);
+    const dim3 grid((numel + block.x - 1) / block.x);
+
+    switch (type) {
+    case LLAISYS_DTYPE_F32:
+        add_f32_kernel<<<grid, block>>>(
+            reinterpret_cast<float *>(c),
+            reinterpret_cast<const float *>(a),
+            reinterpret_cast<const float *>(b),
+            numel);
+        break;
+    case LLAISYS_DTYPE_F16:
+        add_f16_kernel<<<grid, block>>>(
+            reinterpret_cast<__half *>(c),
+            reinterpret_cast<const __half *>(a),
+            reinterpret_cast<const __half *>(b),
+            numel);
+        break;
+    case LLAISYS_DTYPE_BF16:
+        add_bf16_kernel<<<grid, block>>>(
+            reinterpret_cast<__maca_bfloat16 *>(c),
+            reinterpret_cast<const __maca_bfloat16 *>(a),
+            reinterpret_cast<const __maca_bfloat16 *>(b),
+            numel);
+        break;
+    default:
+        EXCEPTION_UNSUPPORTED_DATATYPE(type);
+    }
+}
+
+} // namespace llaisys::ops::metax

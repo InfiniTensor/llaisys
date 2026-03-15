@@ -9,14 +9,16 @@ using tensor_t = std::shared_ptr<Tensor>;
 struct TensorMeta {
     llaisysDataType_t dtype;
     std::vector<size_t> shape;
-    std::vector<ptrdiff_t> strides;
+    std::vector<ptrdiff_t> strides;   // 以元素为单位，计算每个维度上元素的偏移量
 };
 
+// 逻辑上组织张量：shape、strides、offset
+// 物理上组织张量：storage
 class Tensor {
 private:
     TensorMeta _meta;
     core::storage_t _storage;
-    size_t _offset;
+    size_t _offset;  //以字节为单位，记录该张量在storage中的起始位置(一个storage存储不同的张量)
     Tensor(TensorMeta meta, core::storage_t storage, size_t offset = 0);
 
 public:

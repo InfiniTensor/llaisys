@@ -1,0 +1,117 @@
+#include "../runtime_api.hpp"
+#include "llaisys.h"
+
+#include <mc_runtime.h>
+
+#include <cstdlib>
+#include <cstring>
+
+namespace llaisys::device::metax {
+
+namespace runtime_api {
+
+static mcMemcpyKind toMcMemcpyKind(llaisysMemcpyKind_t kind) {
+    switch (kind) {
+    case LLAISYS_MEMCPY_H2H:
+        return mcMemcpyHostToHost;
+    case LLAISYS_MEMCPY_H2D:
+        return mcMemcpyHostToDevice;
+    case LLAISYS_MEMCPY_D2H:
+        return mcMemcpyDeviceToHost;
+    case LLAISYS_MEMCPY_D2D:
+        return mcMemcpyDeviceToDevice;
+    default:
+        return mcMemcpyDefault;
+    }
+}
+
+int getDeviceCount() {
+    int n = 0;
+    mcError_t e = mcGetDeviceCount(&n);
+    if (e != mcSuccess) {
+        return 0;
+    }
+    return n;
+}
+
+void setDevice(int device_id) {
+    mcSetDevice(device_id);
+}
+
+void deviceSynchronize() {
+    mcDeviceSynchronize();
+}
+
+llaisysStream_t createStream() {
+    mcStream_t s = nullptr;
+    mcError_t e = mcStreamCreate(&s);
+    if (e != mcSuccess) {
+        return nullptr;
+    }
+    return reinterpret_cast<llaisysStream_t>(s);
+}
+
+void destroyStream(llaisysStream_t stream) {
+    if (stream) {
+        mcStreamDestroy(reinterpret_cast<mcStream_t>(stream));
+    }
+}
+
+void streamSynchronize(llaisysStream_t stream) {
+    if (stream) {
+        mcStreamSynchronize(reinterpret_cast<mcStream_t>(stream));
+    }
+}
+
+void *mallocDevice(size_t size) {
+    void *p = nullptr;
+    mcMalloc(&p, size);
+    return p;
+}
+
+void freeDevice(void *ptr) {
+    if (ptr) {
+        mcFree(ptr);
+    }
+}
+
+void *mallocHost(size_t size) {
+    // Keep host allocation policy aligned with CPU/NVIDIA backends.
+    return std::malloc(size);
+}
+
+void freeHost(void *ptr) {
+    std::free(ptr);
+}
+
+void memcpySync(void *dst, const void *src, size_t size, llaisysMemcpyKind_t kind) {
+    mcMemcpy(dst, src, size, toMcMemcpyKind(kind));
+}
+
+void memcpyAsync(void *dst, const void *src, size_t size, llaisysMemcpyKind_t kind, llaisysStream_t stream) {
+    mcStream_t s = stream ? reinterpret_cast<mcStream_t>(stream) : (mcStream_t)0;
+    mcMemcpyAsync(dst, src, size, toMcMemcpyKind(kind), s);
+}
+
+static const LlaisysRuntimeAPI RUNTIME_API = {
+    &getDeviceCount,
+    &setDevice,
+    &deviceSynchronize,
+    &createStream,
+    &destroyStream,
+    &streamSynchronize,
+    &mallocDevice,
+    &freeDevice,
+    &mallocHost,
+    &freeHost,
+    &memcpySync,
+    &memcpyAsync,
+};
+
+} // namespace runtime_api
+
+const LlaisysRuntimeAPI *getRuntimeAPI() {
+    return &runtime_api::RUNTIME_API;
+}
+
+} // namespace llaisys::device::metax

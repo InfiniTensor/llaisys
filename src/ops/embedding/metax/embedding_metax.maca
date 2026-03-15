@@ -1,0 +1,71 @@
+#include "embedding_metax.hpp"
+
+#include "../../../utils.hpp"
+
+#include <common/maca_bfloat16.h>
+#include <common/maca_fp16.h>
+#include <mc_runtime.h>
+
+#include <cstddef>
+#include <cstdint>
+
+namespace {
+
+template <typename T>
+__global__ void embedding_kernel(T *out, const int64_t *index, const T *weight,
+                                 size_t index_numel, size_t embedding_dim) {
+    const size_t row = static_cast<size_t>(blockIdx.x);
+    if (row >= index_numel) {
+        return;
+    }
+
+    const int64_t idx = index[row];
+    const size_t in_start = static_cast<size_t>(idx) * embedding_dim;
+    const size_t out_start = row * embedding_dim;
+
+    for (size_t col = static_cast<size_t>(threadIdx.x); col < embedding_dim;
+         col += static_cast<size_t>(blockDim.x)) {
+        out[out_start + col] = weight[in_start + col];
+    }
+}
+
+} // namespace
+
+namespace llaisys::ops::metax {
+
+void embedding(std::byte *out, const std::byte *index, const std::byte *weight,
+               llaisysDataType_t type, size_t index_numel,
+               size_t embedding_dim) {
+    if (index_numel == 0 || embedding_dim == 0) {
+        return;
+    }
+
+    const int block_size = 512;
+    const int grid_size = static_cast<int>(index_numel);
+
+    switch (type) {
+    case LLAISYS_DTYPE_F32:
+        embedding_kernel<float><<<grid_size, block_size>>>(
+            reinterpret_cast<float *>(out),
+            reinterpret_cast<const int64_t *>(index),
+            reinterpret_cast<const float *>(weight), index_numel, embedding_dim);
+        break;
+    case LLAISYS_DTYPE_F16:
+        embedding_kernel<__half><<<grid_size, block_size>>>(
+            reinterpret_cast<__half *>(out),
+            reinterpret_cast<const int64_t *>(index),
+            reinterpret_cast<const __half *>(weight), index_numel, embedding_dim);
+        break;
+    case LLAISYS_DTYPE_BF16:
+        embedding_kernel<__maca_bfloat16><<<grid_size, block_size>>>(
+            reinterpret_cast<__maca_bfloat16 *>(out),
+            reinterpret_cast<const int64_t *>(index),
+            reinterpret_cast<const __maca_bfloat16 *>(weight), index_numel,
+            embedding_dim);
+        break;
+    default:
+        EXCEPTION_UNSUPPORTED_DATATYPE(type);
+    }
+}
+
+} // namespace llaisys::ops::metax

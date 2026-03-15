@@ -1,6 +1,15 @@
+# 辅助脚本与 IDE/构建生成
+.clangd
+compile_commands.json
+clean.sh
+scripts/inspect_safetensors.py
+
+# -----------------------------------------------------------------------------
+# 构建与二进制
+# -----------------------------------------------------------------------------
 # Xmake cache
 .xmake/
-build/
+build*/
 
 # Binaries
 bin/
@@ -15,6 +24,9 @@ lib/
 
 # Vscode
 .vscode/
+# But keep configuration files
+!.vscode/c_cpp_properties.json
+!.vscode/settings.json
 
 # Python
 __pycache__/
@@ -77,10 +89,12 @@ htmlcov/
 
 # IDE and editor settings
 .vscode/
+# But keep configuration files
+!.vscode/c_cpp_properties.json
+!.vscode/settings.json
 .idea/
 *.swp
 *~
-
 # macOS
 .DS_Store
 
@@ -88,3 +102,5 @@ htmlcov/
 Thumbs.db
 ehthumbs.db
 desktop.ini
+
+METAX_BACKEND_REPORT.md

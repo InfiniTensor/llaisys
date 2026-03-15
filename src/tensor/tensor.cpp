@@ -2,9 +2,14 @@
 
 #include "../utils.hpp"
 
+#include <cstddef>
 #include <cstring>
+#include <iterator>
 #include <numeric>
 #include <sstream>
+#include <vector>
+
+#include <iostream>
 
 namespace llaisys {
 
@@ -26,6 +31,7 @@ tensor_t Tensor::create(const std::vector<size_t> &shape,
     size_t total_elems = stride;
     size_t dtype_size = utils::dsize(dtype);
 
+    // Fast path for host tensors when the active runtime is non-CPU.
     if (device_type == LLAISYS_DEVICE_CPU && core::context().runtime().deviceType() != LLAISYS_DEVICE_CPU) {
         auto storage = core::context().runtime().allocateHostStorage(total_elems * dtype_size);
         return std::shared_ptr<Tensor>(new Tensor(meta, storage));
@@ -164,27 +170,95 @@ void Tensor::debug() const {
 }
 
 bool Tensor::isContiguous() const {
-    TO_BE_IMPLEMENTED();
+    const auto &tensor_shape = shape();
+    const auto &tensor_strides = strides();
+    const size_t &tensor_ndim = ndim();
+
+    if (tensor_ndim == 0 || tensor_ndim == 1) {
+        return true;
+    }
+
+    if (tensor_ndim == 1) {
+        return tensor_strides[0] == 1;
+    }
+    ptrdiff_t expected_stride = 1;
+
+    for (ptrdiff_t i = static_cast<ptrdiff_t>(tensor_ndim) - 1; i >= 0; i--) {
+        if (tensor_strides[i] != expected_stride) {
+            return false;
+        }
+        expected_stride *= tensor_shape[i];
+    }
     return true;
 }
 
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    CHECK_ARGUMENT(order.size() == ndim(), "order size != tensor ndim");
+
+    std::vector<bool> used(ndim(), false);
+    for (auto index : order) {
+        CHECK_ARGUMENT(index < ndim(), "order index out of dim range");
+        CHECK_ARGUMENT(!used[index], "index repition");
+        used[index] = true;
+    }
+
+    llaisys::TensorMeta new_meta = _meta;
+    for (size_t i = 0; i < order.size(); ++i) {
+        new_meta.shape[i] = _meta.shape[order[i]];
+        new_meta.strides[i] = _meta.strides[order[i]];
+    }
+
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, _offset));
 }
 
+// View reshapes metadata only and requires a contiguous tensor.
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    size_t new_numel = 1;
+    for (auto num : shape) {
+        new_numel *= num;
+    }
+    CHECK_ARGUMENT(new_numel == numel(), "view size match");
+
+    if (isContiguous()) {
+        TensorMeta new_meta = _meta;
+        new_meta.shape = shape;
+
+        new_meta.strides.resize(shape.size());
+        ptrdiff_t stride = 1;
+        for (int i = static_cast<int>(shape.size()) - 1; i >= 0; i--) {
+            new_meta.strides[i] = stride;
+            stride *= static_cast<ptrdiff_t>(shape[i]);
+        }
+
+        return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, _offset));
+    }
+
+    return nullptr;
 }
 
+// Slice shares storage and only adjusts shape and offset.
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    CHECK_ARGUMENT(dim < ndim(), "dim out of range");
+    CHECK_ARGUMENT(start < end, "start must less than end");
+    CHECK_ARGUMENT(end <= shape()[dim], "end out of range");
+
+    llaisys::TensorMeta new_meta = _meta;
+    new_meta.shape[dim] = end - start;
+
+    size_t new_offset = _offset + start * strides()[dim] * elementSize();
+
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, new_offset));
 }
 
 void Tensor::load(const void *src_) {
-    TO_BE_IMPLEMENTED();
+    core::context().setDevice(this->deviceType(), this->deviceId());
+
+    const LlaisysRuntimeAPI *api = core::context().runtime().api();
+
+    size_t size_bytes = this->numel() * this->elementSize();
+
+    // Copy host data into the tensor storage.
+    api->memcpy_sync(this->data(), src_, size_bytes, LLAISYS_MEMCPY_H2D);
 }
 
 tensor_t Tensor::contiguous() const {

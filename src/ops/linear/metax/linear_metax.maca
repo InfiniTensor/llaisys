@@ -1,0 +1,301 @@
+#include "linear_metax.hpp"
+
+#include "../../../utils.hpp"
+
+#include <common/maca_bfloat16.h>
+#include <common/maca_fp16.h>
+#include <mc_runtime.h>
+#include <mcblas/mcblas.h>
+
+#include <cstddef>
+
+namespace {
+
+__host__ __device__ __forceinline__ int ceil_div_int(int x, int y) {
+    return (x + y - 1) / y;
+}
+
+constexpr int METAX_WARP_SIZE = 64;
+
+template <typename T> __device__ __forceinline__ float to_float(T v) {
+    return static_cast<float>(v);
+}
+
+template <> __device__ __forceinline__ float to_float<__half>(__half v) {
+    return __half2float(v);
+}
+
+template <>
+__device__ __forceinline__ float to_float<__maca_bfloat16>(__maca_bfloat16 v) {
+    return __bfloat162float(v);
+}
+
+template <typename T> __device__ __forceinline__ T from_float(float v) {
+    return static_cast<T>(v);
+}
+
+template <> __device__ __forceinline__ __half from_float<__half>(float v) {
+    return __float2half(v);
+}
+
+template <>
+__device__ __forceinline__ __maca_bfloat16
+from_float<__maca_bfloat16>(float v) {
+    return __float2bfloat16(v);
+}
+
+template <typename T>
+__global__ void add_bias_rowwise_kernel(T *out, const T *bias, size_t M,
+                                        size_t N) {
+    const size_t idx
+        = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    const size_t total = M * N;
+    for (size_t i = idx; i < total;
+         i += static_cast<size_t>(blockDim.x) * gridDim.x) {
+        const size_t col = i % N;
+        out[i] = from_float<T>(to_float(out[i]) + to_float(bias[col]));
+    }
+}
+
+template <typename T>
+inline void launch_add_bias(T *out, const T *bias, size_t M, size_t N) {
+    if (bias == nullptr || M == 0 || N == 0) {
+        return;
+    }
+    constexpr int block_size = METAX_WARP_SIZE * 8;
+    const int grid_size = ceil_div_int(static_cast<int>(M * N), block_size);
+    add_bias_rowwise_kernel<<<grid_size, block_size>>>(out, bias, M, N);
+}
+
+inline bool mcblas_ok(mcblasStatus_t status) {
+    return static_cast<int>(status) == 0;
+}
+
+inline mcblasHandle_t get_mcblas_handle() {
+    static thread_local mcblasHandle_t handle = []() {
+        mcblasHandle_t h = nullptr;
+        if (!mcblas_ok(mcblasCreate(&h))) {
+            return static_cast<mcblasHandle_t>(nullptr);
+        }
+        return h;
+    }();
+    return handle;
+}
+
+inline bool linear_mcblas_f32(float *out, const float *in, const float *weight,
+                              const float *bias, size_t M, size_t N, size_t K) {
+    mcblasHandle_t handle = get_mcblas_handle();
+    if (handle == nullptr) {
+        return false;
+    }
+
+    if (!mcblas_ok(mcblasSetPointerMode(handle, MCBLAS_POINTER_MODE_HOST))) {
+        return false;
+    }
+    if (!mcblas_ok(mcblasSetAtomicsMode(handle, MCBLAS_ATOMICS_NOT_ALLOWED))) {
+        return false;
+    }
+
+    mcblasMath_t math_mode = MCBLAS_PEDANTIC_MATH;
+#ifdef MCBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION
+    math_mode = static_cast<mcblasMath_t>(
+        static_cast<int>(math_mode)
+        | static_cast<int>(MCBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION));
+#endif
+    if (!mcblas_ok(mcblasSetMathMode(handle, math_mode))) {
+        return false;
+    }
+
+    const int m = static_cast<int>(N);
+    const int n = static_cast<int>(M);
+    const int k = static_cast<int>(K);
+    const int lda = static_cast<int>(K);
+    const int ldb = static_cast<int>(K);
+    const int ldc = static_cast<int>(N);
+    const float alpha = 1.0f;
+    const float beta = 0.0f;
+
+    const mcblasStatus_t status
+        = mcblasSgemm(handle, MCBLAS_OP_T, MCBLAS_OP_N, m, n, k, &alpha, weight,
+                      lda, in, ldb, &beta, out, ldc);
+    if (!mcblas_ok(status)) {
+        return false;
+    }
+
+    launch_add_bias(out, bias, M, N);
+    return true;
+}
+
+inline bool linear_mcblas_f16(__half *out, const __half *in,
+                              const __half *weight, const __half *bias,
+                              size_t M, size_t N, size_t K) {
+    mcblasHandle_t handle = get_mcblas_handle();
+    if (handle == nullptr) {
+        return false;
+    }
+
+    if (!mcblas_ok(mcblasSetPointerMode(handle, MCBLAS_POINTER_MODE_HOST))) {
+        return false;
+    }
+    if (!mcblas_ok(mcblasSetAtomicsMode(handle, MCBLAS_ATOMICS_ALLOWED))) {
+        return false;
+    }
+#ifdef MCBLAS_TENSOR_OP_MATH
+    if (!mcblas_ok(mcblasSetMathMode(handle, MCBLAS_TENSOR_OP_MATH))) {
+        return false;
+    }
+#endif
+
+    const int m = static_cast<int>(N);
+    const int n = static_cast<int>(M);
+    const int k = static_cast<int>(K);
+    const int lda = static_cast<int>(K);
+    const int ldb = static_cast<int>(K);
+    const int ldc = static_cast<int>(N);
+    const float alpha = 1.0f;
+    const float beta = 0.0f;
+
+    mcblasComputeType_t compute_type = MCBLAS_COMPUTE_32F;
+    bool used_fast_compute = false;
+#ifdef MCBLAS_COMPUTE_32F_FAST_16F
+    compute_type = MCBLAS_COMPUTE_32F_FAST_16F;
+    used_fast_compute = true;
+#endif
+    mcblasGemmAlgo_t algo = MCBLAS_GEMM_DEFAULT;
+#ifdef MCBLAS_GEMM_DEFAULT_TENSOR_OP
+    algo = MCBLAS_GEMM_DEFAULT_TENSOR_OP;
+#endif
+
+    mcblasStatus_t status
+        = mcblasGemmEx(handle, MCBLAS_OP_T, MCBLAS_OP_N, m, n, k, &alpha,
+                       weight, MACA_R_16F, lda, in, MACA_R_16F, ldb, &beta, out,
+                       MACA_R_16F, ldc, compute_type, algo);
+
+    if (!mcblas_ok(status) && algo != MCBLAS_GEMM_DEFAULT) {
+        status = mcblasGemmEx(handle, MCBLAS_OP_T, MCBLAS_OP_N, m, n, k, &alpha,
+                              weight, MACA_R_16F, lda, in, MACA_R_16F, ldb,
+                              &beta, out, MACA_R_16F, ldc, compute_type,
+                              MCBLAS_GEMM_DEFAULT);
+    }
+    if (!mcblas_ok(status) && used_fast_compute) {
+        status = mcblasGemmEx(handle, MCBLAS_OP_T, MCBLAS_OP_N, m, n, k, &alpha,
+                              weight, MACA_R_16F, lda, in, MACA_R_16F, ldb,
+                              &beta, out, MACA_R_16F, ldc, MCBLAS_COMPUTE_32F,
+                              MCBLAS_GEMM_DEFAULT);
+    }
+    if (!mcblas_ok(status)) {
+        return false;
+    }
+
+    launch_add_bias(out, bias, M, N);
+    return true;
+}
+
+inline bool linear_mcblas_bf16(__maca_bfloat16 *out, const __maca_bfloat16 *in,
+                               const __maca_bfloat16 *weight,
+                               const __maca_bfloat16 *bias, size_t M, size_t N,
+                               size_t K) {
+    mcblasHandle_t handle = get_mcblas_handle();
+    if (handle == nullptr) {
+        return false;
+    }
+
+    if (!mcblas_ok(mcblasSetPointerMode(handle, MCBLAS_POINTER_MODE_HOST))) {
+        return false;
+    }
+    if (!mcblas_ok(mcblasSetAtomicsMode(handle, MCBLAS_ATOMICS_ALLOWED))) {
+        return false;
+    }
+#ifdef MCBLAS_TENSOR_OP_MATH
+    if (!mcblas_ok(mcblasSetMathMode(handle, MCBLAS_TENSOR_OP_MATH))) {
+        return false;
+    }
+#endif
+
+    const int m = static_cast<int>(N);
+    const int n = static_cast<int>(M);
+    const int k = static_cast<int>(K);
+    const int lda = static_cast<int>(K);
+    const int ldb = static_cast<int>(K);
+    const int ldc = static_cast<int>(N);
+    const float alpha = 1.0f;
+    const float beta = 0.0f;
+
+    mcblasComputeType_t compute_type = MCBLAS_COMPUTE_32F;
+    bool used_fast_compute = false;
+#ifdef MCBLAS_COMPUTE_32F_FAST_16BF
+    compute_type = MCBLAS_COMPUTE_32F_FAST_16BF;
+    used_fast_compute = true;
+#endif
+    mcblasGemmAlgo_t algo = MCBLAS_GEMM_DEFAULT;
+#ifdef MCBLAS_GEMM_DEFAULT_TENSOR_OP
+    algo = MCBLAS_GEMM_DEFAULT_TENSOR_OP;
+#endif
+
+    mcblasStatus_t status
+        = mcblasGemmEx(handle, MCBLAS_OP_T, MCBLAS_OP_N, m, n, k, &alpha,
+                       weight, MACA_R_16BF, lda, in, MACA_R_16BF, ldb, &beta,
+                       out, MACA_R_16BF, ldc, compute_type, algo);
+
+    if (!mcblas_ok(status) && algo != MCBLAS_GEMM_DEFAULT) {
+        status = mcblasGemmEx(handle, MCBLAS_OP_T, MCBLAS_OP_N, m, n, k, &alpha,
+                              weight, MACA_R_16BF, lda, in, MACA_R_16BF, ldb,
+                              &beta, out, MACA_R_16BF, ldc, compute_type,
+                              MCBLAS_GEMM_DEFAULT);
+    }
+    if (!mcblas_ok(status) && used_fast_compute) {
+        status = mcblasGemmEx(handle, MCBLAS_OP_T, MCBLAS_OP_N, m, n, k, &alpha,
+                              weight, MACA_R_16BF, lda, in, MACA_R_16BF, ldb,
+                              &beta, out, MACA_R_16BF, ldc, MCBLAS_COMPUTE_32F,
+                              MCBLAS_GEMM_DEFAULT);
+    }
+    if (!mcblas_ok(status)) {
+        return false;
+    }
+
+    launch_add_bias(out, bias, M, N);
+    return true;
+}
+
+
+} // namespace
+
+namespace llaisys::ops::metax {
+
+void linear(std::byte *out, const std::byte *in, const std::byte *weight,
+            const std::byte *bias, llaisysDataType_t type, size_t M, size_t N,
+            size_t K) {
+    if (M == 0 || N == 0 || K == 0) {
+        return;
+    }
+
+    switch (type) {
+    case LLAISYS_DTYPE_F32: {
+        const bool ok = linear_mcblas_f32(
+            reinterpret_cast<float *>(out), reinterpret_cast<const float *>(in),
+            reinterpret_cast<const float *>(weight),
+            reinterpret_cast<const float *>(bias), M, N, K);
+        break;
+    }
+    case LLAISYS_DTYPE_F16: {
+        const bool ok = linear_mcblas_f16(
+            reinterpret_cast<__half *>(out),
+            reinterpret_cast<const __half *>(in),
+            reinterpret_cast<const __half *>(weight),
+            reinterpret_cast<const __half *>(bias), M, N, K);
+        break;
+    }
+    case LLAISYS_DTYPE_BF16: {
+        const bool ok = linear_mcblas_bf16(
+            reinterpret_cast<__maca_bfloat16 *>(out),
+            reinterpret_cast<const __maca_bfloat16 *>(in),
+            reinterpret_cast<const __maca_bfloat16 *>(weight),
+            reinterpret_cast<const __maca_bfloat16 *>(bias), M, N, K);
+        break;
+    }
+    default:
+        EXCEPTION_UNSUPPORTED_DATATYPE(type);
+    }
+}
+
+} // namespace llaisys::ops::metax
