@@ -30,6 +30,7 @@ target("llaisys-utils")
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
         add_cxflags("-fopenmp")
+        add_cxflags("-mavx2", "-mf16c")
         add_ldflags("-fopenmp")
     else
         add_cxxflags("/openmp")

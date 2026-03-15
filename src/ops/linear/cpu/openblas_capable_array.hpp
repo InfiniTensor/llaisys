@@ -1,3 +1,5 @@
+#pragma once
+
 #include "llaisys.h"
 
 #include <cstring>
@@ -5,23 +7,27 @@
 
 #include <type_traits>
 #include <new>
-#include <iostream>
 #include <stdexcept>
 
 #ifdef __C
+    #define LLAISYS_EXTERN_C 1
     #pragma push_macro("__C")
     #undef __C
 #endif
 
 #include <immintrin.h>   // 只在这个 cpp 内部使用
-#ifdef __C
+
+#ifdef LLAISYS_EXTERN_C
+    #undef LLAISYS_EXTERN_C
     #pragma pop_macro("__C")
 #endif
 
 #include <omp.h>
 
-namespace llaisys::ops::utils {
-// AVX2 + F16C vectorized conversions
+#include "../../../utils.hpp"  // for llaisys::utils::cast + fp16/bf16 helpers
+
+namespace llaisys::ops::linear::cpu {
+// AVX2 + F16C vectorized conversions for OpenBLAS
 class OpenBlasCapableArray {
 public:
     // Allocate an intermediate buffer suitable for OpenBLAS (F32/F64).
@@ -160,48 +166,11 @@ public:
             const float* data_float = reinterpret_cast<const float*>(data_);
             if constexpr (std::is_same_v<T, fp16_t>) {
                 uint16_t* dst_raw = reinterpret_cast<uint16_t*>(static_cast<void*>(dst));
-                size_t last_block_start = numel_ - (numel_ % 16);
-
-#ifdef _OPENMP
-                #pragma omp parallel for if(numel_ > 16384)
-#endif
-                for (size_t i = 0; i < last_block_start; i += 16) {
-                    __m256 lo = _mm256_load_ps(data_float + i);
-                    __m256 hi = _mm256_load_ps(data_float + i + 8);
-                    __m128i lo16 = _mm256_cvtps_ph(lo, 0);
-                    __m128i hi16 = _mm256_cvtps_ph(hi, 0);
-                    __m256i combined = _mm256_set_m128i(hi16, lo16);
-                    _mm256_storeu_si256((__m256i*)(dst_raw + i), combined);
-                }
-                for (size_t i = last_block_start; i < numel_; i++) {
-                    dst_raw[i] = llaisys::utils::cast<fp16_t>(data_float[i])._v;
-                }
+                llaisys::utils::fp32_to_fp16_vec(data_float, dst_raw, numel_);
 
             } else if constexpr (std::is_same_v<T, bf16_t>) {
                 uint16_t* dst_raw = reinterpret_cast<uint16_t*>(static_cast<void*>(dst));
-                size_t last_block_start = numel_ - (numel_ % 16);
-
-#ifdef _OPENMP
-                #pragma omp parallel for if(numel_ > 16384)
-#endif
-                for (size_t i = 0; i < last_block_start; i += 8) { // 8 floats -> 8 bf16
-                    __m256 f = _mm256_load_ps(data_float + i);
-                    __m256i as_int = _mm256_castps_si256(f);
-                    __m256i bias = _mm256_set1_epi32(0x7FFF);
-                    __m256i lsb  = _mm256_and_si256(_mm256_srli_epi32(as_int, 16), _mm256_set1_epi32(1));
-                    __m256i rounding = _mm256_add_epi32(bias, lsb);
-                    __m256i rounded = _mm256_add_epi32(as_int, rounding);
-                    __m256i shifted = _mm256_srli_epi32(rounded, 16);
-
-                    __m128i lo = _mm256_extracti128_si256(shifted, 0); // 4 x uint32
-                    __m128i hi = _mm256_extracti128_si256(shifted, 1); // 4 x uint32
-
-                    __m128i packed = _mm_packus_epi32(lo, hi);
-                    _mm_storeu_si128((__m128i*)(dst_raw + i), packed);
-                }
-                for (size_t i = last_block_start; i < numel_; i++) {
-                    dst_raw[i] = llaisys::utils::cast<bf16_t>(data_float[i])._v;
-                }
+                llaisys::utils::fp32_to_bf16_vec(data_float, dst_raw, numel_);
 
             } else {
                 // float or other types: fallback to scalar cast
@@ -249,42 +218,12 @@ private:
         if constexpr (std::is_same_v<T, float>) {
             std::memcpy(dst, src, n * sizeof(float));
         } else if constexpr (std::is_same_v<T, fp16_t>) {
-            const size_t last_block_start = n - (n % 16);
             const uint16_t* raw_src = reinterpret_cast<const uint16_t*>(static_cast<const void*>(src));
-
-#ifdef _OPENMP
-            #pragma omp parallel for if(n > 16384)
-#endif
-            for (size_t i = 0; i < last_block_start; i += 16) {
-                __m256i vfp16 = _mm256_loadu_si256((const __m256i*)(raw_src + i));
-                __m128i lo = _mm256_extracti128_si256(vfp16, 0);
-                __m128i hi = _mm256_extracti128_si256(vfp16, 1);
-                _mm256_store_ps(dst + i, _mm256_cvtph_ps(lo));
-                _mm256_store_ps(dst + i + 8, _mm256_cvtph_ps(hi));
-            }
-            for (size_t i = last_block_start; i < n; i++) {
-                dst[i] = llaisys::utils::cast<float>(src[i]);
-            }
+            llaisys::utils::fp16_to_fp32_vec(raw_src, dst, n);
 
         } else if constexpr (std::is_same_v<T, bf16_t>) {
-            const size_t last_block_start = n - (n % 16);
             const uint16_t* raw_src = reinterpret_cast<const uint16_t*>(static_cast<const void*>(src));
-
-#ifdef _OPENMP
-            #pragma omp parallel for if(n > 16384)
-#endif
-            for (size_t i = 0; i < last_block_start; i += 16) {
-                __m256i vbf16 = _mm256_loadu_si256((const __m256i*)(raw_src + i));
-                __m128i lo = _mm256_extracti128_si256(vbf16, 0);
-                __m128i hi = _mm256_extracti128_si256(vbf16, 1);
-                __m256i lo_32 = _mm256_slli_epi32(_mm256_cvtepu16_epi32(lo), 16);
-                __m256i hi_32 = _mm256_slli_epi32(_mm256_cvtepu16_epi32(hi), 16);
-                _mm256_store_ps(dst + i, _mm256_castsi256_ps(lo_32));
-                _mm256_store_ps(dst + i + 8, _mm256_castsi256_ps(hi_32));
-            }
-            for (size_t i = last_block_start; i < n; i++) {
-                dst[i] = llaisys::utils::cast<float>(src[i]);
-            }
+            llaisys::utils::bf16_to_fp32_vec(raw_src, dst, n);
 
         } else {
             for (size_t i = 0; i < n; i++) {
@@ -329,4 +268,4 @@ private:
     llaisysDataType_t dtype_;
     bool owns_data_ = true;
 };
-} // namespace llaisys::ops::utils
+} // namespace llaisys::ops::linear::cpu

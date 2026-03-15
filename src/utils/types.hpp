@@ -1,12 +1,10 @@
+#pragma once
+
 #include "llaisys.h"
 
-#include <cstring>
-#include <cstdlib>
-
+#include <cstddef>
+#include <cstdint>
 #include <type_traits>
-#include <new>
-#include <iostream>
-#include <stdexcept>
 
 namespace llaisys {
 struct CustomFloat16 {
@@ -49,103 +47,21 @@ struct CustomComplex128 {
 typedef struct CustomComplex128 cp128_t;
 
 namespace utils {
-inline size_t dsize(llaisysDataType_t dtype) {
-    switch (dtype) {
-    case LLAISYS_DTYPE_BYTE:
-        return sizeof(char);
-    case LLAISYS_DTYPE_BOOL:
-        return sizeof(char);
-    case LLAISYS_DTYPE_I8:
-        return sizeof(int8_t);
-    case LLAISYS_DTYPE_I16:
-        return sizeof(int16_t);
-    case LLAISYS_DTYPE_I32:
-        return sizeof(int32_t);
-    case LLAISYS_DTYPE_I64:
-        return sizeof(int64_t);
-    case LLAISYS_DTYPE_U8:
-        return sizeof(uint8_t);
-    case LLAISYS_DTYPE_U16:
-        return sizeof(uint16_t);
-    case LLAISYS_DTYPE_U32:
-        return sizeof(uint32_t);
-    case LLAISYS_DTYPE_U64:
-        return sizeof(uint64_t);
-    case LLAISYS_DTYPE_F8:
-        return sizeof(f8_t);
-    case LLAISYS_DTYPE_F16:
-        return sizeof(fp16_t);
-    case LLAISYS_DTYPE_BF16:
-        return sizeof(bf16_t);
-    case LLAISYS_DTYPE_F32:
-        return sizeof(float);
-    case LLAISYS_DTYPE_F64:
-        return sizeof(double);
-    case LLAISYS_DTYPE_C16:
-        return sizeof(cp16_t);
-    case LLAISYS_DTYPE_C32:
-        return sizeof(cp32_t);
-    case LLAISYS_DTYPE_C64:
-        return sizeof(cp64_t);
-    case LLAISYS_DTYPE_C128:
-        return sizeof(cp128_t);
-    case LLAISYS_DTYPE_INVALID:
-    default:
-        throw std::invalid_argument("Unsupported or invalid data type.");
-    }
-}
 
-inline const char *dtype_to_str(llaisysDataType_t dtype) {
-    switch (dtype) {
-    case LLAISYS_DTYPE_BYTE:
-        return "byte";
-    case LLAISYS_DTYPE_BOOL:
-        return "bool";
-    case LLAISYS_DTYPE_I8:
-        return "int8";
-    case LLAISYS_DTYPE_I16:
-        return "int16";
-    case LLAISYS_DTYPE_I32:
-        return "int32";
-    case LLAISYS_DTYPE_I64:
-        return "int64";
-    case LLAISYS_DTYPE_U8:
-        return "uint8";
-    case LLAISYS_DTYPE_U16:
-        return "uint16";
-    case LLAISYS_DTYPE_U32:
-        return "uint32";
-    case LLAISYS_DTYPE_U64:
-        return "uint64";
-    case LLAISYS_DTYPE_F8:
-        return "float8";
-    case LLAISYS_DTYPE_F16:
-        return "float16";
-    case LLAISYS_DTYPE_BF16:
-        return "bfloat16";
-    case LLAISYS_DTYPE_F32:
-        return "float32";
-    case LLAISYS_DTYPE_F64:
-        return "float64";
-    case LLAISYS_DTYPE_C16:
-        return "complex16";
-    case LLAISYS_DTYPE_C32:
-        return "complex32";
-    case LLAISYS_DTYPE_C64:
-        return "complex64";
-    case LLAISYS_DTYPE_C128:
-        return "complex128";
-    case LLAISYS_DTYPE_INVALID:
-    default:
-        throw std::invalid_argument("Unsupported or invalid data type.");
-    }
-}
+size_t dsize(llaisysDataType_t dtype);
+const char *dtype_to_str(llaisysDataType_t dtype);
 
 float _f16_to_f32(fp16_t val);
 fp16_t _f32_to_f16(float val);
 
 float _bf16_to_f32(bf16_t val);
 bf16_t _f32_to_bf16(float val);
+
+// Vectorized conversions (AVX2 + F16C) for bulk casting
+void fp16_to_fp32_vec(const uint16_t* src, float* dst, size_t n);
+void bf16_to_fp32_vec(const uint16_t* src, float* dst, size_t n);
+void fp32_to_fp16_vec(const float* src, uint16_t* dst, size_t n);
+void fp32_to_bf16_vec(const float* src, uint16_t* dst, size_t n);
 
 template <typename TypeTo, typename TypeFrom>
 TypeTo cast(TypeFrom val) {
@@ -171,5 +87,6 @@ TypeTo cast(TypeFrom val) {
         return static_cast<TypeTo>(val);
     }
 }
+
 } // namespace utils
 } // namespace llaisys

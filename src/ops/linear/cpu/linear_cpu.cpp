@@ -1,7 +1,7 @@
 #include "linear_cpu.hpp"
+#include "openblas_capable_array.hpp"
 
 #include "../../../utils.hpp"
-#include "../../utils.hpp"
 
 #include <cmath>
 
@@ -23,9 +23,9 @@ void linear_(std::byte *out_raw, const std::byte *in_raw, const std::byte *weigh
     const llaisysDataType_t storage_dtype =
         (dtype == LLAISYS_DTYPE_F64 || dtype == LLAISYS_DTYPE_I32) ? LLAISYS_DTYPE_F64 : LLAISYS_DTYPE_F32;
 
-    llaisys::ops::utils::OpenBlasCapableArray in_aligned(in, M * K, storage_dtype);
-    llaisys::ops::utils::OpenBlasCapableArray weight_aligned(weight, K * N, storage_dtype);
-    llaisys::ops::utils::OpenBlasCapableArray out_aligned(out, M * N, storage_dtype);
+    llaisys::ops::linear::cpu::OpenBlasCapableArray in_aligned(in, M * K, storage_dtype);
+    llaisys::ops::linear::cpu::OpenBlasCapableArray weight_aligned(weight, K * N, storage_dtype);
+    llaisys::ops::linear::cpu::OpenBlasCapableArray out_aligned(out, M * N, storage_dtype);
 
     if (out_aligned.dtype() == LLAISYS_DTYPE_F32) {
         float *A = reinterpret_cast<float*>(in_aligned.data());
