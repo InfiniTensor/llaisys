@@ -437,8 +437,9 @@ python test/test_infer.py --model [dir_path/to/model] --test --device nvidia
 
 ### 当前提交范围
 
-- 当前提交按完整课程交付组织，覆盖作业 1/2/3 与项目 1/2/3
+- 当前提交按完整课程交付组织，覆盖作业 1/2/3 与项目 1/2/3/6
 - 项目 2 的第二平台为 MetaX/MACA
+- 项目 6 提供 `Llama/TinyLlama` 新模型支持路径
 - 提交中只保留实现代码与正式提交文档
 
 ### 当前验证环境
@@ -470,6 +471,9 @@ python test/test_infer.py --device cpu --test --model models/DeepSeek-R1-Distill
 PYTHONPATH=python python -m llaisys.chat.server --model models/DeepSeek-R1-Distill-Qwen-1.5B --device cpu --host 127.0.0.1 --port 8011
 curl --noproxy '*' -s http://127.0.0.1:8011/health
 curl --noproxy '*' -s -X POST http://127.0.0.1:8011/v1/chat/completions -H 'Content-Type: application/json' -d '{"messages":[{"role":"user","content":"你好"}],"stream":false,"max_tokens":8}'
+
+## 新模型验证入口
+python test/test_infer.py --device cpu --test --model /path/to/local/llama_or_tinyllama_model --prompt hi --max_steps 1
 
 ## 沐曦 MetaX 路径
 XMAKE_ROOT=y xmake f --metax-gpu=y -cv

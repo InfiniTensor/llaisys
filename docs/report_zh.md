@@ -10,6 +10,7 @@
 - Project #1：CPU 优化
 - Project #2：第二平台 MetaX/MACA
 - Project #3：聊天服务
+- Project #6：支持新模型
 
 最终实现的核心结论是：
 
@@ -17,6 +18,7 @@
 - 已完成 CPU 热点算子优化
 - 已完成第二平台 MetaX/MACA 接入与实机验证
 - 已完成聊天服务接口与流式返回链路
+- 已完成 `Llama/TinyLlama` 新模型接入所需的后端与 Python 包装
 
 从整体上看，当前仓库已经覆盖了从底层 Tensor、算子、推理流程，到平台适配和上层聊天接口的一条完整实现路径。
 
@@ -200,15 +202,43 @@ curl --noproxy '*' -s -X POST http://127.0.0.1:8011/v1/chat/completions -H 'Cont
 - `/health` 可正常返回
 - `POST /v1/chat/completions` 可正常返回非流式结果
 
-## 8. 验证环境与边界
+## 8. Project #6：支持新模型
 
-### 8.1 本地 CPU 开发环境
+Project #6 的目标是在作业默认使用的 Qwen2 之外，再支持另一种模型类型。
+
+本次完成内容包括：
+
+- 新增 `Llama` 对应的 C/C++ 后端模型包装
+- 新增 Python 侧 `Llama` 包装类
+- 复用 `DecoderOnlyModel` 的通用权重装载、推理与流式生成主链路
+- 在 `load_model` 中基于 `config.json` 的 `model_type` 自动分发 `Qwen2` 或 `Llama`
+
+这一部分的核心意义是：
+
+- 把“只能跑一种模型”推进到“同一套推理框架可支持不同模型类型”
+- 让权重装载、推理与采样接口尽量复用，减少模型分支重复实现
+
+当前新模型路径的推荐验证入口为：
+
+```bash
+python test/test_infer.py --device cpu --test --model /path/to/local/llama_or_tinyllama_model --prompt hi --max_steps 1
+```
+
+要求：
+
+- 模型目录中存在 `config.json`
+- `config.json` 中 `model_type` 为 `llama`
+- 使用当前仓库最新构建结果
+
+## 9. 验证环境与边界
+
+### 9.1 本地 CPU 开发环境
 
 - Python：`3.12.3`
 - xmake：`v3.0.7+20260308`
 - 本地模型目录：`models/DeepSeek-R1-Distill-Qwen-1.5B`
 
-### 8.2 沐曦 MetaX 验证环境
+### 9.2 沐曦 MetaX 验证环境
 
 - GPU：`MetaX C500`
 - `mx-smi`：`2.2.9`
@@ -219,31 +249,31 @@ curl --noproxy '*' -s -X POST http://127.0.0.1:8011/v1/chat/completions -H 'Cont
 - PyTorch：`2.6.0+metax3.2.1.3`
 - xmake：`v2.8.7+20240401`
 
-### 8.3 验证边界说明
+### 9.3 验证边界说明
 
-- Assignment #1/#2/#3 与 Project #1/#3 以本地 CPU 路径验证为主
+- Assignment #1/#2/#3 与 Project #1/#3/#6 以本地 CPU 路径验证为主
 - Project #2 的结论来自真实沐曦机器
 - 当前机器没有 NVIDIA 硬件，因此没有新增 `--device nvidia` 的实机回归数据
-- 当前推理验证聚焦 `Qwen2`
+- 当前推理验证以 `Qwen2` 为主；Project #6 提供 `Llama/TinyLlama` 新模型接入与本地模型目录验证入口
 
-## 9. 问题与处理
+## 10. 问题与处理
 
-### 9.1 Tensor 视图与真实拷贝容易混淆
+### 10.1 Tensor 视图与真实拷贝容易混淆
 
 这一问题主要出现在 `view / permute / slice` 的实现阶段。  
 最终通过严格区分 stride 变化和 storage 拷贝逻辑解决。
 
-### 9.2 算子正确性与系统链路正确性不是一回事
+### 10.2 算子正确性与系统链路正确性不是一回事
 
 单个算子通过测试，并不等于完整推理链路一定正确。  
 因此在 Assignment #3 中还需要通过 `infer` 的 token 级对照做最终闭环验证。
 
-### 9.3 第二平台不是 CUDA 直替
+### 10.3 第二平台不是 CUDA 直替
 
 这是 Project #2 中最关键的判断问题。  
 如果误判成“只要替换宏就能跑”，后续实现很容易失控。最终通过新增独立 MetaX 后端解决。
 
-### 9.4 root 环境下 xmake 默认拒绝运行
+### 10.4 root 环境下 xmake 默认拒绝运行
 
 在沐曦平台构建时，需要显式设置：
 
@@ -253,13 +283,13 @@ XMAKE_ROOT=y
 
 否则构建会直接被阻止。
 
-## 10. 已知限制
+## 11. 已知限制
 
 - `argmax` 与 `self_attention` 在 MetaX 侧仍为 host fallback
-- 当前推理验证聚焦 `Qwen2`
+- 当前推理验证以 `Qwen2` 为主；`Llama/TinyLlama` 路径以代码接入和本地模型目录验证入口为主
 - 第二平台已实跑，但不额外展开未在当前机器上重复验证的 CPU / NVIDIA 结果
 
-## 11. 提交边界说明
+## 12. 提交边界说明
 
 为保持课程提交 PR 干净，本次仓库提交只保留：
 
@@ -274,9 +304,9 @@ XMAKE_ROOT=y
 - 外部平台说明 PDF
 - 临时排障文档
 
-## 12. 总结
+## 13. 总结
 
-通过本次课程实践，已经完成从 Tensor、算子、推理链路，到 CPU 优化、第二平台接入、聊天服务实现的一整条实现路径。
+通过本次课程实践，已经完成从 Tensor、算子、推理链路，到 CPU 优化、第二平台接入、聊天服务实现以及新模型支持的一整条实现路径。
 
 这个项目的最大收获不是“会调用模型”，而是：
 

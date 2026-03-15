@@ -10,10 +10,11 @@
 - Project #1：CPU 优化
 - Project #2：第二平台 MetaX/MACA
 - Project #3：聊天服务
+- Project #6：支持新模型
 
 其中：
 
-- Assignment #1/#2/#3 与 Project #1/#3 主要在本地 CPU 开发环境完成实现与验证
+- Assignment #1/#2/#3 与 Project #1/#3/#6 主要在本地 CPU 开发环境完成实现与验证
 - Project #2 在真实沐曦机器上完成 MetaX/MACA 实机验证
 
 ## 2. 验证环境
@@ -69,13 +70,27 @@ python test/test_ops.py --device metax
 python test/test_infer.py --device metax --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
 ```
 
+### 3.4 Project #6 新模型验证入口
+
+如本地已准备 `Llama/TinyLlama` 模型目录，可直接复用同一套 `infer` 测试脚本：
+
+```bash
+python test/test_infer.py --device cpu --test --model /path/to/local/llama_or_tinyllama_model --prompt hi --max_steps 1
+```
+
+要求：
+
+- 模型目录中存在 `config.json`
+- `config.json` 中 `model_type` 为 `llama`
+- 当前仓库已重新构建并安装最新 `libllaisys`
+
 ## 4. 关键说明
 
 - 为保持 PR 干净，本次提交只包含实现代码与正式提交文档；本地学习材料与外部 PDF 均未纳入仓库
-- Assignment #1/#2/#3 与 Project #1/#3 以本地 CPU 路径验证为主
+- Assignment #1/#2/#3 与 Project #1/#3/#6 以本地 CPU 路径验证为主
 - Project #2 的 MetaX 结论来自真实沐曦机器
 - MetaX 在 C/C++ SDK 层不是 CUDA drop-in 兼容平台，因此后端采用独立适配
-- 当前推理验证聚焦 `Qwen2`
+- 当前推理验证以 `Qwen2` 为主；Project #6 提供 `Llama/TinyLlama` 新模型接入与本地模型目录验证入口
 - 当前机器没有 NVIDIA 硬件，因此没有新增 `--device nvidia` 的实机回归数据
 
 ## 5. 提交材料入口

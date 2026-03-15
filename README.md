@@ -443,8 +443,9 @@ This section is appended for course submission and does not change the original 
 
 ### Scope
 
-- This submission is organized as a complete course delivery covering Assignments 1/2/3 and Projects 1/2/3
+- This submission is organized as a complete course delivery covering Assignments 1/2/3 and Projects 1/2/3/6
 - Project #2 uses MetaX/MACA as the second backend
+- Project #6 adds Llama/TinyLlama model support through the shared decoder-only path
 - Only implementation code and formal submission docs are tracked for submission
 
 ### Verified Environment
@@ -476,6 +477,9 @@ python test/test_infer.py --device cpu --test --model models/DeepSeek-R1-Distill
 PYTHONPATH=python python -m llaisys.chat.server --model models/DeepSeek-R1-Distill-Qwen-1.5B --device cpu --host 127.0.0.1 --port 8011
 curl --noproxy '*' -s http://127.0.0.1:8011/health
 curl --noproxy '*' -s -X POST http://127.0.0.1:8011/v1/chat/completions -H 'Content-Type: application/json' -d '{"messages":[{"role":"user","content":"你好"}],"stream":false,"max_tokens":8}'
+
+## New model validation entry
+python test/test_infer.py --device cpu --test --model /path/to/local/llama_or_tinyllama_model --prompt hi --max_steps 1
 
 ## MetaX path
 XMAKE_ROOT=y xmake f --metax-gpu=y -cv

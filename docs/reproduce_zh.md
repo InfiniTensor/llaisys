@@ -10,10 +10,11 @@
 - Project #1：CPU 优化
 - Project #2：第二平台 MetaX/MACA
 - Project #3：聊天服务
+- Project #6：支持新模型
 
 为便于复现，本文档按两类环境组织：
 
-- 本地 CPU 开发环境：用于 Assignment #1/#2/#3 与 Project #1/#3
+- 本地 CPU 开发环境：用于 Assignment #1/#2/#3 与 Project #1/#3/#6
 - 沐曦 MetaX 机器：用于 Project #2
 
 ## 2. 本地 CPU 路径复现
@@ -95,6 +96,25 @@ curl --noproxy '*' -s -X POST http://127.0.0.1:8011/v1/chat/completions -H 'Cont
 
 - `/health` 返回 `status: ok`
 - `POST /v1/chat/completions` 返回合法 JSON 响应
+
+### 2.6 Project #6 新模型验证
+
+如本地已有 `Llama/TinyLlama` 模型目录，可直接复用同一套推理测试脚本：
+
+```bash
+python test/test_infer.py --device cpu --test --model /path/to/local/llama_or_tinyllama_model --prompt hi --max_steps 1
+```
+
+要求：
+
+- 模型目录内存在 `config.json`
+- `config.json` 中 `model_type` 为 `llama`
+- 当前仓库已重新构建并安装最新 `libllaisys`
+
+预期结果：
+
+- Hugging Face 与 LLAISYS 的 token 序列严格一致
+- 输出末尾打印 `Test passed!`
 
 ## 3. 沐曦 MetaX 路径复现
 
