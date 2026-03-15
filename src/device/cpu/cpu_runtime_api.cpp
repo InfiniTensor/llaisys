@@ -30,7 +30,14 @@ void streamSynchronize(llaisysStream_t stream) {
 }
 
 void *mallocDevice(size_t size) {
-    return std::malloc(size);
+    if (size == 0) return nullptr;
+
+    void *ptr = nullptr;
+    // posix_memalign requires alignment to be a power of two and multiple of sizeof(void*)
+    if (posix_memalign(&ptr, 32, size) != 0) {
+        return nullptr;
+    }
+    return ptr;
 }
 
 void freeDevice(void *ptr) {

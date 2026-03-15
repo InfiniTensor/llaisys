@@ -26,10 +26,36 @@ class OpenBlasCapableArray {
 public:
     // Allocate an intermediate buffer suitable for OpenBLAS (F32/F64).
     explicit OpenBlasCapableArray(size_t n, llaisysDataType_t dtype)
-        : numel_(n), data_(nullptr), dtype_(dtype) {
+        : numel_(n), data_(nullptr), dtype_(dtype), owns_data_(true) {
         size_t elem_size = (dtype_ == LLAISYS_DTYPE_F64 ? sizeof(double) : sizeof(float));
         if (posix_memalign(&data_, 32, n * elem_size) != 0) {
             throw std::bad_alloc();
+        }
+    }
+
+    // When the source is already float/double, we can use the caller's pointer directly
+    // (no allocation, no own/free). This avoids extra copies when OpenBLAS can work on
+    // the original buffer.
+    template <typename T>
+    OpenBlasCapableArray(const T* src, size_t n, llaisysDataType_t dtype)
+        : numel_(n), data_(const_cast<void*>(static_cast<const void*>(src))), dtype_(dtype), owns_data_(false) {
+        if constexpr (std::is_same_v<T, float>) {
+            if (dtype_ != LLAISYS_DTYPE_F32) {
+                throw std::invalid_argument("dtype mismatch for float source");
+            }
+        } else if constexpr (std::is_same_v<T, double>) {
+            if (dtype_ != LLAISYS_DTYPE_F64) {
+                throw std::invalid_argument("dtype mismatch for double source");
+            }
+        } else {
+            // For other types, we still need to allocate and cast.
+            // We do this by falling back to the “normal” construction path.
+            size_t elem_size = (dtype_ == LLAISYS_DTYPE_F64 ? sizeof(double) : sizeof(float));
+            if (posix_memalign(&data_, 32, n * elem_size) != 0) {
+                throw std::bad_alloc();
+            }
+            owns_data_ = true;
+            cast_from(src);
         }
     }
 
@@ -39,7 +65,9 @@ public:
     OpenBlasCapableArray(OpenBlasCapableArray&& other) = delete;
 
     ~OpenBlasCapableArray() {
-        std::free(data_);
+        if (owns_data_) {
+            std::free(data_);
+        }
     }
 
     // Fill the internal buffer from user-provided data
@@ -93,7 +121,7 @@ public:
             #pragma omp parallel for if(numel_ > 65536)
 #endif
             for (size_t i = 0; i < last_block_start; i += 8) {
-                _mm256_storeu_ps(fdata + i, zero);
+                _mm256_store_ps(fdata + i, zero);
             }
             for (size_t i = last_block_start; i < numel_; ++i) {
                 fdata[i] = 0.0f;
@@ -108,7 +136,7 @@ public:
             #pragma omp parallel for if(numel_ > 65536)
 #endif
             for (size_t i = 0; i < last_block_start; i += 4) {
-                _mm256_storeu_pd(ddata + i, zero);
+                _mm256_store_pd(ddata + i, zero);
             }
             for (size_t i = last_block_start; i < numel_; ++i) {
                 ddata[i] = 0.0;
@@ -209,6 +237,7 @@ public:
     size_t numel() const noexcept { return numel_; }
     void* data() const noexcept { return data_; }
     llaisysDataType_t dtype() const noexcept { return dtype_; }
+    bool owns_data() const noexcept { return owns_data_; }
 
 private:
     template <typename T>
@@ -294,5 +323,6 @@ private:
     size_t numel_;
     void* data_;
     llaisysDataType_t dtype_;
+    bool owns_data_ = true;
 };
 } // namespace llaisys::ops::utils
