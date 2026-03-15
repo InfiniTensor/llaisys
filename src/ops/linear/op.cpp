@@ -12,8 +12,54 @@
 #ifdef _OPENMP
 #include <omp.h>
 #endif
+#ifdef USE_OPENBLAS
+#include <cblas.h>
+#include <unordered_map>
+#include <mutex>
+#endif
 
 namespace llaisys::ops {
+
+#ifdef USE_OPENBLAS
+// 权重缓存: bf16/fp16 权重在首次使用时转为 f32 并缓存, 后续调用直接复用。
+// key = (原始权重数据指针, 元素个数, 类型标签)。
+// 类型标签区分同一地址不同 dtype 的数据 (测试场景下内存可能被复用)。
+// 推理场景中权重地址唯一且不释放, 缓存命中率 100%。
+struct WeightCacheKey {
+    const void* ptr;
+    size_t count;
+    int dtype_tag;  // 0=bf16, 1=fp16
+    bool operator==(const WeightCacheKey& o) const {
+        return ptr == o.ptr && count == o.count && dtype_tag == o.dtype_tag;
+    }
+};
+struct WeightCacheKeyHash {
+    size_t operator()(const WeightCacheKey& k) const {
+        size_t h = std::hash<const void*>()(k.ptr);
+        h ^= std::hash<size_t>()(k.count) << 1;
+        h ^= std::hash<int>()(k.dtype_tag) << 2;
+        return h;
+    }
+};
+static std::unordered_map<WeightCacheKey, std::vector<float>, WeightCacheKeyHash> g_weight_cache;
+static std::mutex g_weight_cache_mutex;
+
+// 查找或创建 f32 权重缓存 (线程安全)
+template<typename ConvertFn>
+static const float* get_cached_f32_weights(const void* key, size_t count,
+                                            int dtype_tag, ConvertFn convert_fn)
+{
+    WeightCacheKey cache_key{key, count, dtype_tag};
+    std::lock_guard<std::mutex> lock(g_weight_cache_mutex);
+    auto it = g_weight_cache.find(cache_key);
+    if (it != g_weight_cache.end())
+        return it->second.data();
+    auto& buf = g_weight_cache[cache_key];
+    buf.resize(count);
+    convert_fn(buf.data());
+    return buf.data();
+}
+#endif
 
 // M 维度低于此阈值时跳过 OpenMP，避免线程创建/同步开销。
 // 模型推理解码阶段 M=1，若不跳过，每次 linear 调用产生数千次无效 barrier。
@@ -87,9 +133,9 @@ static inline void get_dims(tensor_t in, tensor_t weight,
 }
 
 // ============================================================
-// float32 AVX2+FMA 特化 (OpenMP 并行化)
-// 保持原始 k0→j0→i 分块顺序以复用 W 块缓存。
-// i 维度行间完全独立，#pragma omp parallel for 在最内层 i 循环上。
+// float32 特化
+// USE_OPENBLAS 时调用 cblas_sgemm / cblas_sgemv;
+// 否则使用手写 AVX2+FMA + OpenMP 并行化版本。
 // ============================================================
 template<>
 void linear_cpu_kernel<float>(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias){
@@ -102,6 +148,24 @@ void linear_cpu_kernel<float>(tensor_t out, tensor_t in, tensor_t weight, tensor
     size_t M, K, N;
     get_dims(in, weight, M, K, N);
 
+#ifdef USE_OPENBLAS
+    // Y = X[M,K] * W[N,K]^T  =>  sgemm(NoTrans, Trans, M, N, K, 1, X, K, W, K, 0, Y, N)
+    // 若有 bias，先将 bias 广播填入 Y，然后用 beta=1 累加 GEMM 结果。
+    if (b) {
+        for (size_t i = 0; i < M; ++i)
+            std::memcpy(Y + i * N, b, N * sizeof(float));
+        cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
+                    (blasint)M, (blasint)N, (blasint)K,
+                    1.0f, X, (blasint)K, W, (blasint)K,
+                    1.0f, Y, (blasint)N);
+    } else {
+        cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
+                    (blasint)M, (blasint)N, (blasint)K,
+                    1.0f, X, (blasint)K, W, (blasint)K,
+                    0.0f, Y, (blasint)N);
+    }
+#else
+    // ---------- 手写 AVX2+FMA fallback ----------
     if (b) {
         parallel_for(M, OMP_M_THRESHOLD, [&](size_t i) {
             float* yrow = Y + i * N;
@@ -184,26 +248,25 @@ void linear_cpu_kernel<float>(tensor_t out, tensor_t in, tensor_t weight, tensor
             }
         }
     }
+#endif
 }
 
 // ============================================================
-// bfloat16 AVX2 特化 (OpenMP 并行化)
-// ybuf 作为整体预分配，i 循环写入各自行 ybuf[i*N..i*N+N-1]，行间无竞争。
+// bfloat16 特化
+// USE_OPENBLAS 时: M >= 阈值 → bf16→f32 + cblas_sgemm (权重缓存);
+//                  M < 阈值 → 手写 AVX2 (内存带宽受限, 无需转换)。
+// 否则始终使用手写 AVX2 + OpenMP 并行化版本。
 // ============================================================
-template<>
-void linear_cpu_kernel<llaisys::bf16_t>(tensor_t out, tensor_t in,
-                                         tensor_t weight, tensor_t bias)
+
+// M 维度 >= 此阈值时使用 OpenBLAS sgemm, 否则使用手写 AVX2。
+// 解码阶段 M=1 是内存带宽瓶颈, bf16 直接读取比 f32 少一半带宽。
+static constexpr size_t BLAS_M_THRESHOLD = 32;
+
+// 手写 AVX2 bf16 linear 实现 (始终可用)
+static void bf16_linear_avx2(uint16_t* Y, const uint16_t* X,
+                              const uint16_t* W, const uint16_t* B,
+                              size_t M, size_t K, size_t N)
 {
-    const uint16_t* X = reinterpret_cast<const uint16_t*>(in->data());
-    const uint16_t* W = reinterpret_cast<const uint16_t*>(weight->data());
-    const uint16_t* B = nullptr;
-    if (bias && bias->numel() > 0)
-        B = reinterpret_cast<const uint16_t*>(bias->data());
-    uint16_t* Y = reinterpret_cast<uint16_t*>(out->data());
-
-    size_t M, K, N;
-    get_dims(in, weight, M, K, N);
-
     std::vector<float> ybuf(M * N);
 
     if (B) {
@@ -313,9 +376,78 @@ void linear_cpu_kernel<llaisys::bf16_t>(tensor_t out, tensor_t in,
     });
 }
 
+template<>
+void linear_cpu_kernel<llaisys::bf16_t>(tensor_t out, tensor_t in,
+                                         tensor_t weight, tensor_t bias)
+{
+    const uint16_t* X = reinterpret_cast<const uint16_t*>(in->data());
+    const uint16_t* W = reinterpret_cast<const uint16_t*>(weight->data());
+    const uint16_t* B = nullptr;
+    if (bias && bias->numel() > 0)
+        B = reinterpret_cast<const uint16_t*>(bias->data());
+    uint16_t* Y = reinterpret_cast<uint16_t*>(out->data());
+
+    size_t M, K, N;
+    get_dims(in, weight, M, K, N);
+
+#ifdef USE_OPENBLAS
+    if (M >= BLAS_M_THRESHOLD) {
+        // 大 M: bf16 → f32 → cblas_sgemm → f32 → bf16
+        // cblas_sbgemm 在大 K 维度下结果不正确 (已知 OpenBLAS bug), 故用 sgemm。
+        // 权重 W 在首次调用时转为 f32 并缓存, 后续直接复用。
+
+        auto bf16_to_f32_bulk = [](const uint16_t* src, float* dst, size_t count) {
+            size_t i = 0;
+            for (; i + 7 < count; i += 8) {
+                __m256 v = utils::bf16x8_to_f32x8(src + i);
+                _mm256_storeu_ps(dst + i, v);
+            }
+            for (; i < count; ++i)
+                dst[i] = utils::cast<float>(llaisys::bf16_t{src[i]});
+        };
+
+        // 缓存 f32 权重 (仅首次转换, 后续复用)
+        const float* Wf = get_cached_f32_weights(W, N * K, /*dtype_tag=*/0,
+            [&](float* dst) { bf16_to_f32_bulk(W, dst, N * K); });
+
+        // 输入每次都转换
+        std::vector<float> Xf(M * K);
+        bf16_to_f32_bulk(X, Xf.data(), M * K);
+
+        std::vector<float> Cf(M * N);
+
+        if (B) {
+            const float* bias_f = get_cached_f32_weights(B, N, /*dtype_tag=*/0,
+                [&](float* dst) { bf16_to_f32_bulk(B, dst, N); });
+            for (size_t i = 0; i < M; ++i)
+                std::memcpy(Cf.data() + i * N, bias_f, N * sizeof(float));
+            cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
+                        (blasint)M, (blasint)N, (blasint)K,
+                        1.0f, Xf.data(), (blasint)K, Wf, (blasint)K,
+                        1.0f, Cf.data(), (blasint)N);
+        } else {
+            cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
+                        (blasint)M, (blasint)N, (blasint)K,
+                        1.0f, Xf.data(), (blasint)K, Wf, (blasint)K,
+                        0.0f, Cf.data(), (blasint)N);
+        }
+
+        // f32 → bf16 写回
+        for (size_t i = 0; i < M * N; ++i) {
+            llaisys::bf16_t v = utils::cast<llaisys::bf16_t>(Cf[i]);
+            Y[i] = v._v;
+        }
+        return;
+    }
+#endif
+    // 小 M (含 M=1 decode): 手写 AVX2, 直接读 bf16, 节省内存带宽
+    bf16_linear_avx2(Y, X, W, B, M, K, N);
+}
+
 // ============================================================
-// float16 AVX2 特化 (OpenMP 并行化)
-// ybuf 作为整体预分配，i 循环写入各自行 ybuf[i*N..i*N+N-1]，行间无竞争。
+// float16 特化
+// USE_OPENBLAS 时将 fp16 转为 f32 再调用 cblas_sgemm;
+// 否则使用手写 AVX2 + OpenMP 并行化版本。
 // ============================================================
 template<>
 void linear_cpu_kernel<llaisys::fp16_t>(tensor_t out, tensor_t in,
@@ -330,6 +462,54 @@ void linear_cpu_kernel<llaisys::fp16_t>(tensor_t out, tensor_t in,
 
     size_t M, K, N;
     get_dims(in, weight, M, K, N);
+
+#ifdef USE_OPENBLAS
+    // fp16 → f32 转换后调用 sgemm (OpenBLAS 无原生 fp16 GEMM)
+    // 权重 W 在首次调用时转为 f32 并缓存, 后续直接复用。
+
+    // fp16 → f32 (利用已有的 SIMD fp16x8_to_f32x8)
+    auto fp16_to_f32_bulk = [](const uint16_t* src, float* dst, size_t count) {
+        size_t i = 0;
+        for (; i + 7 < count; i += 8) {
+            __m256 v = utils::fp16x8_to_f32x8(src + i);
+            _mm256_storeu_ps(dst + i, v);
+        }
+        for (; i < count; ++i)
+            dst[i] = utils::cast<float>(llaisys::fp16_t{src[i]});
+    };
+
+    // 缓存 f32 权重 (仅首次转换, 后续复用)
+    const float* Wf = get_cached_f32_weights(W, N * K, /*dtype_tag=*/1,
+        [&](float* dst) { fp16_to_f32_bulk(W, dst, N * K); });
+
+    // 输入每次都转换
+    std::vector<float> Xf(M * K);
+    fp16_to_f32_bulk(X, Xf.data(), M * K);
+
+    std::vector<float> Cf(M * N);
+
+    if (B) {
+        const float* bias_f = get_cached_f32_weights(B, N, /*dtype_tag=*/1,
+            [&](float* dst) { fp16_to_f32_bulk(B, dst, N); });
+        for (size_t i = 0; i < M; ++i)
+            std::memcpy(Cf.data() + i * N, bias_f, N * sizeof(float));
+        cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
+                    (blasint)M, (blasint)N, (blasint)K,
+                    1.0f, Xf.data(), (blasint)K, Wf, (blasint)K,
+                    1.0f, Cf.data(), (blasint)N);
+    } else {
+        cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
+                    (blasint)M, (blasint)N, (blasint)K,
+                    1.0f, Xf.data(), (blasint)K, Wf, (blasint)K,
+                    0.0f, Cf.data(), (blasint)N);
+    }
+
+    // f32 → fp16 写回
+    for (size_t i = 0; i < M * N; ++i) {
+        llaisys::fp16_t v = utils::cast<llaisys::fp16_t>(Cf[i]);
+        Y_out[i] = v._v;
+    }
+#else
 
     std::vector<float> ybuf(M * N);
 
@@ -438,6 +618,7 @@ void linear_cpu_kernel<llaisys::fp16_t>(tensor_t out, tensor_t in,
         llaisys::fp16_t v = utils::cast<llaisys::fp16_t>(ybuf[idx]);
         Y_out[idx] = v._v;
     });
+#endif
 }
 
 // ============================================================

@@ -9,6 +9,21 @@ add_ldflags("-fopenmp")
 add_shflags("-fopenmp")
 add_syslinks("gomp") -- 显式链接 GNU OpenMP 库
 
+-- OpenBLAS 集成: 从源码编译安装到 ~/openblas
+option("openblas")
+    set_default(true)
+    set_showmenu(true)
+    set_description("Whether to use OpenBLAS for linear algebra acceleration")
+option_end()
+
+if has_config("openblas") then
+    add_defines("USE_OPENBLAS")
+    add_includedirs(os.getenv("HOME") .. "/openblas/include")
+    add_linkdirs(os.getenv("HOME") .. "/openblas/lib")
+    add_links("openblas")
+    add_rpathdirs(os.getenv("HOME") .. "/openblas/lib")
+end
+
 -- CPU --
 includes("xmake/cpu.lua")
 
