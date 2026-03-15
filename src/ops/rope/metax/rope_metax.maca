@@ -10,45 +10,39 @@
 
 namespace {
 
-template <typename T>
-__device__ __forceinline__ float to_float_t(T v) {
+template <typename T> __device__ __forceinline__ float to_float_t(T v) {
     return static_cast<float>(v);
 }
 
-template <>
-__device__ __forceinline__ float to_float_t<__half>(__half v) {
+template <> __device__ __forceinline__ float to_float_t<__half>(__half v) {
     return __half2float(v);
 }
 
 template <>
-__device__ __forceinline__ float to_float_t<__maca_bfloat16>(__maca_bfloat16 v) {
+__device__ __forceinline__ float
+to_float_t<__maca_bfloat16>(__maca_bfloat16 v) {
     return __bfloat162float(v);
 }
 
-template <typename T>
-__device__ __forceinline__ T from_float_t(float v) {
+template <typename T> __device__ __forceinline__ T from_float_t(float v) {
     return static_cast<T>(v);
 }
 
-template <>
-__device__ __forceinline__ __half from_float_t<__half>(float v) {
+template <> __device__ __forceinline__ __half from_float_t<__half>(float v) {
     return __float2half(v);
 }
 
 template <>
-__device__ __forceinline__ __maca_bfloat16 from_float_t<__maca_bfloat16>(float v) {
+__device__ __forceinline__ __maca_bfloat16
+from_float_t<__maca_bfloat16>(float v) {
     return __float2bfloat16(v);
 }
 
 // in/out: [seqlen, nhead, head_dim]
 // pos_ids: [seqlen]
 template <typename T>
-__global__ void rope_kernel(T *out,
-                            const T *in,
-                            const int64_t *pos_ids,
-                            size_t seqlen,
-                            size_t nhead,
-                            size_t head_dim,
+__global__ void rope_kernel(T *out, const T *in, const int64_t *pos_ids,
+                            size_t seqlen, size_t nhead, size_t head_dim,
                             float theta) {
     const size_t bid = static_cast<size_t>(blockIdx.x);
     if (bid >= seqlen * nhead) {
@@ -61,8 +55,10 @@ __global__ void rope_kernel(T *out,
     const size_t offset = (seqlen_idx * nhead + head_id) * head_dim;
     const float pos_val = static_cast<float>(pos_ids[seqlen_idx]);
 
-    for (size_t j = static_cast<size_t>(threadIdx.x); j < half; j += static_cast<size_t>(blockDim.x)) {
-        const float exponent = (2.0f * static_cast<float>(j)) / static_cast<float>(head_dim);
+    for (size_t j = static_cast<size_t>(threadIdx.x); j < half;
+         j += static_cast<size_t>(blockDim.x)) {
+        const float exponent
+            = (2.0f * static_cast<float>(j)) / static_cast<float>(head_dim);
         const float phi = pos_val / powf(theta, exponent);
         const float sinv = sinf(phi);
         const float cosv = cosf(phi);
@@ -79,13 +75,8 @@ __global__ void rope_kernel(T *out,
 
 namespace llaisys::ops::metax {
 
-void rope(std::byte *out,
-          const std::byte *in,
-          const int64_t *pos_ids,
-          llaisysDataType_t type,
-          size_t seqlen,
-          size_t nhead,
-          size_t head_dim,
+void rope(std::byte *out, const std::byte *in, const int64_t *pos_ids,
+          llaisysDataType_t type, size_t seqlen, size_t nhead, size_t head_dim,
           float theta) {
     if (seqlen == 0 || nhead == 0 || head_dim == 0) {
         return;
@@ -98,33 +89,20 @@ void rope(std::byte *out,
     switch (type) {
     case LLAISYS_DTYPE_F32:
         rope_kernel<float><<<grid_size, block_size>>>(
-            reinterpret_cast<float *>(out),
-            reinterpret_cast<const float *>(in),
-            pos_ids,
-            seqlen,
-            nhead,
-            head_dim,
-            theta);
+            reinterpret_cast<float *>(out), reinterpret_cast<const float *>(in),
+            pos_ids, seqlen, nhead, head_dim, theta);
         break;
     case LLAISYS_DTYPE_F16:
         rope_kernel<__half><<<grid_size, block_size>>>(
             reinterpret_cast<__half *>(out),
-            reinterpret_cast<const __half *>(in),
-            pos_ids,
-            seqlen,
-            nhead,
-            head_dim,
-            theta);
+            reinterpret_cast<const __half *>(in), pos_ids, seqlen, nhead,
+            head_dim, theta);
         break;
     case LLAISYS_DTYPE_BF16:
         rope_kernel<__maca_bfloat16><<<grid_size, block_size>>>(
             reinterpret_cast<__maca_bfloat16 *>(out),
-            reinterpret_cast<const __maca_bfloat16 *>(in),
-            pos_ids,
-            seqlen,
-            nhead,
-            head_dim,
-            theta);
+            reinterpret_cast<const __maca_bfloat16 *>(in), pos_ids, seqlen,
+            nhead, head_dim, theta);
         break;
     default:
         EXCEPTION_UNSUPPORTED_DATATYPE(type);
@@ -132,4 +110,3 @@ void rope(std::byte *out,
 }
 
 } // namespace llaisys::ops::metax
-
