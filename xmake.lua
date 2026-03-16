@@ -3,11 +3,25 @@ set_encodings("utf-8")
 
 add_includedirs("include")
 
--- 全局开启 OpenMP 支持、最高级别优化、以及 AVX2/FMA 向量化指令集支持
-add_cxflags("-fopenmp", "-O3", "-mavx2", "-mfma")
+-- 全局开启 OpenMP 支持、最高级别优化
+-- native 模式 (服务器): 使用 -march=native, 编译器自动启用 AVX-512 等本机指令集
+-- 默认模式 (本地):       显式指定 -mavx2 -mfma, 兼容大多数 x86-64 CPU
+add_cxflags("-fopenmp", "-O3")
 add_ldflags("-fopenmp")
 add_shflags("-fopenmp")
 add_syslinks("gomp") -- 显式链接 GNU OpenMP 库
+
+option("native")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Use -march=native for best performance on current CPU (enables AVX-512 on supported CPUs)")
+option_end()
+
+if has_config("native") then
+    add_cxflags("-march=native")
+else
+    add_cxflags("-mavx2", "-mfma")
+end
 
 -- OpenBLAS 集成: 从源码编译安装到 ~/openblas
 option("openblas")
