@@ -1,4 +1,5 @@
 #pragma once
+#include "llaisys/build_config.h"
 #include "llaisys/runtime.h"
 
 #include "../utils.hpp"

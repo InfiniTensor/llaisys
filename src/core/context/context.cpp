@@ -50,10 +50,16 @@ Context::~Context() {
 }
 
 void Context::setDevice(llaisysDeviceType_t device_type, int device_id) {
-    // If doest not match the current runtime.
     if (_current_runtime == nullptr || _current_runtime->deviceType() != device_type || _current_runtime->deviceId() != device_id) {
-        auto runtimes = _runtime_map[device_type];
-        CHECK_ARGUMENT((size_t)device_id < runtimes.size() && device_id >= 0, "invalid device id");
+        auto &runtimes = _runtime_map[device_type];
+
+        if ((size_t)device_id >= runtimes.size()) {
+            const LlaisysRuntimeAPI *api_ = llaisysGetRuntimeAPI(device_type);
+            int device_count = api_->get_device_count();
+            CHECK_ARGUMENT(device_id >= 0 && device_id < device_count, "invalid device id");
+            runtimes.resize(device_count, nullptr);
+        }
+
         if (_current_runtime != nullptr) {
             _current_runtime->_deactivate();
         }

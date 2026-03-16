@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLAISYS Chat</title>
+<style>
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #242424;
+    --border: #333;
+    --text: #e0e0e0;
+    --text-dim: #888;
+    --accent: #6ee7b7;
+    --accent-dim: #2d6a4f;
+    --user-bg: #1e3a2f;
+    --assistant-bg: #1a1a1a;
+    --danger: #ef4444;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.5px;
+  }
+
+  header .controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  header button {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s;
+  }
+
+  header button:hover {
+    background: var(--border);
+  }
+
+  .settings-row {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 24px;
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+
+  .settings-row label {
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .settings-row input[type="number"] {
+    width: 64px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+
+  #chat-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .message {
+    max-width: 720px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 14px 18px;
+    border-radius: 10px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 15px;
+  }
+
+  .message.user {
+    background: var(--user-bg);
+    border: 1px solid var(--accent-dim);
+    align-self: flex-end;
+  }
+
+  .message.assistant {
+    background: var(--assistant-bg);
+    border: 1px solid var(--border);
+  }
+
+  .message .role-tag {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+
+  .message.user .role-tag { color: var(--accent); }
+
+  #input-area {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+    flex-shrink: 0;
+  }
+
+  #input-area textarea {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 15px;
+    font-family: inherit;
+    resize: none;
+    min-height: 44px;
+    max-height: 160px;
+    line-height: 1.5;
+  }
+
+  #input-area textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  #send-btn {
+    background: var(--accent);
+    color: #0f0f0f;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+  }
+
+  #send-btn:hover { opacity: 0.85; }
+  #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .typing-indicator {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+    animation: blink 1s infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 0.2; }
+    50% { opacity: 1; }
+  }
+
+  #chat-area::-webkit-scrollbar { width: 6px; }
+  #chat-area::-webkit-scrollbar-track { background: transparent; }
+  #chat-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>LLAISYS Chat</h1>
+  <div class="controls">
+    <button onclick="clearChat()">New Chat</button>
+  </div>
+</header>
+
+<div class="settings-row">
+  <label>Temperature <input type="number" id="temperature" value="0.8" step="0.1" min="0" max="2"></label>
+  <label>Top-K <input type="number" id="top_k" value="50" step="1" min="1" max="200"></label>
+  <label>Top-P <input type="number" id="top_p" value="0.9" step="0.05" min="0" max="1"></label>
+  <label>Max Tokens <input type="number" id="max_tokens" value="512" step="64" min="1" max="4096"></label>
+</div>
+
+<div id="chat-area"></div>
+
+<div id="input-area">
+  <textarea id="user-input" placeholder="Type a message..." rows="1"
+            onkeydown="handleKey(event)"></textarea>
+  <button id="send-btn" onclick="sendMessage()">Send</button>
+</div>
+
+<script>
+const chatArea  = document.getElementById('chat-area');
+const userInput = document.getElementById('user-input');
+const sendBtn   = document.getElementById('send-btn');
+
+let messages = [];
+let generating = false;
+
+function addMessageDiv(role, text) {
+  const div = document.createElement('div');
+  div.className = `message ${role}`;
+  const tag = document.createElement('div');
+  tag.className = 'role-tag';
+  tag.textContent = role === 'user' ? 'You' : 'Assistant';
+  div.appendChild(tag);
+  const body = document.createElement('div');
+  body.className = 'body';
+  body.textContent = text || '';
+  div.appendChild(body);
+  chatArea.appendChild(div);
+  chatArea.scrollTop = chatArea.scrollHeight;
+  return body;
+}
+
+function clearChat() {
+  messages = [];
+  chatArea.innerHTML = '';
+  userInput.focus();
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+async function sendMessage() {
+  const text = userInput.value.trim();
+  if (!text || generating) return;
+
+  messages.push({ role: 'user', content: text });
+  addMessageDiv('user', text);
+  userInput.value = '';
+
+  generating = true;
+  sendBtn.disabled = true;
+
+  const bodyEl = addMessageDiv('assistant', '');
+
+  const temperature = parseFloat(document.getElementById('temperature').value) || 0.8;
+  const top_k = parseInt(document.getElementById('top_k').value) || 50;
+  const top_p = parseFloat(document.getElementById('top_p').value) || 0.9;
+  const max_tokens = parseInt(document.getElementById('max_tokens').value) || 512;
+
+  try {
+    const resp = await fetch('/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'qwen2',
+        messages: messages,
+        temperature, top_k, top_p, max_tokens,
+        stream: true,
+      }),
+    });
+
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+
+      const lines = buf.split('\n');
+      buf = lines.pop();
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data: ')) continue;
+        const payload = trimmed.slice(6);
+        if (payload === '[DONE]') break;
+        try {
+          const data = JSON.parse(payload);
+          const delta = data.choices?.[0]?.delta?.content;
+          if (delta) {
+            fullText += delta;
+            bodyEl.textContent = fullText;
+            chatArea.scrollTop = chatArea.scrollHeight;
+          }
+        } catch {}
+      }
+    }
+
+    messages.push({ role: 'assistant', content: fullText });
+  } catch (err) {
+    bodyEl.textContent = `[Error] ${err.message}`;
+  }
+
+  generating = false;
+  sendBtn.disabled = false;
+  userInput.focus();
+}
+
+userInput.addEventListener('input', function () {
+  this.style.height = 'auto';
+  this.style.height = Math.min(this.scrollHeight, 160) + 'px';
+});
+</script>
+</body>
+</html>
