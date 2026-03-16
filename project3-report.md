@@ -64,7 +64,7 @@ async def generate_stream():
         }
         yield f"data: {json.dumps(chunk)}\n\n"
         time.sleep(0.02) # 模拟平滑输出的打字机效果
-        
+    
     yield "data: [DONE]\n\n"
 ```
 
@@ -88,7 +88,7 @@ python python/server.py --device nvidia --port 8199
 
 **终端图像：**
 
-![image-20260316235034869](assets/image-20260316235034869.png)
+![image-20260317000545784](assets/image-20260317000545784.png)
 
 ### 4.2 接入 ChatGPT-Next-Web 前端进行验证
 
@@ -121,6 +121,10 @@ python python/server.py --device nvidia --port 8199
 #### 4. 交互原理示意
 
 `用户输入` $\rightarrow$ `NextChat UI (JSON 封装)` $\rightarrow$ `HTTP POST 请求` $\rightarrow$ `FastAPI 后端 (路由解析)` $\rightarrow$ `LLAiSYS C++ 引擎` $\rightarrow$ `GPU 并行计算` $\rightarrow$ `SSE 流式写回` $\rightarrow$ `前端 Markdown 渲染`。
+
+**演示图像：**
+
+![image-20260317000612224](assets/image-20260317000612224.png)
 
 ## 五、 结论
 
