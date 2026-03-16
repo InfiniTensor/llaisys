@@ -164,7 +164,7 @@ class Qwen2:
 
         start_pos=len(inputs)
 
-        for i in range(max_new_tokens):
+        for i in range(max_new_tokens - 1):
             input_step=[tokens[-1]]
 
             logits_ptr=self.forward(input_step,start_pos)
