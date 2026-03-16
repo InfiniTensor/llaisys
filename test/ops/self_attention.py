@@ -3,7 +3,7 @@ import os
 
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, parent_dir)
-import llaisys
+import llaisys_py
 import torch
 from test_utils import random_tensor, check_equal, benchmark
 
@@ -50,13 +50,13 @@ def test_op_self_attention(
 
     attn_val, attn_val_ = random_tensor((qlen, nh, hd), dtype_name, device_name)
     torch_self_attention(attn_val, q, k, v, scale)
-    llaisys.Ops.self_attention(attn_val_, q_, k_, v_, scale)
+    llaisys_py.Ops.self_attention(attn_val_, q_, k_, v_, scale)
     assert check_equal(attn_val_, attn_val, atol=atol, rtol=rtol)
 
     if profile:
         benchmark(
             lambda: torch_self_attention(attn_val, q, k, v, scale),
-            lambda: llaisys.Ops.self_attention(attn_val_, q_, k_, v_, scale),
+            lambda: llaisys_py.Ops.self_attention(attn_val_, q_, k_, v_, scale),
             device_name,
         )
 

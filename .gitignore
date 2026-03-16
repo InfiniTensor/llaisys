@@ -25,6 +25,9 @@ __pycache__/
 # Cache
 cache/
 
+# 本地模型目录（体积大，勿提交）
+DeepSeek-R1-Distill-Qwen-1___5B/
+
 # JSON
 *.json
 
@@ -75,16 +78,6 @@ htmlcov/
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints
 
-# IDE and editor settings
-.vscode/
-.idea/
-*.swp
-*~
+# 本地文档与图片（不随代码库同步；项目完成情况报告.md 需提交则不要写在这里）
+docs/
 
-# macOS
-.DS_Store
-
-# Windows
-Thumbs.db
-ehthumbs.db
-desktop.ini

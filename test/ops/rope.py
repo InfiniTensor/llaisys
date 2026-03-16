@@ -3,7 +3,7 @@ import os
 
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, parent_dir)
-import llaisys
+import llaisys_py
 import torch
 from test_utils import arrange_tensor, random_tensor, check_equal, benchmark
 
@@ -47,14 +47,14 @@ def test_op_rope(
     theta = 10000.0
     y, y_ = random_tensor(shape, dtype_name, device_name)
     torch_rope(y, x, pos_ids, theta)
-    llaisys.Ops.rope(y_, x_, pos_ids_, theta)
+    llaisys_py.Ops.rope(y_, x_, pos_ids_, theta)
 
     assert check_equal(y_, y, atol=atol, rtol=rtol)
 
     if profile:
         benchmark(
             lambda: torch_rope(y, x, pos_ids, theta),
-            lambda: llaisys.Ops.rope(y_, x_, pos_ids_, theta),
+            lambda: llaisys_py.Ops.rope(y_, x_, pos_ids_, theta),
             device_name,
         )
 

@@ -1,4 +1,4 @@
-import llaisys
+import llaisys_py
 
 import torch
 from test_utils import *
@@ -7,7 +7,7 @@ import argparse
 
 def test_tensor():
     torch_tensor = torch.arange(60, dtype=torch_dtype("i64")).reshape(3, 4, 5)
-    llaisys_tensor = llaisys.Tensor(
+    llaisys_tensor = llaisys_py.Tensor(
         (3, 4, 5), dtype=llaisys_dtype("i64"), device=llaisys_device("cpu")
     )
 

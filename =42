@@ -1,0 +1,11 @@
+Looking in indexes: https://mirrors.aliyun.com/pypi/simple/
+Collecting setuptools
+  Downloading https://mirrors.aliyun.com/pypi/packages/e1/c6/76dc613121b793286a3f91621d7b75a2b493e0390ddca50f11993eadf192/setuptools-82.0.0-py3-none-any.whl (1.0 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.0/1.0 MB 24.9 MB/s eta 0:00:00
+Collecting wheel
+  Downloading https://mirrors.aliyun.com/pypi/packages/87/22/b76d483683216dde3d67cba61fb2444be8d5be289bf628c13fc0fd90e5f9/wheel-0.46.3-py3-none-any.whl (30 kB)
+Collecting packaging>=24.0 (from wheel)
+  Downloading https://mirrors.aliyun.com/pypi/packages/b7/b9/c538f279a4e237a006a2c98387d081e9eb060d203d8ed34467cc0f0b9b53/packaging-26.0-py3-none-any.whl (74 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 74.4/74.4 kB 23.6 MB/s eta 0:00:00
+Installing collected packages: setuptools, packaging, wheel
+Successfully installed packaging-26.0 setuptools-82.0.0 wheel-0.46.3

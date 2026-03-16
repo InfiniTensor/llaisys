@@ -3,7 +3,7 @@
 
 #include "../llaisys.h"
 
-__C {
+LLAISYS_EXTERN_C {
     // Runtime API Functions
     // Device
     typedef int (*get_device_count_api)();

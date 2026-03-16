@@ -1,4 +1,4 @@
-import llaisys
+import llaisys_py
 import torch
 from test_utils import *
 import argparse
@@ -6,7 +6,7 @@ import argparse
 
 def test_basic_runtime_api(device_name: str = "cpu"):
 
-    api = llaisys.RuntimeAPI(llaisys_device(device_name))
+    api = llaisys_py.RuntimeAPI(llaisys_device(device_name))
 
     ndev = api.get_device_count()
     print(f"Found {ndev} {device_name} devices")
@@ -33,21 +33,21 @@ def test_memcpy(api, size_bytes: int):
         device_a,
         a.data_ptr(),
         size_bytes,
-        llaisys.MemcpyKind.H2D,
+        llaisys_py.MemcpyKind.H2D,
     )
     # device_a -> device_b
     api.memcpy_sync(
         device_b,
         device_a,
         size_bytes,
-        llaisys.MemcpyKind.D2D,
+        llaisys_py.MemcpyKind.D2D,
     )
     # device_b -> b
     api.memcpy_sync(
         b.data_ptr(),
         device_b,
         size_bytes,
-        llaisys.MemcpyKind.D2H,
+        llaisys_py.MemcpyKind.D2H,
     )
 
     torch.testing.assert_close(a, b)

@@ -3,7 +3,7 @@
 
 #include "../tensor/tensor.hpp"
 
-__C {
+LLAISYS_EXTERN_C {
     typedef struct LlaisysTensor {
         llaisys::tensor_t tensor;
     } LlaisysTensor;

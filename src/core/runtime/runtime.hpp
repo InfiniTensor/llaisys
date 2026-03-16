@@ -12,6 +12,7 @@ private:
     const LlaisysRuntimeAPI *_api;
     MemoryAllocator *_allocator;
     bool _is_active;
+    bool _deactivated_for_shutdown;
     void _activate();
     void _deactivate();
     llaisysStream_t _stream;
@@ -43,5 +44,7 @@ public:
 
     llaisysStream_t stream() const;
     void synchronize() const;
+    /// 进程退出时由全局 Runtime 池调用，避免析构时误报
+    void deactivateForShutdown();
 };
 } // namespace llaisys::core

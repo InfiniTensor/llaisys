@@ -20,10 +20,10 @@ LLAISYS (Let's Learn AI SYStem) is an educational project that aims to provide a
 - `xmake.lua`: build rules for llaisys backend. `\xmake` directory contains the sub-xmake files for different devices. You may add `nvidia.lua` in the directory in the future for instance to support CUDA.
 
 - `\python`: Python source files.
-  - `\python\llaisys\libllaisys` contains all the ctypes wrapper functions of llaisys APIs. It basically matches the structure of C header files.
-  - `\python\llaisys` contains Python warppers of the ctypes functions to make the package more Python-like.
+  - `\python\llaisys_py\libllaisys` contains all the ctypes wrapper functions of llaisys APIs. It basically matches the structure of C header files.
+  - `\python\llaisys_py` contains Python wrappers of the ctypes functions to make the package more Python-like.
 
-- `\test`: Python test files that import llaisys python package.
+- `\test`: Python test files that import llaisys_py python package.
 
 ## Assignment #0: Getting Started
 
@@ -307,11 +307,11 @@ Finally, it is the time for you to achieve text generation with LLAISYS.
 
 - In `test/test_infer.py`, your implementation should be able to generate the same texts as PyTorch, using argmax sampling. The model we use for this assignment is [DeepSeek-R1-Distill-Qwen-1.5B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B).
 
-- The python wrapper of your implementation is in `python/llaisys/models/qwen2.py`. You are NOT allowed to implement your model infer logic here using any python based frameworks, such as PyTorch. Instead, you need to implement the model with C/C++ in LLAISYS backend. The script loads each tensor in the safetensors file, and you will need to load data from them into your model backend.
+- The python wrapper of your implementation is in `python/llaisys_py/models/qwen2.py`. You are NOT allowed to implement your model infer logic here using any python based frameworks, such as PyTorch. Instead, you need to implement the model with C/C++ in LLAISYS backend. The script loads each tensor in the safetensors file, and you will need to load data from them into your model backend.
 
 - In `include/llaisys/models/qwen2.h`, a prototype is defined for you. Feel free to modify the codes as you want, but you should at least provide basic APIs for model creation, destruction, data loading, and infer. Implement your C APIs in `src/llaisys/` and organize your C++ codes as other modules in `src/`. Remember to define the compiling procedures in `xmake.lua`.
 
-- In `python/llaisys/libllaisys/`, define the ctypes wrapper functions for your C APIs. Implement `python/llaisys/models/qwen2.py` with your wrapper functions.
+- In `python/llaisys_py/libllaisys/`, define the ctypes wrapper functions for your C APIs. Implement `python/llaisys_py/models/qwen2.py` with your wrapper functions.
 
 - You need to implement KV Cache, or your model will be too slow.
 

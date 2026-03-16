@@ -1,10 +1,10 @@
-import llaisys
+import llaisys_py
 import torch
 
 
 def random_tensor(
     shape, dtype_name, device_name, device_id=0, scale=None, bias=None
-) -> tuple[torch.Tensor, llaisys.Tensor]:
+) -> tuple[torch.Tensor, llaisys_py.Tensor]:
     torch_tensor = torch.rand(
         shape,
         dtype=torch_dtype(dtype_name),
@@ -15,20 +15,20 @@ def random_tensor(
     if bias is not None:
         torch_tensor += bias
 
-    llaisys_tensor = llaisys.Tensor(
+    llaisys_tensor = llaisys_py.Tensor(
         shape,
         dtype=llaisys_dtype(dtype_name),
         device=llaisys_device(device_name),
         device_id=device_id,
     )
 
-    api = llaisys.RuntimeAPI(llaisys_device(device_name))
+    api = llaisys_py.RuntimeAPI(llaisys_device(device_name))
     bytes_ = torch_tensor.numel() * torch_tensor.element_size()
     api.memcpy_sync(
         llaisys_tensor.data_ptr(),
         torch_tensor.data_ptr(),
         bytes_,
-        llaisys.MemcpyKind.D2D,
+        llaisys_py.MemcpyKind.D2D,
     )
 
     return torch_tensor, llaisys_tensor
@@ -43,20 +43,20 @@ def random_int_tensor(shape, device_name, dtype_name="i64", device_id=0, low=0, 
         device=torch_device(device_name, device_id),
     )
 
-    llaisys_tensor = llaisys.Tensor(
+    llaisys_tensor = llaisys_py.Tensor(
         shape,
         dtype=llaisys_dtype(dtype_name),
         device=llaisys_device(device_name),
         device_id=device_id,
     )
 
-    api = llaisys.RuntimeAPI(llaisys_device(device_name))
+    api = llaisys_py.RuntimeAPI(llaisys_device(device_name))
     bytes_ = torch_tensor.numel() * torch_tensor.element_size()
     api.memcpy_sync(
         llaisys_tensor.data_ptr(),
         torch_tensor.data_ptr(),
         bytes_,
-        llaisys.MemcpyKind.D2D,
+        llaisys_py.MemcpyKind.D2D,
     )
 
     return torch_tensor, llaisys_tensor
@@ -64,27 +64,27 @@ def random_int_tensor(shape, device_name, dtype_name="i64", device_id=0, low=0, 
 
 def zero_tensor(
     shape, dtype_name, device_name, device_id=0
-) -> tuple[torch.Tensor, llaisys.Tensor]:
+) -> tuple[torch.Tensor, llaisys_py.Tensor]:
     torch_tensor = torch.zeros(
         shape,
         dtype=torch_dtype(dtype_name),
         device=torch_device(device_name, device_id),
     )
 
-    llaisys_tensor = llaisys.Tensor(
+    llaisys_tensor = llaisys_py.Tensor(
         shape,
         dtype=llaisys_dtype(dtype_name),
         device=llaisys_device(device_name),
         device_id=device_id,
     )
 
-    api = llaisys.RuntimeAPI(llaisys_device(device_name))
+    api = llaisys_py.RuntimeAPI(llaisys_device(device_name))
     bytes_ = torch_tensor.numel() * torch_tensor.element_size()
     api.memcpy_sync(
         llaisys_tensor.data_ptr(),
         torch_tensor.data_ptr(),
         bytes_,
-        llaisys.MemcpyKind.D2D,
+        llaisys_py.MemcpyKind.D2D,
     )
 
     return torch_tensor, llaisys_tensor
@@ -92,29 +92,29 @@ def zero_tensor(
 
 def arrange_tensor(
     start, end, device_name, device_id=0
-) -> tuple[torch.Tensor, llaisys.Tensor]:
+) -> tuple[torch.Tensor, llaisys_py.Tensor]:
     torch_tensor = torch.arange(start, end, device=torch_device(device_name, device_id))
-    llaisys_tensor = llaisys.Tensor(
+    llaisys_tensor = llaisys_py.Tensor(
         (end - start,),
         dtype=llaisys_dtype("i64"),
         device=llaisys_device(device_name),
         device_id=device_id,
     )
 
-    api = llaisys.RuntimeAPI(llaisys_device(device_name))
+    api = llaisys_py.RuntimeAPI(llaisys_device(device_name))
     bytes_ = torch_tensor.numel() * torch_tensor.element_size()
     api.memcpy_sync(
         llaisys_tensor.data_ptr(),
         torch_tensor.data_ptr(),
         bytes_,
-        llaisys.MemcpyKind.D2D,
+        llaisys_py.MemcpyKind.D2D,
     )
 
     return torch_tensor, llaisys_tensor
 
 
 def check_equal(
-    llaisys_result: llaisys.Tensor,
+    llaisys_result: llaisys_py.Tensor,
     torch_answer: torch.Tensor,
     atol=1e-5,
     rtol=1e-5,
@@ -140,12 +140,12 @@ def check_equal(
         ),
     )
     result = torch.as_strided(tmp, shape, strides)
-    api = llaisys.RuntimeAPI(llaisys_result.device_type())
+    api = llaisys_py.RuntimeAPI(llaisys_result.device_type())
     api.memcpy_sync(
         result.data_ptr(),
         llaisys_result.data_ptr(),
         (right + 1) * tmp.element_size(),
-        llaisys.MemcpyKind.D2D,
+        llaisys_py.MemcpyKind.D2D,
     )
 
     if strict:
@@ -161,7 +161,7 @@ def check_equal(
 
 
 def benchmark(torch_func, llaisys_func, device_name, warmup=10, repeat=100):
-    api = llaisys.RuntimeAPI(llaisys_device(device_name))
+    api = llaisys_py.RuntimeAPI(llaisys_device(device_name))
 
     def time_op(func):
         import time
@@ -194,17 +194,17 @@ def torch_device(device_name: str, device_id=0):
 
 def llaisys_device(device_name: str):
     if device_name == "cpu":
-        return llaisys.DeviceType.CPU
+        return llaisys_py.DeviceType.CPU
     elif device_name == "nvidia":
-        return llaisys.DeviceType.NVIDIA
+        return llaisys_py.DeviceType.NVIDIA
     else:
         raise ValueError(f"Unsupported device name: {device_name}")
 
 
-def device_name(llaisys_device: llaisys.DeviceType):
-    if llaisys_device == llaisys.DeviceType.CPU:
+def device_name(llaisys_device: llaisys_py.DeviceType):
+    if llaisys_device == llaisys_py.DeviceType.CPU:
         return "cpu"
-    elif llaisys_device == llaisys.DeviceType.NVIDIA:
+    elif llaisys_device == llaisys_py.DeviceType.NVIDIA:
         return "nvidia"
     else:
         raise ValueError(f"Unsupported llaisys device: {llaisys_device}")
@@ -235,45 +235,45 @@ def torch_dtype(dtype_name: str):
 
 def llaisys_dtype(dtype_name: str):
     if dtype_name == "f16":
-        return llaisys.DataType.F16
+        return llaisys_py.DataType.F16
     elif dtype_name == "f32":
-        return llaisys.DataType.F32
+        return llaisys_py.DataType.F32
     elif dtype_name == "f64":
-        return llaisys.DataType.F64
+        return llaisys_py.DataType.F64
     elif dtype_name == "bf16":
-        return llaisys.DataType.BF16
+        return llaisys_py.DataType.BF16
     elif dtype_name == "i32":
-        return llaisys.DataType.I32
+        return llaisys_py.DataType.I32
     elif dtype_name == "i64":
-        return llaisys.DataType.I64
+        return llaisys_py.DataType.I64
     elif dtype_name == "u32":
-        return llaisys.DataType.U32
+        return llaisys_py.DataType.U32
     elif dtype_name == "u64":
-        return llaisys.DataType.U64
+        return llaisys_py.DataType.U64
     elif dtype_name == "bool":
-        return llaisys.DataType.BOOL
+        return llaisys_py.DataType.BOOL
     else:
         raise ValueError(f"Unsupported dtype name: {dtype_name}")
 
 
-def dtype_name(llaisys_dtype: llaisys.DataType):
-    if llaisys_dtype == llaisys.DataType.F16:
+def dtype_name(llaisys_dtype: llaisys_py.DataType):
+    if llaisys_dtype == llaisys_py.DataType.F16:
         return "f16"
-    elif llaisys_dtype == llaisys.DataType.F32:
+    elif llaisys_dtype == llaisys_py.DataType.F32:
         return "f32"
-    elif llaisys_dtype == llaisys.DataType.F64:
+    elif llaisys_dtype == llaisys_py.DataType.F64:
         return "f64"
-    elif llaisys_dtype == llaisys.DataType.BF16:
+    elif llaisys_dtype == llaisys_py.DataType.BF16:
         return "bf16"
-    elif llaisys_dtype == llaisys.DataType.I32:
+    elif llaisys_dtype == llaisys_py.DataType.I32:
         return "i32"
-    elif llaisys_dtype == llaisys.DataType.I64:
+    elif llaisys_dtype == llaisys_py.DataType.I64:
         return "i64"
-    elif llaisys_dtype == llaisys.DataType.U32:
+    elif llaisys_dtype == llaisys_py.DataType.U32:
         return "u32"
-    elif llaisys_dtype == llaisys.DataType.U64:
+    elif llaisys_dtype == llaisys_py.DataType.U64:
         return "u64"
-    elif llaisys_dtype == llaisys.DataType.BOOL:
+    elif llaisys_dtype == llaisys_py.DataType.BOOL:
         return "bool"
     else:
         raise ValueError(f"Unsupported llaisys dtype: {llaisys_dtype}")

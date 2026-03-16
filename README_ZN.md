@@ -306,11 +306,11 @@ void rearrange(tensor_t out, tensor_t in);
 
 - 在`test/test_infer.py`中，你的实现应该能够使用argmax采样生成与PyTorch相同的文本。我们用于此作业的模型是[DeepSeek-R1-Distill-Qwen-1.5B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B)。
 
-- 你的实现的python包装器在`python/llaisys/models/qwen2.py`中。你不允许在这里使用任何基于python的框架（如PyTorch）实现你的模型推理逻辑。相反，你需要在LLAISYS后端用C/C++实现模型。脚本加载safetensors文件中的每个张量，你需要从它们加载数据到你的模型后端。
+- 你的实现的python包装器在`python/llaisys_py/models/qwen2.py`中。你不允许在这里使用任何基于python的框架（如PyTorch）实现你的模型推理逻辑。相反，你需要在LLAISYS后端用C/C++实现模型。脚本加载safetensors文件中的每个张量，你需要从它们加载数据到你的模型后端。
 
 - 在`include/llaisys/models/qwen2.h`中，为你定义了一个原型。你可以随意修改代码，但你应该至少提供模型创建、销毁、数据加载和推理的基本API。在`src/llaisys/`中实现你的C API，并像`src/`中的其他模块一样组织你的C++代码。记得在`xmake.lua`中定义编译过程。
 
-- 在`python/llaisys/libllaisys/`中，为你的C API定义ctypes包装函数。使用你的包装函数实现`python/llaisys/models/qwen2.py`。
+- 在`python/llaisys_py/libllaisys/`中，为你的C API定义ctypes包装函数。使用你的包装函数实现`python/llaisys_py/models/qwen2.py`。
 
 - 你需要实现 KV-Cache 功能，否则模型推理速度会过慢。
 

@@ -5,14 +5,14 @@
 
 namespace llaisys::core {
 Runtime::Runtime(llaisysDeviceType_t device_type, int device_id)
-    : _device_type(device_type), _device_id(device_id), _is_active(false) {
+    : _device_type(device_type), _device_id(device_id), _is_active(false), _deactivated_for_shutdown(false) {
     _api = llaisys::device::getRuntimeAPI(_device_type);
     _stream = _api->create_stream();
     _allocator = new allocators::NaiveAllocator(_api);
 }
 
 Runtime::~Runtime() {
-    if (!_is_active) {
+    if (!_is_active && !_deactivated_for_shutdown) {
         std::cerr << "Mallicious destruction of inactive runtime." << std::endl;
     }
     delete _allocator;
@@ -28,6 +28,11 @@ void Runtime::_activate() {
 
 void Runtime::_deactivate() {
     _is_active = false;
+}
+
+void Runtime::deactivateForShutdown() {
+    _is_active = false;
+    _deactivated_for_shutdown = true;
 }
 
 bool Runtime::isActive() const {

@@ -1,6 +1,6 @@
 from .libllaisys import LIB_LLAISYS
 from .tensor import Tensor
-from ctypes import c_float, c_int
+from ctypes import c_float, c_int, c_ulonglong
 
 
 class Ops:
@@ -19,9 +19,10 @@ class Ops:
         )
 
     @staticmethod
-    def linear(out: Tensor, inp: Tensor, weight: Tensor, bias: Tensor):
+    def linear(out: Tensor, inp: Tensor, weight: Tensor, bias=None):
         LIB_LLAISYS.llaisysLinear(
-            out.lib_tensor(), inp.lib_tensor(), weight.lib_tensor(), bias.lib_tensor()
+            out.lib_tensor(), inp.lib_tensor(), weight.lib_tensor(),
+            bias.lib_tensor() if bias is not None else None,
         )
 
     @staticmethod
@@ -53,3 +54,22 @@ class Ops:
     @staticmethod
     def swiglu(out: Tensor, gate: Tensor, up: Tensor):
         LIB_LLAISYS.llaisysSwiGLU(out.lib_tensor(), gate.lib_tensor(), up.lib_tensor())
+
+    @staticmethod
+    def sample(
+        out_idx: Tensor,
+        logits: Tensor,
+        temperature: float = 1.0,
+        top_k: int = 0,
+        top_p: float = 0.0,
+        seed: int = 0,
+    ):
+        """从 logits 按概率采样一个 token 索引。支持 Temperature、Top-K、Top-P。seed=0 表示随机。"""
+        LIB_LLAISYS.llaisysSample(
+            out_idx.lib_tensor(),
+            logits.lib_tensor(),
+            c_float(temperature),
+            c_int(top_k),
+            c_float(top_p),
+            c_ulonglong(seed),
+        )

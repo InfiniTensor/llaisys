@@ -11,8 +11,9 @@
 #include "../ops/rope/op.hpp"
 #include "../ops/self_attention/op.hpp"
 #include "../ops/swiglu/op.hpp"
+#include "../ops/sample/op.hpp"
 
-__C {
+LLAISYS_EXTERN_C {
     void llaisysAdd(llaisysTensor_t c, llaisysTensor_t a, llaisysTensor_t b) {
         llaisys::ops::add(c->tensor, a->tensor, b->tensor);
     }
@@ -23,7 +24,7 @@ __C {
         llaisys::ops::embedding(out->tensor, index->tensor, weight->tensor);
     }
     void llaisysLinear(llaisysTensor_t out, llaisysTensor_t in, llaisysTensor_t weight, llaisysTensor_t bias) {
-        llaisys::ops::linear(out->tensor, in->tensor, weight->tensor, bias->tensor);
+        llaisys::ops::linear(out->tensor, in->tensor, weight->tensor, bias ? bias->tensor : nullptr);
     }
     void llaisysRearrange(llaisysTensor_t out, llaisysTensor_t in) {
         llaisys::ops::rearrange(out->tensor, in->tensor);
@@ -39,5 +40,8 @@ __C {
     }
     void llaisysSwiGLU(llaisysTensor_t out, llaisysTensor_t gate, llaisysTensor_t up) {
         llaisys::ops::swiglu(out->tensor, gate->tensor, up->tensor);
+    }
+    void llaisysSample(llaisysTensor_t out_idx, llaisysTensor_t logits, float temperature, int top_k, float top_p, unsigned long long seed) {
+        llaisys::ops::sample(out_idx->tensor, logits->tensor, temperature, top_k, top_p, static_cast<uint64_t>(seed));
     }
 }

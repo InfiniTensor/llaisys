@@ -10,11 +10,11 @@
 #endif
 
 #ifdef __cplusplus
-#define __C extern "C"
+#define LLAISYS_EXTERN_C extern "C"
 #include <cstddef>
 #include <cstdint>
 #else
-#define __C
+#define LLAISYS_EXTERN_C
 #include <stddef.h>
 #include <stdint.h>
 #endif
