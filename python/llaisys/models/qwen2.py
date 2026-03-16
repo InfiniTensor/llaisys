@@ -12,12 +12,6 @@ try:
 except Exception:
     torch = None
 
-try:
-    from transformers import AutoModelForCausalLM
-    HF_AVAILABLE = True
-except Exception:
-    HF_AVAILABLE = False
-
 
 class Qwen2:
     def __init__(self, model_path, device: DeviceType = DeviceType.CPU):
@@ -119,16 +113,7 @@ class Qwen2:
             if missing:
                 print("[llaisys qwen2] Warning: missing weights:", missing)
         except Exception as e:
-            # backend unavailable or error during loading; fall back to HF
-            print(f"[llaisys qwen2] backend load failed: {e}")
-            self._backend_model = None
-
-        if self._backend_model is None:
-            if not HF_AVAILABLE:
-                raise RuntimeError("Neither backend nor HuggingFace available for Qwen2 model")
-            self.device = torch.device("cpu" if device == DeviceType.CPU else ("cuda" if torch.cuda.is_available() else "cpu"))
-            self.model = AutoModelForCausalLM.from_pretrained(str(model_path), trust_remote_code=True, torch_dtype=torch.bfloat16)
-            self.model.to(self.device)
+            raise RuntimeError(f"[llaisys qwen2] backend load failed: {e}") from e
 
     def generate(
         self,
@@ -139,83 +124,74 @@ class Qwen2:
         temperature: float = 0.8,
         seed: int = None,
     ):
-        if self._backend_model is not None:
-            import ctypes
-            from ctypes import c_float, c_int64, c_size_t, c_uint64
+        if self._backend_model is None:
+            raise RuntimeError("Qwen2 backend is not initialized")
 
-            input_ids = [int(t) for t in inputs]
-            if not input_ids:
-                return []
+        import ctypes
+        from ctypes import c_float, c_int64, c_size_t, c_uint64
 
-            if max_new_tokens is None:
-                max_new_tokens = 128
-            max_new_tokens = int(max_new_tokens)
-            if max_new_tokens <= 0:
-                return input_ids
+        input_ids = [int(t) for t in inputs]
+        if not input_ids:
+            return []
 
-            kv_cap = len(input_ids) + max_new_tokens
-            if self._maxseq > 0:
-                kv_cap = min(kv_cap, self._maxseq)
-            kv_cap = max(kv_cap, 1)
+        if max_new_tokens is None:
+            max_new_tokens = 128
+        max_new_tokens = int(max_new_tokens)
+        if max_new_tokens <= 0:
+            return input_ids
 
-            if self._backend_kv is not None:
-                LIB_LLAISYS.llaisysQwen2KVDestroy(self._backend_kv)
-                self._backend_kv = None
-            self._backend_kv = LIB_LLAISYS.llaisysQwen2KVCreat(self._backend_model, c_size_t(kv_cap))
+        kv_cap = len(input_ids) + max_new_tokens
+        if self._maxseq > 0:
+            kv_cap = min(kv_cap, self._maxseq)
+        kv_cap = max(kv_cap, 1)
 
-            sample_api_available = hasattr(LIB_LLAISYS, "llaisysQwen2ModelInferSample")
-            sample_top_k = max(0, int(top_k))
-            sample_top_p = float(top_p)
-            sample_temperature = float(temperature)
-            rng = random.Random() if seed is None else random.Random(int(seed))
+        if self._backend_kv is not None:
+            LIB_LLAISYS.llaisysQwen2KVDestroy(self._backend_kv)
+            self._backend_kv = None
+        self._backend_kv = LIB_LLAISYS.llaisysQwen2KVCreat(self._backend_model, c_size_t(kv_cap))
 
-            def infer_with_sampling(token_buffer, n_token):
-                if sample_api_available:
-                    step_seed = rng.getrandbits(64)
-                    return int(
-                        LIB_LLAISYS.llaisysQwen2ModelInferSample(
-                            self._backend_model,
-                            token_buffer,
-                            c_size_t(n_token),
-                            c_float(sample_temperature),
-                            c_size_t(sample_top_k),
-                            c_float(sample_top_p),
-                            c_uint64(step_seed),
-                        )
-                    )
+        sample_api_available = hasattr(LIB_LLAISYS, "llaisysQwen2ModelInferSample")
+        sample_top_k = max(0, int(top_k))
+        sample_top_p = float(top_p)
+        sample_temperature = float(temperature)
+        rng = random.Random() if seed is None else random.Random(int(seed))
+
+        def infer_with_sampling(token_buffer, n_token):
+            if sample_api_available:
+                step_seed = rng.getrandbits(64)
                 return int(
-                    LIB_LLAISYS.llaisysQwen2ModelInfer(
+                    LIB_LLAISYS.llaisysQwen2ModelInferSample(
                         self._backend_model,
                         token_buffer,
                         c_size_t(n_token),
+                        c_float(sample_temperature),
+                        c_size_t(sample_top_k),
+                        c_float(sample_top_p),
+                        c_uint64(step_seed),
                     )
                 )
-
-            arr = (c_int64 * len(input_ids))(*input_ids)
-            next_token = infer_with_sampling(arr, len(input_ids))
-
-            output_ids = list(input_ids)
-            for _ in range(max_new_tokens):
-                if next_token is None:
-                    break
-                output_ids.append(next_token)
-                if self._end_token >= 0 and next_token == self._end_token:
-                    break
-                arr = (c_int64 * 1)(next_token)
-                next_token = infer_with_sampling(arr, 1)
-
-            return output_ids
-
-        input_ids = torch.tensor([list(inputs)], dtype=torch.long, device=self.device)
-        with torch.no_grad():
-            outputs = self.model.generate(
-                input_ids,
-                max_new_tokens=max_new_tokens,
-                top_k=top_k,
-                top_p=top_p,
-                temperature=temperature,
+            return int(
+                LIB_LLAISYS.llaisysQwen2ModelInfer(
+                    self._backend_model,
+                    token_buffer,
+                    c_size_t(n_token),
+                )
             )
-        return outputs[0].tolist()
+
+        arr = (c_int64 * len(input_ids))(*input_ids)
+        next_token = infer_with_sampling(arr, len(input_ids))
+
+        output_ids = list(input_ids)
+        for _ in range(max_new_tokens):
+            if next_token is None:
+                break
+            output_ids.append(next_token)
+            if self._end_token >= 0 and next_token == self._end_token:
+                break
+            arr = (c_int64 * 1)(next_token)
+            next_token = infer_with_sampling(arr, 1)
+
+        return output_ids
 
     def __del__(self):
         try:
