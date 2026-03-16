@@ -390,7 +390,27 @@ __export uint8_t llaisysQwen2ModelHasWeight(struct LlaisysQwen2Model * model, co
     return it != model->weight_map.end() ? 1 : 0;
 }
 
-static int64_t infer_one_token(struct LlaisysQwen2Model *model, int64_t token_id) {
+static int64_t read_scalar_i64(llaisysTensor_t tensor, const LlaisysRuntimeAPI *runtime_api, int64_t fallback) {
+    if (!tensor) {
+        return fallback;
+    }
+    if (tensor->tensor->deviceType() == LLAISYS_DEVICE_CPU) {
+        int64_t *ptr = reinterpret_cast<int64_t *>(tensor->tensor->data());
+        return ptr ? ptr[0] : fallback;
+    }
+    int64_t v = fallback;
+    runtime_api->memcpy_sync(&v, tensor->tensor->data(), sizeof(v), LLAISYS_MEMCPY_D2H);
+    return v;
+}
+
+static int64_t infer_one_token(
+    struct LlaisysQwen2Model *model,
+    int64_t token_id,
+    bool do_sample,
+    float temperature,
+    size_t top_k,
+    float top_p,
+    uint64_t seed) {
     using namespace llaisys;
 
     if (!model->weights.in_embed || !model->weights.out_embed) {
@@ -557,24 +577,25 @@ static int64_t infer_one_token(struct LlaisysQwen2Model *model, int64_t token_id
     auto logits = make_tensor({1, model->meta.voc}, dtype, model->device_type, model->device_id);
     llaisysLinear(logits, logits_in, model->weights.out_embed, nullptr);
 
-    auto max_idx = make_tensor(one_shape, LLAISYS_DTYPE_I64, model->device_type, model->device_id);
-    auto max_val = make_tensor(one_shape, dtype, model->device_type, model->device_id);
-    llaisysArgmax(max_idx, max_val, logits);
-
     int64_t next = model->meta.end_token;
-    if (max_idx->tensor->deviceType() == LLAISYS_DEVICE_CPU) {
-        int64_t *res_ptr = reinterpret_cast<int64_t *>(max_idx->tensor->data());
-        next = res_ptr ? res_ptr[0] : model->meta.end_token;
+    if (do_sample) {
+        auto sample_idx = make_tensor(one_shape, LLAISYS_DTYPE_I64, model->device_type, model->device_id);
+        llaisysRandomSample(sample_idx, logits, temperature, top_k, top_p, seed);
+        next = read_scalar_i64(sample_idx, runtime_api, model->meta.end_token);
+        delete sample_idx;
     } else {
-        runtime_api->memcpy_sync(&next, max_idx->tensor->data(), sizeof(int64_t), LLAISYS_MEMCPY_D2H);
+        auto max_idx = make_tensor(one_shape, LLAISYS_DTYPE_I64, model->device_type, model->device_id);
+        auto max_val = make_tensor(one_shape, dtype, model->device_type, model->device_id);
+        llaisysArgmax(max_idx, max_val, logits);
+        next = read_scalar_i64(max_idx, runtime_api, model->meta.end_token);
+        delete max_idx;
+        delete max_val;
     }
 
     delete idx;
     delete x;
     if (out_norm) delete out_norm;
     delete logits;
-    delete max_idx;
-    delete max_val;
 
     return next;
 }
@@ -585,7 +606,27 @@ __export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model * model, int64_
 
     int64_t next = model->meta.end_token;
     for (size_t i = 0; i < ntoken; ++i) {
-        next = infer_one_token(model, token_ids[i]);
+        next = infer_one_token(model, token_ids[i], false, 1.0f, 1, 1.0f, 0);
+    }
+    return next;
+}
+
+__export int64_t llaisysQwen2ModelInferSample(
+    struct LlaisysQwen2Model * model,
+    int64_t * token_ids,
+    size_t ntoken,
+    float temperature,
+    size_t top_k,
+    float top_p,
+    uint64_t seed) {
+    if (!model) return -1;
+    if (ntoken == 0 || token_ids == nullptr) return model->meta.end_token;
+
+    int64_t next = model->meta.end_token;
+    for (size_t i = 0; i < ntoken; ++i) {
+        const bool do_sample = (i + 1 == ntoken);
+        const uint64_t step_seed = seed + static_cast<uint64_t>(i);
+        next = infer_one_token(model, token_ids[i], do_sample, temperature, top_k, top_p, step_seed);
     }
     return next;
 }

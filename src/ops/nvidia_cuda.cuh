@@ -41,7 +41,8 @@ __device__ inline float to_float<llaisys::fp16_t>(llaisys::fp16_t v) {
 
 template <>
 __device__ inline float to_float<llaisys::bf16_t>(llaisys::bf16_t v) {
-    return __bfloat162float(__ushort_as_bfloat16(v._v));
+    const uint32_t bits = static_cast<uint32_t>(v._v) << 16;
+    return __uint_as_float(bits);
 }
 
 template <typename T>
@@ -62,7 +63,9 @@ __device__ inline llaisys::fp16_t from_float<llaisys::fp16_t>(float v) {
 template <>
 __device__ inline llaisys::bf16_t from_float<llaisys::bf16_t>(float v) {
     llaisys::bf16_t out;
-    out._v = __bfloat16_as_ushort(__float2bfloat16(v));
+    const uint32_t bits = __float_as_uint(v);
+    const uint32_t rounding_bias = 0x00007FFFu + ((bits >> 16) & 1u);
+    out._v = static_cast<uint16_t>((bits + rounding_bias) >> 16);
     return out;
 }
 

@@ -3,6 +3,7 @@ from ..libllaisys import LIB_LLAISYS, DeviceType, DataType
 from .. import Tensor
 from ..libllaisys.qwen2 import LlaisysQwen2Meta
 from pathlib import Path
+import random
 
 import safetensors
 
@@ -136,10 +137,11 @@ class Qwen2:
         top_k: int = 1,
         top_p: float = 0.8,
         temperature: float = 0.8,
+        seed: int = None,
     ):
         if self._backend_model is not None:
             import ctypes
-            from ctypes import c_int64, c_size_t
+            from ctypes import c_float, c_int64, c_size_t, c_uint64
 
             input_ids = [int(t) for t in inputs]
             if not input_ids:
@@ -161,8 +163,36 @@ class Qwen2:
                 self._backend_kv = None
             self._backend_kv = LIB_LLAISYS.llaisysQwen2KVCreat(self._backend_model, c_size_t(kv_cap))
 
+            sample_api_available = hasattr(LIB_LLAISYS, "llaisysQwen2ModelInferSample")
+            sample_top_k = max(0, int(top_k))
+            sample_top_p = float(top_p)
+            sample_temperature = float(temperature)
+            rng = random.Random() if seed is None else random.Random(int(seed))
+
+            def infer_with_sampling(token_buffer, n_token):
+                if sample_api_available:
+                    step_seed = rng.getrandbits(64)
+                    return int(
+                        LIB_LLAISYS.llaisysQwen2ModelInferSample(
+                            self._backend_model,
+                            token_buffer,
+                            c_size_t(n_token),
+                            c_float(sample_temperature),
+                            c_size_t(sample_top_k),
+                            c_float(sample_top_p),
+                            c_uint64(step_seed),
+                        )
+                    )
+                return int(
+                    LIB_LLAISYS.llaisysQwen2ModelInfer(
+                        self._backend_model,
+                        token_buffer,
+                        c_size_t(n_token),
+                    )
+                )
+
             arr = (c_int64 * len(input_ids))(*input_ids)
-            next_token = int(LIB_LLAISYS.llaisysQwen2ModelInfer(self._backend_model, arr, c_size_t(len(input_ids))))
+            next_token = infer_with_sampling(arr, len(input_ids))
 
             output_ids = list(input_ids)
             for _ in range(max_new_tokens):
@@ -172,7 +202,7 @@ class Qwen2:
                 if self._end_token >= 0 and next_token == self._end_token:
                     break
                 arr = (c_int64 * 1)(next_token)
-                next_token = int(LIB_LLAISYS.llaisysQwen2ModelInfer(self._backend_model, arr, c_size_t(1)))
+                next_token = infer_with_sampling(arr, 1)
 
             return output_ids
 
