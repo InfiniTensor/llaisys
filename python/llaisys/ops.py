@@ -53,3 +53,18 @@ class Ops:
     @staticmethod
     def swiglu(out: Tensor, gate: Tensor, up: Tensor):
         LIB_LLAISYS.llaisysSwiGLU(out.lib_tensor(), gate.lib_tensor(), up.lib_tensor())
+
+    # 假设你的库是通过 ctypes 加载的为 LIB_LLAISYS
+    @staticmethod
+    def sample(next_token_id_tensor, logits_tensor, temperature=1.0, top_k=0, top_p=1.0):
+        # 强制将 logits 转为 float32 (对应我们 C++ 里的设定)
+        if logits_tensor.dtype != "f32":
+            logits_tensor = logits_tensor.cast("f32")
+            
+        LIB_LLAISYS.llaisys_op_sample(
+            next_token_id_tensor.handle, 
+            logits_tensor.handle, 
+            ctypes.c_float(temperature), 
+            ctypes.c_int(top_k), 
+            ctypes.c_float(top_p)
+        )

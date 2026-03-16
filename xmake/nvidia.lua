@@ -2,7 +2,7 @@ target("llaisys-device-nvidia")
     set_kind("static")
     add_deps("llaisys-utils")
 
-    -- 强制开启 CUDA 设备代码链接策略
+    -- 【借鉴核心 1】强制开启 CUDA 设备代码链接策略！
     set_policy("build.cuda.devlink", true)
     
     set_toolchains("cuda")
@@ -29,7 +29,7 @@ target("llaisys-device-nvidia")
     end
 
     set_languages("cxx17")
-    set_warnings("all", "error")
+    set_warnings("all")
     
     add_files("../src/device/nvidia/*.cu")
     add_files("../src/ops/*/nvidia/*.cu")

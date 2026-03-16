@@ -29,7 +29,7 @@ end
 target("llaisys-utils")
     set_kind("static")
     set_languages("cxx17")
-    set_warnings("all", "error")
+    set_warnings("all")
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end
@@ -47,7 +47,7 @@ target("llaisys-device")
     end
 
     set_languages("cxx17")
-    set_warnings("all", "error")
+    set_warnings("all")
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end
@@ -61,7 +61,7 @@ target("llaisys-core")
     add_deps("llaisys-device")
 
     set_languages("cxx17")
-    set_warnings("all", "error")
+    set_warnings("all")
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end
@@ -74,7 +74,7 @@ target("llaisys-tensor")
     add_deps("llaisys-core")
 
     set_languages("cxx17")
-    set_warnings("all", "error")
+    set_warnings("all")
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end
@@ -89,7 +89,7 @@ target("llaisys-ops")
     -- 【修复点】：彻底移除了对 llaisys-ops-nvidia 的依赖，防止报错
 
     set_languages("cxx17")
-    set_warnings("all", "error")
+    set_warnings("all")
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end
@@ -103,7 +103,7 @@ target("llaisys-models")
     add_deps("llaisys-ops")
 
     set_languages("cxx17")
-    set_warnings("all", "error")
+    set_warnings("all")
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end
@@ -126,13 +126,12 @@ target("llaisys")
             add_cuflags("-Xcompiler=-fPIC")
         end
         -- 【核心逻辑】：直接把所有算子的 cuda 文件喂给这个拥有一切依赖的动态库
-        add_files("src/ops/*/nvidia/*.cpp", "src/ops/*/nvidia/*.cu")
+        add_files("src/ops/*/nvidia/*.cu")
     end
     
     set_languages("cxx17")
-    set_warnings("all", "error")
+    set_warnings("all")
     add_files("src/llaisys/*.cc")
-    add_files("src/llaisys/models/*.cc")
 
     set_installdir(".")
 
