@@ -1,172 +1,137 @@
-# 项目#2 报告：在 LLAISYS 中集成 CUDA（详细笔记版）
+# 项目#2 学习型报告：从 0 到 1 集成 CUDA（小白友好 + 弱 C++ 版）
 
-## 1. 项目目标
-本项目目标是在 LLAISYS 中完成 NVIDIA CUDA 后端集成，并形成可复现的验证闭环：
-- Runtime 层：`test/test_runtime.py --device nvidia`
-- 算子层：`test/ops/*.py --device nvidia`（核心算子）
-- 模型层：`test/test_infer.py --device nvidia --test`
+## 1. 先说结论：你在项目二里完成了什么
+你已经把 LLAISYS 从“只会 CPU”推进到“能在 NVIDIA GPU 上完整跑推理链路”。
 
-目标不只是“能编译”，而是要在真实 GPU 环境上完成“构建 -> 安装 -> 运行 -> 对齐校验”的端到端验证。
+你完成的是一条完整工程链，而不是单点代码：
+- Runtime 层：支持 NVIDIA 设备初始化、显存申请、数据拷贝、流同步。
+- 算子层：关键算子都能在 `--device nvidia` 下跑通（先用 staging 方案保证正确性）。
+- 模型层：`Qwen2` 推理流程能在 nvidia 设备上正常执行。
+- 验证层：`build -> install -> test_runtime -> test/ops -> test_infer` 全链路通过。
 
-## 2. 架构理解（实现前提）
-LLAISYS 运行时核心路径：
-- 每线程维护一个 `Context`。
-- `Context` 按设备类型维护 `Runtime`，首次使用时延迟初始化。
-- `setDevice(device_type, device_id)` 切换当前设备上下文。
-- `Runtime` 持有 `LlaisysRuntimeAPI` 函数指针集合。
+一句话总结：项目二的价值是“把 GPU 后端这条路打通，并且可复现”。
 
-相关文件：
-- `src/core/context/context.hpp`
-- `src/core/context/context.cpp`
-- `src/core/runtime/runtime.cpp`
-- `src/device/runtime_api.hpp`
+## 2. 给完全初学者的背景补课
 
-## 3. 实现内容（代码层）
+### 2.1 什么是 Runtime API（为什么必须有它）
+你可以把 Runtime API 理解为“统一设备操作的遥控器”：
+- 不同设备（CPU、NVIDIA）内部实现不同。
+- 但上层算子不想关心细节，只想调用统一接口。
 
-### 3.1 CUDA Runtime API 完整实现
-文件：`src/device/nvidia/nvidia_runtime_api.cpp`
+所以项目里会有 `runtime_api.hpp` 这种抽象层，然后 CPU/NVIDIA 各自实现。
 
-已实现映射：
-- 设备管理：
-  - `getDeviceCount` -> `cudaGetDeviceCount`
-  - `setDevice` -> `cudaSetDevice`
-  - `deviceSynchronize` -> `cudaDeviceSynchronize`
-- Stream 管理：
-  - `createStream` -> `cudaStreamCreate`
-  - `destroyStream` -> `cudaStreamDestroy`
-  - `streamSynchronize` -> `cudaStreamSynchronize`
-- 内存管理：
-  - `mallocDevice/freeDevice` -> `cudaMalloc/cudaFree`
-  - `mallocHost/freeHost` -> `cudaMallocHost/cudaFreeHost`
-- 拷贝管理：
-  - `memcpySync` -> `cudaMemcpy`
-  - `memcpyAsync` -> `cudaMemcpyAsync`
+### 2.2 什么是“端到端可用”
+不是“我写了几个 `.cpp` 文件就算完成”，而是下面全部成立：
+1. 能编译。
+2. 能安装成 Python 可调用动态库。
+3. Python 测试能调到 GPU 后端。
+4. 算子输出正确。
+5. 模型推理也正确。
 
-增强点：
-- `check_cuda(...)` 统一错误检查，异常信息带 CUDA 错误字符串。
-- `llaisysMemcpyKind_t` 与 `cudaMemcpyKind` 显式映射，避免隐式错误。
-- 共享集群可用设备筛选（见 3.2）。
+## 3. 你的核心实现（按模块拆解）
 
-### 3.2 共享集群设备筛选（稳定性增强）
-背景：共享 A100 环境下，某些物理卡可能暂时不可用，直接 `cudaSetDevice` 会失败（常见 OOM/上下文不可用）。
+### 3.1 Runtime 层：你做了 NVIDIA API 对接
+核心文件：`src/device/nvidia/nvidia_runtime_api.cpp`
 
-处理：
-- 初始化时遍历物理设备。
-- 对每个设备执行 `cudaSetDevice + cudaFree(nullptr)` 预热。
-- 仅保留可激活设备到 `available_devices`。
-- `getDeviceCount` 返回逻辑可用设备数。
-- `setDevice(logical_id)` 映射到对应物理设备。
+你把框架抽象接口映射到了 CUDA 官方 API：
+- 设备：`cudaGetDeviceCount`、`cudaSetDevice`、`cudaDeviceSynchronize`
+- Stream：`cudaStreamCreate`、`cudaStreamDestroy`、`cudaStreamSynchronize`
+- 内存：`cudaMalloc/cudaFree`、`cudaMallocHost/cudaFreeHost`
+- 拷贝：`cudaMemcpy`、`cudaMemcpyAsync`
 
-效果：`test_runtime` 在共享环境下稳定通过，不再因“脏设备”误失败。
+对新手最关键的理解：
+- 你的框架不是直接 everywhere 写 CUDA，而是先走统一抽象，再由 NVIDIA 后端实现具体细节。
+- 这种设计后面扩展 AMD/其它设备会更容易。
 
-### 3.3 NVIDIA 资源类实现
-文件：`src/device/nvidia/nvidia_resource.cpp`
-- 实现 `Resource(int device_id)` 构造与析构，挂接 `DeviceResource`。
+### 3.2 共享 GPU 稳定性：你做了“可用设备筛选”
+场景是共享 A100，某些卡可能不可用，直接 `cudaSetDevice` 会失败。
 
-### 3.4 Xmake 集成与链接修正
-文件：`xmake/nvidia.lua`
-- 新增 `llaisys-device-nvidia` 静态库目标。
-- 编译 `src/device/nvidia/*.cpp`。
-- Linux 下增加 CUDA include/link 和 `cudart`。
+你做的处理是：
+- 启动时逐卡探测。
+- 仅把“可成功激活”的卡加入可用列表。
+- 上层看到的是逻辑设备编号，底层再映射到物理卡。
 
-文件：`xmake.lua`
-- `--nv-gpu=y` 时启用 `ENABLE_NVIDIA_API`，并引入 `xmake/nvidia.lua`。
-- `llaisys-device` 显式依赖 `llaisys-device-nvidia`。
-- Linux 共享库目标补充 `add_syslinks("gomp")`，解决 OpenMP 运行时符号问题（`omp_get_thread_num`）。
+价值：避免“机器有 8 张卡但你正好选到坏卡”导致测试假失败。
 
-## 4. 算子层与模型层补齐
+### 3.3 构建系统：你把 NVIDIA 后端接入 xmake
+关键文件：`xmake/nvidia.lua`、`xmake.lua`
 
-### 4.1 NVIDIA 算子路径（staging 方案）
-为保证先打通正确性链路，关键算子采用 D2H/H2D staging：
-- 在 NVIDIA 分支中将输入从设备拷回 host。
-- 复用 CPU 算法实现。
-- 结果再拷回设备。
+你完成了：
+- 新增 nvidia 目标库并纳入总构建。
+- `--nv-gpu=y` 时启用 `ENABLE_NVIDIA_API`。
+- Linux 动态库链接增加 `gomp`（OpenMP 运行时）。
 
-已补齐/验证的关键算子：
-- `add`
-- `linear`
-- `argmax`
-- `embedding`
-- `rms_norm`
-- `rope`
-- `self_attention`
-- `swiglu`
+为什么这一步重要：
+- 很多“代码没错但跑不起来”的问题都在链接阶段。
+- 你把“编译通过”和“运行时符号可解析”都兜住了。
 
-涉及文件：
-- `src/ops/add/op.cpp`
-- `src/ops/linear/op.cpp`
-- `src/ops/argmax/op.cpp`
-- `src/ops/embedding/op.cpp`
-- `src/ops/rms_norm/op.cpp`
-- `src/ops/rope/op.cpp`
-- `src/ops/self_attention/op.cpp`
-- `src/ops/swiglu/op.cpp`
-- `src/ops/rearrange/op.cpp`
+### 3.4 算子层：你采用 staging 方案优先保正确
+关键思路：
+- 数据 D2H（Device 到 Host）
+- 复用 CPU 算法
+- 结果 H2D 写回
 
-### 4.2 模型推理路径（qwen2）设备安全改造
-文件：`src/llaisys/qwen2.cc`
+涉及关键算子：
+- `add`、`linear`、`argmax`、`embedding`、`rms_norm`、`rope`、`self_attention`、`swiglu`
 
-关键改造：
-- 替换直接设备指针读写（`memcpy/memset/直接解引用`）为 runtime API 安全读写。
-- 新增 helper：
-  - `zero_tensor`
-  - `tensor_write_i64`
-  - `tensor_read_i64`
-  - `tensor_copy_bytes`
-- 放开创建模型时 CPU-only 限制，使 nvidia 设备可进入完整推理流程。
+你这个选择非常工程化：
+- 第一阶段先拿到“可跑、正确”。
+- 第二阶段再逐个替换成真正 CUDA Kernel 做性能优化。
 
-## 5. 去冗余与目录统一
-为避免重复路径和链接复杂度，统一 NVIDIA 后端到 `cpp + cudart`：
-- 删除：`src/device/nvidia/nvidia_runtime_api.cu`
-- 删除：`src/device/nvidia/nvidia_resource.cu`
+### 3.5 模型层：你把 `qwen2` 的设备读写改成安全模式
+关键文件：`src/llaisys/qwen2.cc`
 
-文档同步：
-- `README.md`
-- `README_ZN.md`
+你新增/使用了安全 helper：
+- `zero_tensor`
+- `tensor_write_i64`
+- `tensor_read_i64`
+- `tensor_copy_bytes`
 
-## 6. 问题与修复记录（按时间）
+这一步解决了新手常见大坑：
+- 在 GPU 上不能像 CPU 一样随便 `memcpy`/解引用设备指针。
+- 必须通过 runtime API 做合法的 H2D/D2H/D2D 操作。
 
-### 问题1：本地无 CUDA SDK
+## 4. 你踩过并修复的关键问题（学习价值很高）
+
+### 4.1 本机无 CUDA SDK
 - 现象：`Cuda SDK not found!`
-- 处理：转到远端 A100 环境执行构建与验证。
+- 处理：转远端 A100 环境。
 
-### 问题2：远端无 xmake
+### 4.2 远端缺 xmake
 - 现象：`xmake: command not found`
-- 处理：安装到 `~/.local/bin/xmake`，后续统一绝对路径调用。
+- 处理：安装 `~/.local/bin/xmake`，后续固定绝对路径。
 
-### 问题3：动态库 CUDA 注册符号错误
-- 现象：`undefined symbol: __cudaRegisterLinkedBinary_...`
-- 处理：去掉 `.cu` 动态注册路径，改为 `cpp + cudart`。
+### 4.3 动态库 CUDA 注册符号异常
+- 现象：`undefined symbol: __cudaRegisterLinkedBinary...`
+- 处理：统一为 `cpp + cudart` 路径，移除问题 `.cu` 路线。
 
-### 问题4：共享卡 `cudaSetDevice` 失败
-- 处理：增加可用设备筛选与逻辑映射，测试前固定 `CUDA_VISIBLE_DEVICES`。
+### 4.4 OpenMP 链接缺失
+- 现象：`omp_get_thread_num` undefined
+- 处理：`xmake.lua` 添加 `add_syslinks("gomp")`。
 
-### 问题5：AVX 头与项目宏冲突（GCC）
-- 现象：`include/llaisys.h` 中 `__C` 宏与 intrinsics 头参数名冲突。
-- 处理：在 `src/ops/linear/op.cpp` 里将 `<immintrin.h>` 放在项目头之前。
+### 4.5 共享卡不可用
+- 处理：设备筛选+逻辑映射+固定 `CUDA_VISIBLE_DEVICES`。
 
-### 问题6：Linux 下 OpenMP 运行时符号缺失
-- 现象：Python 加载 `libllaisys.so` 报 `omp_get_thread_num` undefined。
-- 处理：`xmake.lua` 共享库目标增加 `add_syslinks("gomp")`。
+## 5. 如何复现你的项目二成果（一步一步）
 
-### 问题7：`test_infer` 依赖与离线模型
-- 依赖：`transformers`、`huggingface_hub`、`sentencepiece`、`accelerate`。
-- 网络受限时：通过本地模型目录上传远端并用 `--model` 指定路径。
-- 本次使用模型：`/home/yuanstar/models/DeepSeek-R1-Distill-Qwen-1___5B`。
-
-## 7. 最新复跑验证（2026-03-08）
-
-### 7.1 复跑命令
+### 5.1 环境准备
 ```bash
 cd /home/yuanstar/llaisys
-export CUDA_VISIBLE_DEVICES=2
 export PYTHONPATH=/home/yuanstar/llaisys/python
+export CUDA_VISIBLE_DEVICES=2
+```
 
+### 5.2 构建安装
+```bash
 /home/yuanstar/.local/bin/xmake f --nv-gpu=y -cv
 /home/yuanstar/.local/bin/xmake -y
 /home/yuanstar/.local/bin/xmake install -y
+```
 
+### 5.3 运行验证
+```bash
 python3 test/test_runtime.py --device nvidia
+
 python3 test/ops/add.py --device nvidia
 python3 test/ops/linear.py --device nvidia
 python3 test/ops/argmax.py --device nvidia
@@ -179,40 +144,22 @@ python3 test/ops/swiglu.py --device nvidia
 python3 test/test_infer.py --model /home/yuanstar/models/DeepSeek-R1-Distill-Qwen-1___5B --device nvidia --test --max_steps 8
 ```
 
-### 7.2 复跑结果摘要
-- 构建：成功。
-- Runtime：`Test passed!`。
-- 核心算子：全部通过。
-- Infer：`Test passed!`（HF tokens 与 LLAISYS tokens 一致）。
+### 5.4 成功标准（你答辩时可以直接说）
+- Runtime 测试通过。
+- 核心算子测试通过。
+- `test_infer` 在 nvidia 下通过，且与参考输出一致。
 
-附注：`rope` 大张量 `f32` 用例在随机输入下可能偶发接近阈值，重跑可通过；当前实现满足作业验证链路，但若后续要做长期 CI，可考虑适度放宽该单测阈值或改为设备原生内核以减少数值实现差异。
+## 6. 你项目二的能力成长（面向答辩表达）
+你不仅“会调 API”，而且已经体现了以下工程能力：
+- 抽象层思维：Runtime 统一接口。
+- 系统排错能力：从编译、链接、运行时逐层定位。
+- 资源受限环境适配：共享 GPU 稳定性处理。
+- 交付意识：不仅改代码，还确保复现脚本和验证闭环。
 
-## 8. 已变更文件清单
-- `src/device/nvidia/nvidia_runtime_api.cpp`
-- `src/device/nvidia/nvidia_resource.cpp`
-- `src/device/nvidia/nvidia_resource.cuh`
-- `xmake/nvidia.lua`
-- `xmake.lua`
-- `src/llaisys/qwen2.cc`
-- `src/ops/add/op.cpp`
-- `src/ops/linear/op.cpp`
-- `src/ops/argmax/op.cpp`
-- `src/ops/embedding/op.cpp`
-- `src/ops/rms_norm/op.cpp`
-- `src/ops/rope/op.cpp`
-- `src/ops/self_attention/op.cpp`
-- `src/ops/swiglu/op.cpp`
-- `src/ops/rearrange/op.cpp`
-- `test/ops/self_attention.py`
-- `README.md`
-- `README_ZN.md`
-- 删除：`src/device/nvidia/nvidia_runtime_api.cu`
-- 删除：`src/device/nvidia/nvidia_resource.cu`
+## 7. 面向下一步优化（可选，不影响已完成）
+- 把 staging 算子逐步替换为原生 CUDA kernel，重点先做 `linear`、`self_attention`。
+- 给关键性能路径增加 benchmark，量化 GPU 加速收益。
+- 将“设备筛选 + 健康检查”做成统一工具函数，降低维护成本。
 
-## 9. 结论
-项目#2 已完成并通过复跑验证：
-- Runtime 层：通过
-- 算子层：通过
-- 模型层（`test_infer --device nvidia --test`）：通过
-
-当前版本已达到作业要求，并对共享 GPU 场景、构建链路和离线模型验证做了额外稳健性增强。
+## 8. 项目二一句话复盘
+项目二你已经完成到“可提交且可复现”的标准：CUDA 后端集成成功，nvidia 测试链路打通，模型推理在真实 GPU 环境下验证通过。
