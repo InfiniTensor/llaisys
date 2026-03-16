@@ -349,9 +349,9 @@ Optimize your implementation with any methods you like and report your performan
 
 ## Project #2: Intigrate CUDA into LLAISYS
 
-This project does not depend on **Project #1**. You can choose hardware platforms other than Nvidia GPU if you want.
+This project does not depend on **Project #1**. You should choose two CUDA/CUDA-ish hardware platforms from Nvidia, Iluvatar, Metax, and Moore Threads.
 
-You can accelerate your model with CUDA if you have an Nvidia GPU. Before doing that, let's dive deeper into LLAISYS framework. 
+This camp session provides computation resources from the four platforms above, access to which is granted based on applications from the official website. You can accelerate your model with CUDA on these GPU platforms. Before doing that, let's dive deeper into LLAISYS framework. 
 
 LLAISYS is actually a framework with homogeous hardware support. When using LLAISYS, each thread will create a thread-local `Context` object which manages all the device `Runtime` objects used by this thread. A `Runtime` object is a resource manager for a device, and `Context` will create (with lazy initialization) a single `Runtime` object for each device. You can set and switch between them using `setDevice` function in `Context`. Only one device will be active at a time for each thread. Check `src/core/context.hpp` for more details. 
 
