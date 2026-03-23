@@ -12,6 +12,16 @@ __C {
     __export void llaisysRmsNorm(llaisysTensor_t out, llaisysTensor_t in, llaisysTensor_t weight, float eps);
     __export void llaisysROPE(llaisysTensor_t out, llaisysTensor_t in, llaisysTensor_t pos_ids, float theta);
     __export void llaisysSelfAttention(llaisysTensor_t attn_val, llaisysTensor_t q, llaisysTensor_t k, llaisysTensor_t v, float scale);
+    // Segmented self-attention for packed batches.
+    // q_offsets/kv_offsets must both have length nseg + 1 and be non-decreasing.
+    __export void llaisysSelfAttentionSegmented(llaisysTensor_t attn_val,
+                                                llaisysTensor_t q,
+                                                llaisysTensor_t k,
+                                                llaisysTensor_t v,
+                                                float scale,
+                                                const int64_t *q_offsets,
+                                                const int64_t *kv_offsets,
+                                                size_t nseg);
     __export void llaisysSwiGLU(llaisysTensor_t out, llaisysTensor_t gate, llaisysTensor_t up);
 }
 

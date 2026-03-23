@@ -77,6 +77,7 @@
         throw std::runtime_error("device mismatch");                                  \
     } while (0)
 
+
 #define CHECK_SAME_DEVICE(FIRST, ...)                            \
     do {                                                         \
         for (const auto &tensor___ : {__VA_ARGS__}) {            \

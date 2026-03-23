@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-Hans">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LLAISYS Chat</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="container">
+      <aside class="sidebar">
+        <div class="brand">LLAISYS Chat</div>
+        <button id="new-chat" type="button" class="new-chat">新对话</button>
+        <div class="session-label">会话列表</div>
+        <div id="session-list" class="session-list"></div>
+      </aside>
+
+      <section class="panel">
+        <header class="header">
+          <h1>对话</h1>
+          <div class="meta">
+            <label>
+              服务地址
+              <input id="endpoint" type="text" value="http://127.0.0.1:8000" />
+            </label>
+          </div>
+        </header>
+
+        <section id="chat" class="chat"></section>
+
+        <form id="chat-form" class="composer">
+          <div id="edit-hint" class="edit-hint" style="display:none"></div>
+          <textarea id="prompt" rows="3" placeholder="输入问题..."></textarea>
+          <div class="actions">
+            <div class="controls">
+              <label>
+                最大 token
+                <input id="max-tokens" type="number" min="1" value="128" />
+              </label>
+              <label>
+                采样模式
+                <select id="sampling-mode">
+                  <option value="">自动</option>
+                  <option value="argmax">argmax</option>
+                  <option value="sample">sample</option>
+                </select>
+              </label>
+              <label>
+                Temperature
+                <input id="temperature" type="number" step="0.1" min="0" value="0" />
+              </label>
+              <label>
+                Top-K
+                <input id="top-k" type="number" min="1" value="1" />
+              </label>
+              <label>
+                Top-P
+                <input id="top-p" type="number" step="0.05" min="0" max="1" value="0" />
+              </label>
+              <label>
+                Seed
+                <input id="seed" type="number" min="0" value="0" />
+              </label>
+            </div>
+            <div class="action-buttons">
+              <button id="stop" type="button" class="secondary" disabled>停止</button>
+              <button id="send" type="submit">发送</button>
+            </div>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

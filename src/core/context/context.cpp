@@ -3,7 +3,8 @@
 #include <thread>
 
 namespace llaisys::core {
-
+    
+//构造函数，初始化运行时
 Context::Context() {
     // All device types, put CPU at the end
     std::vector<llaisysDeviceType_t> device_typs;
@@ -31,6 +32,7 @@ Context::Context() {
     }
 }
 
+//销毁上下文及其包含的运行时
 Context::~Context() {
     // Destroy current runtime first.
     delete _current_runtime;
@@ -49,6 +51,7 @@ Context::~Context() {
     _runtime_map.clear();
 }
 
+//设置当前设备
 void Context::setDevice(llaisysDeviceType_t device_type, int device_id) {
     // If doest not match the current runtime.
     if (_current_runtime == nullptr || _current_runtime->deviceType() != device_type || _current_runtime->deviceId() != device_id) {
@@ -65,6 +68,7 @@ void Context::setDevice(llaisysDeviceType_t device_type, int device_id) {
     }
 }
 
+//获取当前运行时
 Runtime &Context::runtime() {
     ASSERT(_current_runtime != nullptr, "No runtime is activated, please call setDevice() first.");
     return *_current_runtime;

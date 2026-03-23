@@ -1,6 +1,6 @@
 from .libllaisys import LIB_LLAISYS
 from .tensor import Tensor
-from ctypes import c_float, c_int
+from ctypes import c_float, c_int, c_int64, c_size_t
 
 
 class Ops:
@@ -48,6 +48,35 @@ class Ops:
             k.lib_tensor(),
             v.lib_tensor(),
             c_float(scale),
+        )
+
+    @staticmethod
+    def self_attention_segmented(
+        attn_val: Tensor,
+        q: Tensor,
+        k: Tensor,
+        v: Tensor,
+        scale: float,
+        q_offsets: list[int],
+        kv_offsets: list[int],
+    ):
+        if len(q_offsets) != len(kv_offsets):
+            raise ValueError("q_offsets and kv_offsets must have same length")
+        if len(q_offsets) < 2:
+            raise ValueError("offsets must contain at least start/end")
+        if not hasattr(LIB_LLAISYS, "llaisysSelfAttentionSegmented"):
+            raise RuntimeError("llaisysSelfAttentionSegmented is unavailable in current llaisys.dll")
+        q_buf = (c_int64 * len(q_offsets))(*[int(x) for x in q_offsets])
+        kv_buf = (c_int64 * len(kv_offsets))(*[int(x) for x in kv_offsets])
+        LIB_LLAISYS.llaisysSelfAttentionSegmented(
+            attn_val.lib_tensor(),
+            q.lib_tensor(),
+            k.lib_tensor(),
+            v.lib_tensor(),
+            c_float(scale),
+            q_buf,
+            kv_buf,
+            c_size_t(len(q_offsets) - 1),
         )
 
     @staticmethod

@@ -1,0 +1,1 @@
+xmake f -m release --nv-gpu=y --vs=2022

@@ -1,5 +1,5 @@
 from .tensor import llaisysTensor_t
-from ctypes import c_float
+from ctypes import c_float, c_int64, c_size_t, POINTER
 
 def load_ops(lib):
     lib.llaisysAdd.argtypes = [llaisysTensor_t, llaisysTensor_t, llaisysTensor_t]
@@ -31,6 +31,19 @@ def load_ops(lib):
         c_float    # scale
     ]
     lib.llaisysSelfAttention.restype = None
+
+    if hasattr(lib, "llaisysSelfAttentionSegmented"):
+        lib.llaisysSelfAttentionSegmented.argtypes = [
+            llaisysTensor_t,  # attn_val
+            llaisysTensor_t,  # q
+            llaisysTensor_t,  # k
+            llaisysTensor_t,  # v
+            c_float,          # scale
+            POINTER(c_int64), # q_offsets ptr
+            POINTER(c_int64), # kv_offsets ptr
+            c_size_t,         # nseg
+        ]
+        lib.llaisysSelfAttentionSegmented.restype = None
 
     lib.llaisysSwiGLU.argtypes = [llaisysTensor_t, llaisysTensor_t, llaisysTensor_t]
     lib.llaisysSwiGLU.restype = None

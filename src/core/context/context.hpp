@@ -27,6 +27,7 @@ public:
     Context(Context &&) = delete;
     Context &operator=(Context &&) = delete;
 
+    //设置当前设备
     void setDevice(llaisysDeviceType_t device_type, int device_id);
     Runtime &runtime();
 

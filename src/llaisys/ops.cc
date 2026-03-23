@@ -23,7 +23,10 @@ __C {
         llaisys::ops::embedding(out->tensor, index->tensor, weight->tensor);
     }
     void llaisysLinear(llaisysTensor_t out, llaisysTensor_t in, llaisysTensor_t weight, llaisysTensor_t bias) {
-        llaisys::ops::linear(out->tensor, in->tensor, weight->tensor, bias->tensor);
+        llaisys::ops::linear(out->tensor,
+                             in->tensor,
+                             weight->tensor,
+                             bias ? bias->tensor : nullptr);
     }
     void llaisysRearrange(llaisysTensor_t out, llaisysTensor_t in) {
         llaisys::ops::rearrange(out->tensor, in->tensor);
@@ -36,6 +39,24 @@ __C {
     }
     void llaisysSelfAttention(llaisysTensor_t attn_val, llaisysTensor_t q, llaisysTensor_t k, llaisysTensor_t v, float scale) {
         llaisys::ops::self_attention(attn_val->tensor, q->tensor, k->tensor, v->tensor, scale);
+    }
+    void llaisysSelfAttentionSegmented(llaisysTensor_t attn_val,
+                                       llaisysTensor_t q,
+                                       llaisysTensor_t k,
+                                       llaisysTensor_t v,
+                                       float scale,
+                                       const int64_t *q_offsets,
+                                       const int64_t *kv_offsets,
+                                       size_t nseg) {
+        llaisys::ops::self_attention_segmented(
+            attn_val->tensor,
+            q->tensor,
+            k->tensor,
+            v->tensor,
+            scale,
+            q_offsets,
+            kv_offsets,
+            nseg);
     }
     void llaisysSwiGLU(llaisysTensor_t out, llaisysTensor_t gate, llaisysTensor_t up) {
         llaisys::ops::swiglu(out->tensor, gate->tensor, up->tensor);
