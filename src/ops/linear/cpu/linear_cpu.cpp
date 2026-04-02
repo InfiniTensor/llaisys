@@ -26,7 +26,7 @@ void linear_kernel(const T *input, const T *weight, const T *bias, T *out,
         } else {
             // 🚀 Prefill 阶段：保持原样，大矩阵对撞
             cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
-                        (int)M, (int), (int)K, 1.0f,
+                        (int)M, (int)N, (int)K, 1.0f,
                         f_input, (int)K, f_weight, (int)K,
                         0.0f, f_out, (int)N);
         }
