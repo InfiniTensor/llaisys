@@ -18,17 +18,17 @@ void linear_kernel(const T *input, const T *weight, const T *bias, T *out,
             // 当 M=1 时，输入其实是一个向量。我们调用专门的 cblas_sgemv！
             // Weight 是 N 行 K 列，Input 是长度为 K 的向量，Output 是长度为 N 的向量。
             cblas_sgemv(CblasRowMajor, CblasNoTrans, 
-                        N, K, 1.0f, 
-                        f_weight, K, 
+                        (int)N, (int)K, 1.0f, 
+                        f_weight, (int)K, 
                         f_input, 1, 
                         0.0f, 
                         f_out, 1);
         } else {
             // 🚀 Prefill 阶段：保持原样，大矩阵对撞
             cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
-                        M, N, K, 1.0f,
-                        f_input, K, f_weight, K,
-                        0.0f, f_out, N);
+                        (int)M, (int), (int)K, 1.0f,
+                        f_input, (int)K, f_weight, (int)K,
+                        0.0f, f_out, (int)N);
         }
 
         // 加上偏置
@@ -69,11 +69,11 @@ void linear_kernel(const T *input, const T *weight, const T *bias, T *out,
 
         // 2. 将所有并发算力全部留给 OpenBLAS！
         cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
-                    M, N, K, 1.0f,
-                    f32_x.data(), K,
-                    f32_w.data(), K,
+                    (int)M, (int)N, (int)K, 1.0f,
+                    f32_x.data(), (int)K,
+                    f32_w.data(), (int)K,
                     0.0f,
-                    f32_out.data(), N);
+                    f32_out.data(), (int)N);
 
         // 3. 算完后，单线程安全转回
         for (size_t m = 0; m < M; m++) {
