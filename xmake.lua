@@ -3,7 +3,7 @@ set_encodings("utf-8")
 
 add_requires("openmp")
 add_requires("openblas") -- 自动处理 Windows/Linux 差异
-
+add_packages("openmp", "openblas")
 add_includedirs("include")
 
 -- CPU / GPU 配置保持不变...
