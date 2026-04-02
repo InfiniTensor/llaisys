@@ -1,13 +1,13 @@
 #include "rms_norm_cpu.hpp"
 #include "../../../utils.hpp"
 #include <cmath>
-#include <omp.h>
+
 
 template <typename T>
 void rms_norm_kernel(const T *input, const T *weight, T *out,
                      size_t num_rows, size_t hidden_dim, float eps) {
 
-#pragma omp parallel for
+
     for (size_t i = 0; i < num_rows; i++) {
 
         const T *row_in = input + i * hidden_dim;
