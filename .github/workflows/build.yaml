@@ -27,8 +27,8 @@ jobs:
     
     - name: Xmake Build & Install
       run: | 
-        xmake
-        xmake install
+        xmake -y
+        xmake install -y
     
     - name: Install Python
       run: | 
