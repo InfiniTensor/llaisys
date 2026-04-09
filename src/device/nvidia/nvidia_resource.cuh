@@ -29,4 +29,6 @@ public:
     Resource& operator=(const Resource&) = delete;
 };
 
+cublasHandle_t getCublasHandle(int device_id);
+
 } // namespace llaisys::device::nvidia

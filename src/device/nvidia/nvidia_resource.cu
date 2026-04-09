@@ -3,6 +3,8 @@
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <cstdio>
+#include <memory>
+#include <unordered_map>
 
 namespace llaisys::device::nvidia {
 
@@ -52,6 +54,18 @@ cublasHandle_t Resource::cublasHandle() {
         init();
     }
     return _cublas_handle;
+}
+
+namespace {
+thread_local std::unordered_map<int, std::unique_ptr<Resource>> G_RESOURCES;
+}
+
+cublasHandle_t getCublasHandle(int device_id) {
+    auto &resource = G_RESOURCES[device_id];
+    if (resource == nullptr) {
+        resource = std::make_unique<Resource>(device_id);
+    }
+    return resource->cublasHandle();
 }
 
 } // namespace llaisys::device::nvidia
