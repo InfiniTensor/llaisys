@@ -7,7 +7,7 @@
 
 ## Introduction
 
-LLAISYS (Let's Learn AI SYStem) is an educational project that aims to provide a platform for new and future AI engineers to learn how to build AI systems from scratch. LLAISYS consists of several assignments, which help students learn and build the basic modules, and projects that challenge them to add more fancy features to their systems. LLAISYS uses C++ as primary programming language for system backend, and is compiled into shared libraries exposing C language APIs. Frontend codes are written in Python which calls these APIs to provide more convenient testing and interaction with other architectures such as PyTorch.
+LLAISYS (Let's Learn AI SYStem) is an educational project that aims to provide a platform for new and future AI engineers to learn how to build AI systems from scratch. LLAISYS consists of several assignments, which help students learn and build the basic modules, and optional problems that challenge them to add more fancy features to their systems. LLAISYS uses C++ as primary programming language for system backend, and is compiled into shared libraries exposing C language APIs. Frontend codes are written in Python which calls these APIs to provide more convenient testing and interaction with other architectures such as PyTorch.
 
 ### Project Structure Overview
 
@@ -326,30 +326,9 @@ python test/test_infer.py --model [dir_path/to/model] --test
 Commit and push your changes. You should see the auto tests for assignment #3 passed.
 
 
-## You can proceed to the projects only after you finish the assignments.
+## Assignment #4: Integrate CUDA into LLAISYS
 
-## Project #1: Optimize LLAISYS for CPU
-You probably have already noticed that your model inference is very slow compared to PyTorch. This is mostly because your operators are not optimized. Run your operater test scripts with "--profile" flag to see how your operators perform. You would probably see that `linear` operation is much slower than PyTorch. This operator is mainly a matrix multiplication, and is the most time consuming operation in transformer-based models.
-
-There are several ways to optimize your operators for CPU:
-
-### SIMD instructions
-
-SIMD (Single Instruction Multiple Data) instructions are instructions that can perform the same operation on multiple data elements in a single instruction. Modern CPUs have support for SIMD instructions. Look for online materials to learn about compiler intrinsics (such as AVX2, AVX-512, NEON, SVE) to vectorize your operations.
-
-### Use OpenMP for parallelism
-
-You can use multi-threading to parallelize your operators. OpenMP is a popular library for multi-threading in C/C++. Add OpenMP support for LLAISYS to parallelize your `linear` and other operators.
-
-### 3rd-party Libraries
-
-There are several libraries that can help you optimize your operators for CPU. Look for libraries like Eigen, OpenBLAS, MKL, etc. to optimize your linear algebra operations. Note that some libraries are supported only for certain hardware platforms. Check their documentations and use them in your codes with care. You can also try to dig out how PyTorch implement these operators and see if you can use them.
-
-Optimize your implementation with any methods you like and report your performance improvement.
-
-## Project #2: Intigrate CUDA into LLAISYS
-
-This project does not depend on **Project #1**. You should choose two CUDA/CUDA-ish hardware platforms from Nvidia, Iluvatar, Metax, and Moore Threads.
+You should choose two CUDA/CUDA-ish hardware platforms from Nvidia, Iluvatar, Metax, and Moore Threads.
 
 This camp session provides computation resources from the four platforms above, access to which is granted based on applications from the official website. You can accelerate your model with CUDA on these GPU platforms. Before doing that, let's dive deeper into LLAISYS framework. 
 
@@ -390,9 +369,34 @@ Modify your model codes to support CUDA inference.
 python test/test_infer.py --model [dir_path/to/model] --test --device nvidia
 ```
 
-## Project #3: Build an AI chatbot
+Commit and push your changes. You should see the auto tests for assignment #4 passed.
 
-In this project you will build an AI chatbot that can do live conversations with single user with LLAISYS. 
+## Optional Problems
+
+After finishing all required assignments, you must choose at least one optional problem to complete.
+
+## Optional Problem #1: Optimize LLAISYS for CPU
+You probably have already noticed that your model inference is very slow compared to PyTorch. This is mostly because your operators are not optimized. Run your operater test scripts with "--profile" flag to see how your operators perform. You would probably see that `linear` operation is much slower than PyTorch. This operator is mainly a matrix multiplication, and is the most time consuming operation in transformer-based models.
+
+There are several ways to optimize your operators for CPU:
+
+### SIMD instructions
+
+SIMD (Single Instruction Multiple Data) instructions are instructions that can perform the same operation on multiple data elements in a single instruction. Modern CPUs have support for SIMD instructions. Look for online materials to learn about compiler intrinsics (such as AVX2, AVX-512, NEON, SVE) to vectorize your operations.
+
+### Use OpenMP for parallelism
+
+You can use multi-threading to parallelize your operators. OpenMP is a popular library for multi-threading in C/C++. Add OpenMP support for LLAISYS to parallelize your `linear` and other operators.
+
+### 3rd-party Libraries
+
+There are several libraries that can help you optimize your operators for CPU. Look for libraries like Eigen, OpenBLAS, MKL, etc. to optimize your linear algebra operations. Note that some libraries are supported only for certain hardware platforms. Check their documentations and use them in your codes with care. You can also try to dig out how PyTorch implement these operators and see if you can use them.
+
+Optimize your implementation with any methods you like and report your performance improvement.
+
+## Optional Problem #2: Build an AI chatbot
+
+In this optional problem you will build an AI chatbot that can do live conversations with single user with LLAISYS.
 
 ### Random Sampling
 
@@ -412,9 +416,9 @@ Build a UI that send requests to and receive responses from the chatbot server. 
 In real-world AI applications, users are allowed to start new conversations and switch between them. Users can also edit a past question and let the AI regenerate an answer. Enhance your UI to support these features. Implement a KV-Cache pool with prefix matching to reuse past results as much as possible.
 
 
-## Project #4: Multi-user Inference Service
+## Optional Problem #3: Multi-user Inference Service
 
-You need to finish **Project #2** and achieve streaming response first before proceeding to this project.
+You need to finish **Optional Problem #2** and achieve streaming response first before proceeding to this optional problem.
 
 ### Serving Multiple Users
 
@@ -423,9 +427,9 @@ In real-world scenarios, an inference service will serve multiple users. Request
 ### Continous Batching
 To maximize the throughput of your inference service, you need to batch your requests instead of serving them one by one. Since each request can have different length, you will need a continous and iteration-level batching mechanism. For each interation you extract several requests from pool to form a batch, do one round of batch inference, and then return the unfinished requests back to the pool. Use batched matrix multiplication when possible to speed up your inference. Note that every request in the batch need to bind with a different KV-Cache. You should build a KV-Cache pool with prefix matching to reuse past results as much as possible.
 
-## Project #5: Distributed Inference
+## Optional Problem #4: Distributed Inference
 Introduce Tensor Parallelism to LLAISYS. Shard your model across multiple devices and implement distributed model inference. Support NCCL in LLAISYS if your are uing Nvidia GPUs, or MPI if you are using CPUs.
 
-## Project #6: Support New Models
+## Optional Problem #5: Support New Models
 
 Support another model type than the one we use for homework in LLAISYS.
