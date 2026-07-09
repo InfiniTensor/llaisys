@@ -105,9 +105,14 @@ target("llaisys")
 
     set_languages("cxx17")
     set_warnings("all", "error")
+    
+    -- 原有的 .cc 文件 (ops.cc, runtime.cc, tensor.cc)
     add_files("src/llaisys/*.cc")
-    set_installdir(".")
+    
+    -- 🟢 新增：把我们的 qwen2.cpp 加入编译！
+    add_files("src/llaisys/qwen2.cpp")
 
+    set_installdir(".")
     
     after_install(function (target)
         -- copy shared library to python package

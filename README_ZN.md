@@ -152,7 +152,7 @@ python test/test_tensor.py
 - swiglu
 
 阅读`src/ops/add/`中的代码，了解"add"算子是如何实现的。确保你理解算子代码是如何组织、编译、链接以及暴露给Python前端的。**你的算子应该至少支持Float32、Float16和BFloat16数据类型**。`src/utils/`中提供了一个用于简单类型转换的辅助函数。所有python测试都在`test/ops`中，你的实现应该至少通过这些测试。首先尝试运行"add"算子的测试脚本。
-
+python test/ops/test_add.py
 ### 任务-2.1 Argmax
 
 ```c++
