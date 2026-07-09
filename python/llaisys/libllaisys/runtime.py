@@ -46,3 +46,6 @@ def load_runtime(lib):
 
     lib.llaisysSetContextRuntime.argtypes = [llaisysDeviceType_t, c_int]
     lib.llaisysSetContextRuntime.restype = None
+
+    lib.llaisysIsDeviceSupported.argtypes = [llaisysDeviceType_t]
+    lib.llaisysIsDeviceSupported.restype = c_int

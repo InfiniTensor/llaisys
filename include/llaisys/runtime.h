@@ -42,6 +42,10 @@ __C {
 
     // Llaisys API for switching device context
     __export void llaisysSetContextRuntime(llaisysDeviceType_t, int);
+
+    // Returns non-zero if the library was compiled with support for the given device type.
+    // A return value of 0 means the library must be recompiled with the matching backend option.
+    __export int llaisysIsDeviceSupported(llaisysDeviceType_t);
 }
 
 #endif // LLAISYS_RUNTIME_H

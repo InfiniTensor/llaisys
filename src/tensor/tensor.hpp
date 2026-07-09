@@ -5,7 +5,7 @@
 namespace llaisys {
 class Tensor;
 using tensor_t = std::shared_ptr<Tensor>;
-
+// 张量元数据结构
 struct TensorMeta {
     llaisysDataType_t dtype;
     std::vector<size_t> shape;

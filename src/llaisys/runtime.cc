@@ -11,3 +11,19 @@ __C void llaisysSetContextRuntime(llaisysDeviceType_t device_type, int device_id
 __C const LlaisysRuntimeAPI *llaisysGetRuntimeAPI(llaisysDeviceType_t device_type) {
     return llaisys::device::getRuntimeAPI(device_type);
 }
+
+// Returns 1 if the library was compiled with support for the given device type, 0 otherwise.
+__C int llaisysIsDeviceSupported(llaisysDeviceType_t device_type) {
+    switch (device_type) {
+    case LLAISYS_DEVICE_CPU:
+        return 1; // CPU is always supported
+    case LLAISYS_DEVICE_NVIDIA:
+#ifdef ENABLE_NVIDIA_API
+        return 1;
+#else
+        return 0;
+#endif
+    default:
+        return 0;
+    }
+}

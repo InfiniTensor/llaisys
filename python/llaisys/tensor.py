@@ -20,8 +20,11 @@ class Tensor:
         device_id: int = 0,
         tensor: llaisysTensor_t = None,
     ):
-        if tensor:
+        if tensor is not None:
+            # Wrap an existing C tensor handle — we do NOT own it,
+            # so __del__ must not call tensorDestroy on it.
             self._tensor = tensor
+            self._owned = False
         else:
             _ndim = 0 if shape is None else len(shape)
             _shape = None if shape is None else (c_size_t * len(shape))(*shape)
@@ -32,9 +35,10 @@ class Tensor:
                 llaisysDeviceType_t(device),
                 c_int(device_id),
             )
+            self._owned = True
 
     def __del__(self):
-        if hasattr(self, "_tensor") and self._tensor is not None:
+        if hasattr(self, "_tensor") and self._tensor is not None and getattr(self, "_owned", True):
             LIB_LLAISYS.tensorDestroy(self._tensor)
             self._tensor = None
 

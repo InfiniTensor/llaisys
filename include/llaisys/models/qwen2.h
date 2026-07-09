@@ -30,6 +30,7 @@ __C {
     };
 
     struct LlaisysQwen2Model;
+    struct LlaisysQwen2Session;
 
     __export struct LlaisysQwen2Model *llaisysQwen2ModelCreate(const LlaisysQwen2Meta *meta, llaisysDeviceType_t device, int *device_ids, int ndevice);
 
@@ -37,6 +38,30 @@ __C {
 
     __export struct LlaisysQwen2Weights *llaisysQwen2ModelWeights(struct LlaisysQwen2Model * model);
 
-    __export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model * model, int64_t * token_ids, size_t ntoken);
+    // ── 向后兼容：操作模型内置 default_session
+    __export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model * model, int64_t *token_ids, size_t ntoken);
+
+    __export int64_t llaisysQwen2ModelInferSample(struct LlaisysQwen2Model * model, int64_t *token_ids, size_t ntoken, float temperature, int top_k, float top_p);
+
+    __export void llaisysQwen2ModelSetCachePos(struct LlaisysQwen2Model * model, size_t pos);
+
+    __export size_t llaisysQwen2ModelGetCachePos(struct LlaisysQwen2Model * model);
+
+    __export void llaisysQwen2ModelResetCache(struct LlaisysQwen2Model * model);
+
+    // ── 多用户 Session API：每用户独占 KV-Cache
+    __export struct LlaisysQwen2Session *llaisysQwen2SessionCreate(struct LlaisysQwen2Model * model);
+
+    __export void llaisysQwen2SessionDestroy(struct LlaisysQwen2Session * session);
+
+    __export int64_t llaisysQwen2SessionInfer(struct LlaisysQwen2Model * model, struct LlaisysQwen2Session * session, int64_t *token_ids, size_t ntoken);
+
+    __export int64_t llaisysQwen2SessionInferSample(struct LlaisysQwen2Model * model, struct LlaisysQwen2Session * session, int64_t *token_ids, size_t ntoken, float temperature, int top_k, float top_p);
+
+    __export void llaisysQwen2SessionSetCachePos(struct LlaisysQwen2Session * session, size_t pos);
+
+    __export size_t llaisysQwen2SessionGetCachePos(struct LlaisysQwen2Session * session);
+
+    __export void llaisysQwen2SessionResetCache(struct LlaisysQwen2Session * session);
 }
 #endif // LLAISYS_MODELS_QWEN2_H

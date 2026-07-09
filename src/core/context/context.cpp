@@ -52,8 +52,11 @@ Context::~Context() {
 void Context::setDevice(llaisysDeviceType_t device_type, int device_id) {
     // If doest not match the current runtime.
     if (_current_runtime == nullptr || _current_runtime->deviceType() != device_type || _current_runtime->deviceId() != device_id) {
-        auto runtimes = _runtime_map[device_type];
-        CHECK_ARGUMENT((size_t)device_id < runtimes.size() && device_id >= 0, "invalid device id");
+        // Use find() to avoid inserting an empty vector via operator[]
+        auto it = _runtime_map.find(device_type);
+        CHECK_ARGUMENT(it != _runtime_map.end() && device_id >= 0 && (size_t)device_id < it->second.size(),
+                       "invalid device id");
+        auto &runtimes = it->second; // reference, not copy
         if (_current_runtime != nullptr) {
             _current_runtime->_deactivate();
         }
