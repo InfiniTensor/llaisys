@@ -1,0 +1,6 @@
+#ifndef LLAISYS_BUILD_CONFIG_H
+#define LLAISYS_BUILD_CONFIG_H
+
+${define ENABLE_NVIDIA_API}
+
+#endif

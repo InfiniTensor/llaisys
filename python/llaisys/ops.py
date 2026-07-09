@@ -1,6 +1,6 @@
 from .libllaisys import LIB_LLAISYS
 from .tensor import Tensor
-from ctypes import c_float, c_int
+from ctypes import c_float, c_int, c_int64
 
 
 class Ops:
@@ -19,9 +19,10 @@ class Ops:
         )
 
     @staticmethod
-    def linear(out: Tensor, inp: Tensor, weight: Tensor, bias: Tensor):
+    def linear(out: Tensor, inp: Tensor, weight: Tensor, bias: Tensor = None):
+        bias_handle = bias.lib_tensor() if bias is not None else None
         LIB_LLAISYS.llaisysLinear(
-            out.lib_tensor(), inp.lib_tensor(), weight.lib_tensor(), bias.lib_tensor()
+            out.lib_tensor(), inp.lib_tensor(), weight.lib_tensor(), bias_handle
         )
 
     @staticmethod
@@ -53,3 +54,10 @@ class Ops:
     @staticmethod
     def swiglu(out: Tensor, gate: Tensor, up: Tensor):
         LIB_LLAISYS.llaisysSwiGLU(out.lib_tensor(), gate.lib_tensor(), up.lib_tensor())
+
+    @staticmethod
+    def sample(out_idx: Tensor, logits: Tensor, temperature: float = 1.0, top_k: int = 50, top_p: float = 0.9):
+        LIB_LLAISYS.llaisysSample(
+            out_idx.lib_tensor(), logits.lib_tensor(),
+            c_float(temperature), c_int(top_k), c_float(top_p)
+        )

@@ -113,6 +113,10 @@ if __name__ == "__main__":
 
     del model
     gc.collect()
+    if args.device == "nvidia":
+        torch.cuda.empty_cache()
+        sys.stderr.write(f"[DEBUG] GPU after cleanup: {torch.cuda.memory_allocated()/1e9:.2f}GB\n")
+        sys.stderr.flush()
 
     print("\n=== Answer ===\n")
     print("Tokens:")
@@ -122,6 +126,9 @@ if __name__ == "__main__":
     print("\n")
     print(f"Time elapsed: {(end_time - start_time):.2f}s\n")
 
+    sys.stderr.write(f"[DEBUG] About to load LLAISYS, path={model_path}, device={args.device}\n")
+    sys.stderr.write(f"[DEBUG] llaisys_device={llaisys_device(args.device)}, value={int(llaisys_device(args.device))}\n")
+    sys.stderr.flush()
     model = load_llaisys_model(model_path, args.device)
     start_time = time.time()
     llaisys_tokens, llaisys_output = llaisys_infer(
