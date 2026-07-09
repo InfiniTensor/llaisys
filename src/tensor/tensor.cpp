@@ -164,27 +164,73 @@ void Tensor::debug() const {
 }
 
 bool Tensor::isContiguous() const {
-    TO_BE_IMPLEMENTED();
+    size_t stride = 1;
+    size_t ndim = shape().size();
+    for (size_t i = 1; i <= ndim; i++) {
+        if (static_cast<size_t>(strides()[ndim - i]) != stride) 
+            return false;
+        stride *= shape()[ndim - i];
+    }
     return true;
 }
 
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    size_t ndim = _meta.shape.size();
+    std::vector<size_t> new_shape(ndim);
+    std::vector<ptrdiff_t> new_strides(ndim);
+    for (size_t i = 0; i < order.size(); i++){
+        new_shape[i] = shape()[order[i]];
+        new_strides[i] = strides()[order[i]];
+    }
+    TensorMeta meta{_meta.dtype, new_shape, new_strides};
+    return std::shared_ptr<Tensor>(new Tensor(meta, _storage));
 }
 
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    ASSERT(this->isContiguous(), "View: only contiguous");
+    size_t ndim = shape.size();
+    std::vector<ptrdiff_t> new_strides(ndim);
+    size_t stride = 1;
+    for (size_t i = 1; i <= ndim; i++) {
+        new_strides[ndim - i] = stride;
+        stride *= shape[ndim - i];
+    }
+    ASSERT(
+        stride == std::accumulate(
+            shape.begin(),
+            shape.end(),
+            size_t(1),
+            std::multiplies<size_t>()),
+        "view: invalid shape (number mismatched)"
+    );
+    TensorMeta meta{_meta.dtype, shape, new_strides};
+    return std::shared_ptr<Tensor>(new Tensor(meta, _storage));
 }
 
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    if (dim >= ndim() || start > end || end > shape()[dim]) {
+        throw std::runtime_error("slice: invalid parameters");
+    }
+    
+    std::vector<size_t> new_shape = shape();
+    std::vector<ptrdiff_t> new_strides = strides();
+    new_shape[dim] = end - start;
+    
+    size_t new_offset = _offset + start * new_strides[dim] * this->elementSize();
+    
+    TensorMeta new_meta{_meta.dtype, new_shape, new_strides};
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, new_offset));
 }
 
 void Tensor::load(const void *src_) {
-    TO_BE_IMPLEMENTED();
+    core::context().setDevice(this->deviceType(), this->deviceId());
+    auto memcpy_type = (this->deviceType() == LLAISYS_DEVICE_CPU) ? LLAISYS_MEMCPY_H2H : LLAISYS_MEMCPY_H2D;
+    core::context().runtime().api()->memcpy_sync(
+        this->data(),
+        src_,
+        this->numel() * this->elementSize(),
+        memcpy_type
+    );
 }
 
 tensor_t Tensor::contiguous() const {

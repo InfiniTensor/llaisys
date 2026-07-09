@@ -27,6 +27,15 @@ target("llaisys-utils")
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end
 
+    if not is_plat("windows") then
+        add_cxflags("-fPIC", "-Wno-unknown-pragmas")
+        add_cxflags("-fopenmp")
+        add_cxflags("-mavx2", "-mf16c")
+        add_ldflags("-fopenmp")
+    else
+        add_cxxflags("/openmp")
+    end
+
     add_files("src/utils/*.cpp")
 
     on_install(function (target) end)
@@ -105,7 +114,9 @@ target("llaisys")
 
     set_languages("cxx17")
     set_warnings("all", "error")
+
     add_files("src/llaisys/*.cc")
+    add_files("src/llaisys/models/*.cpp")
     set_installdir(".")
 
     
