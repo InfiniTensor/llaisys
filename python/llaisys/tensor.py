@@ -33,9 +33,20 @@ class Tensor:
                 c_int(device_id),
             )
 
+    @staticmethod
+    def from_ptr(tensor_ptr: llaisysTensor_t):
+        """Create a Tensor wrapper from an existing C pointer without taking ownership"""
+        tensor = Tensor.__new__(Tensor)
+        tensor._tensor = tensor_ptr
+        # Mark as non-owning by setting a flag
+        tensor._owns_ptr = False
+        return tensor
+
     def __del__(self):
         if hasattr(self, "_tensor") and self._tensor is not None:
-            LIB_LLAISYS.tensorDestroy(self._tensor)
+            # Only destroy if we own the pointer
+            if not hasattr(self, "_owns_ptr") or self._owns_ptr:
+                LIB_LLAISYS.tensorDestroy(self._tensor)
             self._tensor = None
 
     def shape(self) -> Tuple[int]:

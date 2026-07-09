@@ -52,6 +52,9 @@ llaisysMemcpyKind_t = ctypes.c_int
 # Stream type (opaque pointer)
 llaisysStream_t = ctypes.c_void_p
 
+# Tensor type (opaque pointer)
+llaisysTensor_t = ctypes.c_void_p
+
 __all__ = [
     "llaisysDeviceType_t",
     "DeviceType",
@@ -60,4 +63,5 @@ __all__ = [
     "llaisysMemcpyKind_t",
     "MemcpyKind",
     "llaisysStream_t",
+    "llaisysTensor_t",
 ]

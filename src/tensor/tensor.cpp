@@ -164,27 +164,105 @@ void Tensor::debug() const {
 }
 
 bool Tensor::isContiguous() const {
-    TO_BE_IMPLEMENTED();
+    // Check if tensor is contiguous in memory
+    // A tensor is contiguous if stride[i] = shape[i+1] * shape[i+2] * ... * shape[n-1]
+    if (_meta.shape.empty()) {
+        return true;
+    }
+
+    ptrdiff_t expected_stride = 1;
+    for (int i = _meta.shape.size() - 1; i >= 0; i--) {
+        if (_meta.strides[i] != expected_stride) {
+            return false;
+        }
+        expected_stride *= static_cast<ptrdiff_t>(_meta.shape[i]);
+    }
     return true;
 }
 
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    // Permute dimensions according to order
+    // Example: permute(2, 0, 1) on shape (3, 4, 5) -> shape (5, 3, 4)
+
+    CHECK_ARGUMENT(order.size() == _meta.shape.size(),
+                   "Permute order size must match tensor ndim");
+
+    // Create new shape and strides
+    TensorMeta new_meta = _meta;
+    for (size_t i = 0; i < order.size(); i++) {
+        CHECK_ARGUMENT(order[i] < _meta.shape.size(),
+                       "Permute order index out of range");
+        new_meta.shape[i] = _meta.shape[order[i]];
+        new_meta.strides[i] = _meta.strides[order[i]];
+    }
+
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, _offset));
 }
 
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    // View reshapes tensor without moving data
+    // Only works if tensor is contiguous or view is compatible with current strides
+
+    // Check if total number of elements matches
+    size_t new_numel = 1;
+    for (size_t s : shape) {
+        new_numel *= s;
+    }
+    CHECK_ARGUMENT(new_numel == this->numel(),
+                   "View shape must have same total number of elements");
+
+    // If tensor is contiguous, we can create any view
+    if (this->isContiguous()) {
+        // Calculate new strides
+        std::vector<ptrdiff_t> new_strides(shape.size());
+        ptrdiff_t stride = 1;
+        for (int i = shape.size() - 1; i >= 0; i--) {
+            new_strides[i] = stride;
+            stride *= static_cast<ptrdiff_t>(shape[i]);
+        }
+
+        TensorMeta new_meta{_meta.dtype, shape, new_strides};
+        return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, _offset));
+    }
+
+    // For non-contiguous tensors, we need to check if the view is compatible
+    // This is a simplified check - view is allowed only if we're combining or splitting
+    // contiguous dimensions
+
+    // For now, we'll just throw an error for non-contiguous tensors
+    // A full implementation would check dimension compatibility
+    throw std::runtime_error("View is not supported for non-contiguous tensors");
 }
 
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    // Slice along dimension dim from start (inclusive) to end (exclusive)
+    CHECK_ARGUMENT(dim < _meta.shape.size(), "Slice dimension out of range");
+    CHECK_ARGUMENT(start < end && end <= _meta.shape[dim], "Invalid slice range");
+
+    // Create new meta with updated shape
+    TensorMeta new_meta = _meta;
+    new_meta.shape[dim] = end - start;
+
+    // Calculate new offset: offset += start * stride[dim] * elementSize
+    size_t new_offset = _offset + start * _meta.strides[dim] * this->elementSize();
+
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, new_offset));
 }
 
 void Tensor::load(const void *src_) {
-    TO_BE_IMPLEMENTED();
+    // Load data from host memory to this tensor
+    core::context().setDevice(this->deviceType(), this->deviceId());
+    const std::byte *src = reinterpret_cast<const std::byte *>(src_);
+    size_t bytes = this->numel() * this->elementSize();
+
+    if (this->deviceType() == LLAISYS_DEVICE_CPU) {
+        // CPU to CPU: direct memcpy
+        std::memcpy(this->data(), src, bytes);
+    } else {
+        // Host to Device: use H2D memcpy
+        core::context().runtime().api()->memcpy_sync(
+            this->data(), src, bytes, LLAISYS_MEMCPY_H2D);
+    }
 }
 
 tensor_t Tensor::contiguous() const {
