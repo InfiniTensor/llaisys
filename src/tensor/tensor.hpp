@@ -27,20 +27,23 @@ public:
         int device = 0);
     ~Tensor() = default;
     // Info
-    std::byte *data();
-    const std::byte *data() const;
-    size_t ndim() const;
+    std::byte *data();             // 指向张量数据的指针
+    const std::byte *data() const; // 指向张量数据的指针
+    size_t ndim() const;           // 维度数量
     const std::vector<size_t> &shape() const;
     const std::vector<ptrdiff_t> &strides() const;
-    llaisysDataType_t dtype() const;
-    llaisysDeviceType_t deviceType() const;
-    int deviceId() const;
-    size_t numel() const;
-    size_t elementSize() const;
+    llaisysDataType_t dtype() const;        // 数据类型
+    llaisysDeviceType_t deviceType() const; // 设备类型
+    int deviceId() const;                   // 设备ID
+    size_t numel() const;                   // 元素总数
+    size_t elementSize() const;             // 每个元素的大小（字节）
 
     std::string info() const;
     void debug() const;
 
+    // shape 和 strides 决定了张量在内存中的布局
+    // 判断张量是否是连续存储的
+    // 最后一维的步长为一，倒数第二维的步长为最后一维的大小，依此类推
     bool isContiguous() const;
 
     // Meta Transform
@@ -50,6 +53,8 @@ public:
 
     // Load data from host memory
     void load(const void *src);
+    // src_: 指向源数据的指针, 实际是主机内存中的数据
+    // 将数据加载到张量中，如果张量在设备上，则进行相应的内存拷贝；否则直接拷贝
 
     // Challenging features
     tensor_t contiguous() const;

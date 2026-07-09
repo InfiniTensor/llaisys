@@ -361,7 +361,7 @@ python test/test_runtime.py --device nvidia
 
 在每个算子目录下新建 ``nvidia/`` 子目录，写 CUDA 版本实现。参考 ``src/ops/add/op.cpp`` 看如何包含 CUDA 实现。别忘了在 xmake 文件中定义编译流程。用 ``--device nvidia`` 参数运行测试。
 
-你可以使用 cuBLAS、cuDNN 等 CUDA 库来加速算子，额外的设备资源可以放在 `src/device/nvidia/nvidia_resource.cu`。
+你可以使用 cuBLAS、cuDNN 等 CUDA 库来加速算子，额外的设备资源可以放在 `src/device/nvidia/nvidia_resource.cpp`。
 
 最后,修改模型代码，支持 CUDA 推理：
 

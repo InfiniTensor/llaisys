@@ -53,3 +53,9 @@ class Ops:
     @staticmethod
     def swiglu(out: Tensor, gate: Tensor, up: Tensor):
         LIB_LLAISYS.llaisysSwiGLU(out.lib_tensor(), gate.lib_tensor(), up.lib_tensor())
+
+    @staticmethod
+    def sample(out_idx: Tensor, logits: Tensor, temperature: float = 1.0, top_k: int = 0, top_p: float = 1.0):
+        LIB_LLAISYS.llaisysSample(
+            out_idx.lib_tensor(), logits.lib_tensor(), c_float(float(temperature)), c_int(int(top_k)), c_float(float(top_p))
+        )

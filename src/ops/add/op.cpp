@@ -3,6 +3,8 @@
 #include "../../core/llaisys_core.hpp"
 #include "../../utils.hpp"
 
+#include <vector>
+
 #include "cpu/add_cpu.hpp"
 
 namespace llaisys::ops {
@@ -18,15 +20,28 @@ void add(tensor_t c, tensor_t a, tensor_t b) {
         return cpu::add(c->data(), a->data(), b->data(), c->dtype(), c->numel());
     }
 
+    // set device context
     llaisys::core::context().setDevice(c->deviceType(), c->deviceId());
 
     switch (c->deviceType()) {
     case LLAISYS_DEVICE_CPU:
         return cpu::add(c->data(), a->data(), b->data(), c->dtype(), c->numel());
 #ifdef ENABLE_NVIDIA_API
-    case LLAISYS_DEVICE_NVIDIA:
-        TO_BE_IMPLEMENTED();
+    case LLAISYS_DEVICE_NVIDIA: {
+        auto &ctx = llaisys::core::context();
+        ctx.setDevice(c->deviceType(), c->deviceId());
+        const auto *api = ctx.runtime().api();
+
+        const size_t bytes = c->numel() * c->elementSize();
+        std::vector<std::byte> hc(bytes), ha(bytes), hb(bytes);
+        api->memcpy_sync(ha.data(), a->data(), bytes, LLAISYS_MEMCPY_D2H);
+        api->memcpy_sync(hb.data(), b->data(), bytes, LLAISYS_MEMCPY_D2H);
+
+        cpu::add(hc.data(), ha.data(), hb.data(), c->dtype(), c->numel());
+
+        api->memcpy_sync(c->data(), hc.data(), bytes, LLAISYS_MEMCPY_H2D);
         return;
+    }
 #endif
     default:
         EXCEPTION_UNSUPPORTED_DEVICE;
