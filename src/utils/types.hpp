@@ -2,15 +2,44 @@
 
 #include <iostream>
 #include <stdexcept>
+#include <cstring>
 
 namespace llaisys {
 struct CustomFloat16 {
     uint16_t _v;
+    bool operator==(const CustomFloat16 &other) const {
+        return _v == other._v;
+    }
+    bool operator!=(const CustomFloat16 &other) const {
+        return _v != other._v;
+    }
+    bool operator<(const CustomFloat16 &other) const;
+    bool operator>(const CustomFloat16 &other) const;
+    bool operator<=(const CustomFloat16 &other) const;
+    bool operator>=(const CustomFloat16 &other) const;
+    CustomFloat16 operator+(const CustomFloat16 &other) const;
+    CustomFloat16 operator-(const CustomFloat16 &other) const;
+    CustomFloat16 operator*(const CustomFloat16 &other) const;
+    CustomFloat16 operator/(const CustomFloat16 &other) const;
 };
 typedef struct CustomFloat16 fp16_t;
 
 struct CustomBFloat16 {
     uint16_t _v;
+    bool operator==(const CustomBFloat16 &other) const {
+        return _v == other._v;
+    }
+    bool operator!=(const CustomBFloat16 &other) const {
+        return _v != other._v;
+    }
+    bool operator<(const CustomBFloat16 &other) const;
+    bool operator>(const CustomBFloat16 &other) const;
+    bool operator<=(const CustomBFloat16 &other) const;
+    bool operator>=(const CustomBFloat16 &other) const;
+    CustomBFloat16 operator+(const CustomBFloat16 &other) const;
+    CustomBFloat16 operator-(const CustomBFloat16 &other) const;
+    CustomBFloat16 operator*(const CustomBFloat16 &other) const;
+    CustomBFloat16 operator/(const CustomBFloat16 &other) const;
 };
 typedef struct CustomBFloat16 bf16_t;
 
@@ -110,7 +139,13 @@ inline const char *dtype_to_str(llaisysDataType_t dtype) {
 float _f16_to_f32(fp16_t val);
 fp16_t _f32_to_f16(float val);
 
-float _bf16_to_f32(bf16_t val);
+inline float _bf16_to_f32(bf16_t val) {
+    uint32_t bits32 = static_cast<uint32_t>(val._v) << 16;
+
+    float out;
+    std::memcpy(&out, &bits32, sizeof(out));
+    return out;
+}
 bf16_t _f32_to_bf16(float val);
 
 template <typename TypeTo, typename TypeFrom>

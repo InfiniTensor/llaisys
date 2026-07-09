@@ -9,6 +9,7 @@ from .libllaisys import (
     DataType,
 )
 from ctypes import c_size_t, c_int, c_ssize_t, c_void_p
+import torch
 
 
 class Tensor:
@@ -95,3 +96,26 @@ class Tensor:
                 self._tensor, c_size_t(dim), c_size_t(start), c_size_t(end)
             )
         )
+    
+    @staticmethod
+    def from_torch(torch_tensor: torch.Tensor):
+        assert torch_tensor.is_contiguous(), "Only contiguous tensors are supported"
+        assert torch_tensor.device.type in ["cpu", "cuda"], "Only CPU and CUDA devices are supported"
+
+        device_type = DeviceType.CPU if torch_tensor.device.type == "cpu" else DeviceType.NVIDIA
+        dtype = DataType.F32
+        if torch_tensor.dtype == torch.float16:
+            dtype = DataType.F16
+        elif torch_tensor.dtype == torch.bfloat16:
+            dtype = DataType.BF16
+        else:
+            raise ValueError(f"Unsupported data type: {torch_tensor.dtype}")
+        _tensor = Tensor(
+            shape=torch_tensor.shape,
+            dtype=dtype,
+            device=device_type,
+            device_id=torch_tensor.device.index if torch_tensor.device.type == "cuda" else 0,
+        )
+
+        _tensor.load(torch_tensor.data_ptr())
+        return _tensor

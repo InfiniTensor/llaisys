@@ -88,3 +88,6 @@ htmlcov/
 Thumbs.db
 ehthumbs.db
 desktop.ini
+
+# model
+DeepSeek-R1-Distill-Qwen-1.5B/

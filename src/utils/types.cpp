@@ -2,6 +2,58 @@
 
 #include <cstring>
 
+namespace llaisys {
+    bool CustomFloat16::operator<(const CustomFloat16 &other) const {
+        return utils::cast<float>(*this) < utils::cast<float>(other);
+    }
+    bool CustomFloat16::operator>(const CustomFloat16 &other) const {
+        return utils::cast<float>(*this) > utils::cast<float>(other);
+    }
+    bool CustomFloat16::operator<=(const CustomFloat16 &other) const {
+        return utils::cast<float>(*this) <= utils::cast<float>(other);
+    }
+    bool CustomFloat16::operator>=(const CustomFloat16 &other) const {
+        return utils::cast<float>(*this) >= utils::cast<float>(other);
+    }
+    CustomFloat16 CustomFloat16::operator+(const CustomFloat16 &other) const{
+        return utils::cast<CustomFloat16>(utils::cast<float>(*this) + utils::cast<float>(other));
+    }
+    CustomFloat16 CustomFloat16::operator-(const CustomFloat16 &other) const {
+        return utils::cast<CustomFloat16>(utils::cast<float>(*this) - utils::cast<float>(other));
+    }
+    CustomFloat16 CustomFloat16::operator*(const CustomFloat16 &other) const {
+        return utils::cast<CustomFloat16>(utils::cast<float>(*this) * utils::cast<float>(other));
+    }
+    CustomFloat16 CustomFloat16::operator/(const CustomFloat16 &other) const {
+        return utils::cast<CustomFloat16>(utils::cast<float>(*this) / utils::cast<float>(other));
+    }
+
+    bool CustomBFloat16::operator<(const CustomBFloat16 &other) const {
+        return utils::cast<float>(*this) < utils::cast<float>(other);
+    }
+    bool CustomBFloat16::operator>(const CustomBFloat16 &other) const {
+        return utils::cast<float>(*this) > utils::cast<float>(other);
+    }
+    bool CustomBFloat16::operator<=(const CustomBFloat16 &other) const {
+        return utils::cast<float>(*this) <= utils::cast<float>(other);
+    }
+    bool CustomBFloat16::operator>=(const CustomBFloat16 &other) const {
+        return utils::cast<float>(*this) >= utils::cast<float>(other);
+    }
+    CustomBFloat16 CustomBFloat16::operator+(const CustomBFloat16 &other) const {
+        return utils::cast<CustomBFloat16>(utils::cast<float>(*this) + utils::cast<float>(other));
+    }
+    CustomBFloat16 CustomBFloat16::operator-(const CustomBFloat16 &other) const {
+        return utils::cast<CustomBFloat16>(utils::cast<float>(*this) - utils::cast<float>(other));
+    }
+    CustomBFloat16 CustomBFloat16::operator*(const CustomBFloat16 &other) const {
+        return utils::cast<CustomBFloat16>(utils::cast<float>(*this) * utils::cast<float>(other));
+    }
+    CustomBFloat16 CustomBFloat16::operator/(const CustomBFloat16 &other) const {
+        return utils::cast<CustomBFloat16>(utils::cast<float>(*this) / utils::cast<float>(other));
+    }
+}//llaisys
+
 namespace llaisys::utils {
 float _f16_to_f32(fp16_t val) {
     uint16_t h = val._v;
@@ -61,14 +113,6 @@ fp16_t _f32_to_f16(float val) {
         // Too small for subnormal: return signed zero
         return fp16_t{(uint16_t)sign};
     }
-}
-
-float _bf16_to_f32(bf16_t val) {
-    uint32_t bits32 = static_cast<uint32_t>(val._v) << 16;
-
-    float out;
-    std::memcpy(&out, &bits32, sizeof(out));
-    return out;
 }
 
 bf16_t _f32_to_bf16(float val) {
