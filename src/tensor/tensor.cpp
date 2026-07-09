@@ -1,16 +1,24 @@
 #include "tensor.hpp"
-
 #include "../utils.hpp"
-
 #include <cstring>
 #include <numeric>
 #include <sstream>
+#include <stdexcept>
 
 namespace llaisys {
 
+// 私有构造函数：初始化 _meta, _storage-存储, _offset-偏移量, 
+// 私有构造函数：只能通过工厂方法创建，确保对象创建可控
+// 初始化列表：在构造函数体执行前初始化成员变量
+// std::move：转移所有权，避免不必要的拷贝
 Tensor::Tensor(TensorMeta meta, core::storage_t storage, size_t offset)
-    : _meta(std::move(meta)), _storage(std::move(storage)), _offset(offset) {}
+    : _meta(std::move(meta)),
+    _storage(std::move(storage)),
+    _offset(offset) {}
 
+// create() 工厂方法:
+// 计算步长（strides）- 用于行主序（row-major）内存布局
+// 判断设备类型：若请求CPU但当前运行时是GPU，分配主机内存；否则根据设备类型分配存储
 tensor_t Tensor::create(const std::vector<size_t> &shape,
                         llaisysDataType_t dtype,
                         llaisysDeviceType_t device_type,
@@ -18,65 +26,82 @@ tensor_t Tensor::create(const std::vector<size_t> &shape,
     size_t ndim_ = shape.size();
     std::vector<ptrdiff_t> strides(ndim_);
     size_t stride = 1;
+    // 计算行主序步长 - 跳步函数 strides-记录每一个维度要跳的大小
     for (size_t i = 1; i <= ndim_; i++) {
         strides[ndim_ - i] = stride;
         stride *= shape[ndim_ - i];
     }
+    
     TensorMeta meta{dtype, shape, strides};
     size_t total_elems = stride;
     size_t dtype_size = utils::dsize(dtype);
 
+
+    // 2. 内存分配
+    // 触发条件： 用户想要创建一个 CPU 张量 (device_type == CPU)。 <- and
+    //       ->  但是，当前线程的上下文环境是 非 CPU 设备（例如当前正处于 GPU 运行时环境）
     if (device_type == LLAISYS_DEVICE_CPU && core::context().runtime().deviceType() != LLAISYS_DEVICE_CPU) {
         auto storage = core::context().runtime().allocateHostStorage(total_elems * dtype_size);
         return std::shared_ptr<Tensor>(new Tensor(meta, storage));
     } else {
+        // 否则在指定设备上分配内存
         core::context().setDevice(device_type, device);
         auto storage = core::context().runtime().allocateDeviceStorage(total_elems * dtype_size);
         return std::shared_ptr<Tensor>(new Tensor(meta, storage));
     }
 }
+// 3.2 数据访问 (data 函数)
+// 这里体现了 _offset 的作用。如果这个张量是另一个大张量的一部分（切片），
+// _storage->memory() 指向大张量的开头，而 + _offset 让指针正确指向切片的开始位置
 
-std::byte *Tensor::data() {
+// 无const修饰 对返回值可读可写
+std::byte * Tensor::data() {
     return _storage->memory() + _offset;
 }
-
+// 有const修饰 对返回值只读不可写
 const std::byte *Tensor::data() const {
     return _storage->memory() + _offset;
 }
 
+// ndim()    维度数
 size_t Tensor::ndim() const {
     return _meta.shape.size();
 }
-
-const std::vector<size_t> &Tensor::shape() const {
+// shape()   形状向量
+// 第1个const修饰返回值，第2个const修饰函数本身-this指针：不会修改 Tensor 对象内部的任何成员变量
+// const std::vector<size_t> &：这是返回值类型
+const std::vector<size_t>& Tensor::shape() const {
     return _meta.shape;
 }
-
-const std::vector<ptrdiff_t> &Tensor::strides() const {
+// strides()   步长向量
+const std::vector<ptrdiff_t>& Tensor::strides() const {
     return _meta.strides;
 }
-
+// dtype()     数据类型
+// 如果函数返回 LLAISYS_DEVICE_CPU (0)，说明数据在内存条里。
+// 如果函数返回 LLAISYS_DEVICE_NVIDIA (1)，说明数据在显存里
 llaisysDataType_t Tensor::dtype() const {
     return _meta.dtype;
 }
-
+// deviceType()     设备类型
 llaisysDeviceType_t Tensor::deviceType() const {
     return _storage->deviceType();
 }
-
+// deviceId()     设备ID
 int Tensor::deviceId() const {
     return _storage->deviceId();
 }
-
+// numel()：计算总元素数（形状中所有维度相乘
 size_t Tensor::numel() const {
     return std::accumulate(_meta.shape.begin(), _meta.shape.end(), size_t(1), std::multiplies<size_t>());
 }
-
+// elementSize()：单个元素的字节大小
 size_t Tensor::elementSize() const {
     return utils::dsize(_meta.dtype);
 }
-
+// info()：返回张量信息的字符串表示
 std::string Tensor::info() const {
+    // 这里使用了 std::stringstream（字符串流）来构建字符串
     std::stringstream ss;
 
     ss << "Tensor: "
@@ -94,9 +119,13 @@ std::string Tensor::info() const {
 }
 
 template <typename T>
+
+// print_data<T>()：递归打印多维数据，支持不同数据类型
 void print_data(const T *data, const std::vector<size_t> &shape, const std::vector<ptrdiff_t> &strides, size_t dim) {
     if (dim == shape.size() - 1) {
         for (size_t i = 0; i < shape[dim]; i++) {
+            // 这里使用了 C++17 的 if constexpr。因为 std::cout 默认不支持半精度浮点数（bf16 或 fp16）的输出，
+            // 所以代码在编译期检测类型。如果是这些特殊类型，先将其转换为 float 再打印。这种方式不会引入运行时开销。
             if constexpr (std::is_same_v<T, bf16_t> || std::is_same_v<T, fp16_t>) {
                 std::cout << utils::cast<float>(data[i * strides[dim]]) << " ";
             } else {
@@ -111,6 +140,9 @@ void print_data(const T *data, const std::vector<size_t> &shape, const std::vect
     }
 }
 
+// debug_print()：根据数据类型转发到 print_data()
+// 在 C++ 中，模板函数（如 print_data<T>）必须在编译时确定类型 T。然而，张量的类型 dtype 是在程序运行时才确定的。 
+// debug_print 通过一个巨大的 switch-case 语句，根据 dtype 的值，手动映射到对应的 C++ 原生类型（如 float, int32_t 等），并触发相应的模板实例化。
 void debug_print(const std::byte *data, const std::vector<size_t> &shape, const std::vector<ptrdiff_t> &strides, llaisysDataType_t dtype) {
     switch (dtype) {
     case LLAISYS_DTYPE_BYTE:
@@ -146,60 +178,246 @@ void debug_print(const std::byte *data, const std::vector<size_t> &shape, const 
     }
 }
 
+// 3.3 调试与打印 (debug 和 print_data)
+// 递归打印 (print_data): 这是一个模板函数，
+// 通过递归方式处理任意维度的张量打印。
+// 当 dim 到达最后一维时打印数值，否则递归调用下一维
 void Tensor::debug() const {
+    // 切换上下文：首先确保全局上下文切换到当前张量所在的设备。如果你在操作 GPU 1 上的张量，必须先通知驱动程序。
+    // 硬件同步：这是最关键的一步。GPU 是异步执行的，当你调用打印时，之前的计算任务可能还在显卡里跑。device_synchronize() 会阻塞 CPU，直到显卡完成所有任务，确保我们打印的是最新的、正确计算完的数据。
     core::context().setDevice(this->deviceType(), this->deviceId());
     core::context().runtime().api()->device_synchronize();
-    std::cout << this->info() << std::endl;
+    
+    // 打印元信息 (Meta-info)
+    std::cout << this->info() << std::endl; // 打印出张量的形状（Shape）、步长（Strides）和数据类型（Dtype
+    
+    // 异构数据处理 (CPU vs GPU)
     if (this->deviceType() == LLAISYS_DEVICE_CPU) {
+        // 如果是 CPU 张量，直接读取内存打印
         debug_print(this->data(), this->shape(), this->strides(), this->dtype());
     } else {
+        // 如果是 GPU 张量，不能直接读取！
+        // 1. 创建一个临时的 CPU 张量
         auto tmp_tensor = create({this->_storage->size()}, this->dtype());
+        // 2. 将数据从设备拷贝到主机 (D2H)
         core::context().runtime().api()->memcpy_sync(
             tmp_tensor->data(),
             this->data(),
             this->numel() * this->elementSize(),
             LLAISYS_MEMCPY_D2H);
+        // 3. 打印临时张量的数据
         debug_print(tmp_tensor->data(), this->shape(), this->strides(), this->dtype());
     }
 }
 
-bool Tensor::isContiguous() const {
-    TO_BE_IMPLEMENTED();
-    return true;
-}
+/// *********************************************************************************** ///
+/// *********************************************************************************** ///
+/// *********************************************************************************** ///
+
+
+
+// permute()：维度重排
+// 例子： 假设有一个形状为 (2, 3) 的张量，标准行主序步长为 (3, 1)。
+// 维度 0 (大小 2): 步长 3，维度 1 (大小 3): 步长 1
+// 如果你执行 permute({1, 0})（即转置）：
+// 新维度 0 对应原维度 1: 大小变为 3，步长变为 1
+// 新维度 1 对应原维度 0: 大小变为 2，步长变为 3
+// 结果张量形状为 (3, 2)，步长为 (1, 3)。访问元素时，逻辑索引的映射关系改变了，但底层数据完全没动。
+
 
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    size_t n = ndim();
+    // 1. 合法性检查，输入的 order（调换维度） 向量的大小必须等于张量的维度数 ndim()
+    CHECK_ARGUMENT(order.size() == n, "Permute order size mismatch");
+
+    std::vector<size_t> new_shape(n);
+    std::vector<ptrdiff_t> new_strides(n);
+    std::vector<bool> seen(n, false);
+
+    for (size_t i = 0; i < n; ++i) {
+        size_t axis = order[i];
+        CHECK_ARGUMENT(axis < n, "Permute axis out of bounds");
+        CHECK_ARGUMENT(!seen[axis], "Duplicate axis in permute");
+        seen[axis] = true;
+
+        // 2. 根据索引直接映射形状和步长 
+        new_shape[i] = _meta.shape[axis];
+        new_strides[i] = _meta.strides[axis];
+    }
+
+    // 3. 创建并返回共享存储的新张量
+    TensorMeta meta{_meta.dtype, std::move(new_shape), std::move(new_strides)};
+
+
+    return std::shared_ptr<Tensor>(new Tensor(meta, _storage, _offset));
 }
+
+
+// view()：如何在不复制数据的情况下，计算出新形状对应的步长（strides），并验证这种重塑在物理内存上是否可行。   
+// 1. 基本检查：新形状的总元素数必须与原张量一致   
+// 2. 步长推导：我们需要遍历新形状的每一维，确定它对应原张量的哪些维度，并计算步长。
+//       拆分 (Split)：如果原维度 (10) 被拆分为 (2, 5)，则新步长分别为 原步长 * 5 和 原步长。  
+//       合并 (Merge)：如果原维度 (2, 5) 被合并为 (10)，只有当这两个维度在内存中是连续的   
+//         （即 stride_0 == stride_1 * size_1），才能合并。合并后的步长等于最内层维度的步长   
 
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    if (!isContiguous()) {
+        throw std::runtime_error("Tensor::view requires contiguous tensor");
+    }
+
+    size_t new_numel = 1;
+    for (size_t s : shape) new_numel *= s;
+    CHECK_ARGUMENT(new_numel == numel(), "View shape mismatch");
+
+    std::vector<ptrdiff_t> new_strides(shape.size());
+    size_t stride = 1;
+    for (int i = (int)shape.size() - 1; i >= 0; --i) {
+        new_strides[i] = stride;
+        stride *= shape[i];
+    }
+
+    TensorMeta meta{_meta.dtype, shape, new_strides};
+    return std::shared_ptr<Tensor>(new Tensor(std::move(meta), _storage, _offset));
 }
 
+// slice()：切片操作
+// 通过修改张量的起始偏移量（Offset）和形状（Shape），
+// 来“截取”原始数据块中的一部分，而不需要移动底层内存中的任何数据。
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    // 1. 合法性检查 维度检查：确保你切片的维度（dim）在张量的实际维度范围内
+    size_t n = ndim();
+    CHECK_ARGUMENT(dim < n, "Slice dimension out of bounds");
+    // 范围检查：遵循编程中常见的“左闭右开”原则（[start, end)）。end 不能超过该维度的原始大小，且 start 必须小于 end，确保切出来的张量不是空的。
+    size_t dim_size = _meta.shape[dim];
+    CHECK_ARGUMENT(start < end && end <= dim_size, "Invalid slice range");
+
+    // 2. 计算新形状 (只有指定的 dim 大小改变)
+    // 例如：原形状是 (3, 4, 5)，你在 dim=1（大小为 4 的那一维）做 slice(1, 1, 3)，新形状就变成了 (3, 2, 5)
+    std::vector<size_t> new_shape = _meta.shape;
+    new_shape[dim] = end - start;
+
+    // 3. 步长保持不变
+    std::vector<ptrdiff_t> new_strides = _meta.strides;
+
+    // 4. 计算新的字节偏移量
+    // 偏移量增加 = 起始索引 * 该维度的步长 * 每个元素的字节大小
+    // _offset 是原张量的起点。start * _meta.strides[dim] 计算出在逻辑维度上跳过了多少个元素。
+    // 乘以 elementSize() 将元素个数转换为字节数。结果：新张量的指针将指向原始内存块中 start 索引对应的位置。
+    size_t new_offset = _offset + start * _meta.strides[dim] * elementSize();
+
+    // 5. 最后，我们把新计算的 shape、原封不动的 strides 和新的 offset 封装进 TensorMeta。
+    TensorMeta meta{_meta.dtype, std::move(new_shape), std::move(new_strides)};
+
+    // 返回一个新的 Tensor 对象，它和原张量共享同一个 _storage
+    return std::shared_ptr<Tensor>(new Tensor(meta, _storage, new_offset));
 }
 
+
+
+// load() 函数：将主机内存数据加载到张量 cpu-> cpu or gpu
+// 计算字节数,切换到张量所在设备
+// CPU设备：直接 memcpy,其他设备：异步 H2D（主机→设备）复制，然后同步等待
 void Tensor::load(const void *src_) {
-    TO_BE_IMPLEMENTED();
+    // 计算需要复制的字节数-numel()（总元素个数）乘以 elementSize()（单个元素的字节大小）计算出总字节数 bytes。
+    size_t bytes = numel() * elementSize();
+
+    // 检查源指针 src 是否为空，以及计算出的 bytes 是否为 0，以防止非法内存访问。
+    if (src_ == nullptr || bytes == 0) {
+        return;
+    }
+
+    // 设备上下文切换：确保了当前线程关联的运行时（Runtime）和 API 是针对该张量所在硬件的
+    // 切换到张量所在设备上下文（确保 runtime/api 是对应设备的）
+    core::context().setDevice(this->deviceType(), this->deviceId());
+
+    // 目标是 CPU 内存。如果张量本身就在 CPU 上，或者其底层存储 _storage 被标记为 isHost（例如锁页内存）
+    if (_storage->isHost() || this->deviceType() == LLAISYS_DEVICE_CPU) {
+        std::memcpy(this->data(), src_, bytes);
+        return;
+    }
+
+    // 目标是设备内存（如 GPU）。此时 CPU 无法直接通过 memcpy 访问显存。
+    // 需要通过 core::context().runtime().api() 获取当前设备的 API 对象，并调用其 memcpy_sync 方法。
+    const auto *api = core::context().runtime().api();
+
+    // 在调用 API 时，必须指定方向为 LLAISYS_MEMCPY_H2D（Host to Device，主机到设备
+    api->memcpy_sync(this->data(), src_, bytes, LLAISYS_MEMCPY_H2D);
 }
 
+// contiguous()：转为连续内存布局
 tensor_t Tensor::contiguous() const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    if (isContiguous()) {
+        return std::shared_ptr<Tensor>(new Tensor(_meta, _storage, _offset));
+    }
+    
+    // 1. 创建一个新的连续张量
+    auto res = Tensor::create(_meta.shape, _meta.dtype, deviceType(), deviceId());
+    
+    throw std::runtime_error("Tensor::contiguous() for non-contiguous tensor is not fully implemented yet.");
 }
+
 
 tensor_t Tensor::reshape(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    try {
+        return view(shape);
+    } catch (...) {
+        // 如果 view 失败（通常是因为内存不连续），则先转为连续内存再 view
+        return contiguous()->view(shape);
+    }
 }
+bool Tensor::isContiguous() const {
+    if (this->ndim() == 0) return true; // 标量通常视为连续
 
+    size_t z = 1;
+    // 从最后一个维度向前遍历
+    for (int i = static_cast<int>(this->ndim()) - 1; i >= 0; --i) {
+        // 获取当前维度的 shape 和 stride
+        // 注意：这里假设你有 shape() 和 strides() 方法或者成员变量
+        // 如果是成员变量，可能是 _shape[i] 和 _strides[i]
+        if (this->strides()[i] != z) {
+            return false;
+        }
+        z *= this->shape()[i];
+    }
+    return true;
+}
 tensor_t Tensor::to(llaisysDeviceType_t device_type, int device) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    if (device == -1) device = 0;
+
+    // 1. 确保源数据连续 (方便拷贝)
+    tensor_t src_tensor;
+    const void* src_data = nullptr;
+    
+    if (isContiguous()) {
+        src_data = this->data();
+    } else {
+        src_tensor = contiguous();
+        src_data = src_tensor->data();
+    }
+    
+    // 2. 创建目标张量
+    auto dst_tensor = Tensor::create(_meta.shape, _meta.dtype, device_type, device);
+    void* dst_data = dst_tensor->data();
+    size_t bytes = numel() * elementSize();
+    
+    // 3. 执行拷贝
+    bool is_src_cpu = (this->deviceType() == LLAISYS_DEVICE_CPU);
+    bool is_dst_cpu = (device_type == LLAISYS_DEVICE_CPU);
+    
+    if (is_src_cpu && is_dst_cpu) {
+        std::memcpy(dst_data, src_data, bytes);
+    } else if (is_dst_cpu) {
+        core::context().setDevice(this->deviceType(), this->deviceId());
+        core::context().runtime().api()->memcpy_sync(dst_data, src_data, bytes, LLAISYS_MEMCPY_D2H);
+    } else if (is_src_cpu) {
+        core::context().setDevice(device_type, device);
+        core::context().runtime().api()->memcpy_sync(dst_data, src_data, bytes, LLAISYS_MEMCPY_H2D);
+    } else {
+        core::context().setDevice(device_type, device);
+        core::context().runtime().api()->memcpy_sync(dst_data, src_data, bytes, LLAISYS_MEMCPY_D2D);
+    }
+    
+    return dst_tensor;
 }
 
 } // namespace llaisys

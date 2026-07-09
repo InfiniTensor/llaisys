@@ -70,7 +70,7 @@ class Tensor:
         LIB_LLAISYS.tensorDebug(self._tensor)
 
     def __repr__(self):
-        return f"<Tensor shape={self.shape}, dtype={self.dtype}, device={self.device_type}:{self.device_id}>"
+        return f"<Tensor shape={self.shape()}, dtype={self.dtype()}, device={self.device_type()}:{self.device_id()}>"
 
     def load(self, data: c_void_p):
         LIB_LLAISYS.tensorLoad(self._tensor, data)
@@ -78,18 +78,18 @@ class Tensor:
     def is_contiguous(self) -> bool:
         return bool(LIB_LLAISYS.tensorIsContiguous(self._tensor))
 
-    def view(self, *shape: int) -> llaisysTensor_t:
+    def view(self, *shape: int) -> "Tensor":
         _shape = (c_size_t * len(shape))(*shape)
         return Tensor(
             tensor=LIB_LLAISYS.tensorView(self._tensor, _shape, c_size_t(len(shape)))
         )
 
-    def permute(self, *perm: int) -> llaisysTensor_t:
+    def permute(self, *perm: int) -> "Tensor":
         assert len(perm) == self.ndim()
         _perm = (c_size_t * len(perm))(*perm)
         return Tensor(tensor=LIB_LLAISYS.tensorPermute(self._tensor, _perm))
 
-    def slice(self, dim: int, start: int, end: int):
+    def slice(self, dim: int, start: int, end: int) -> "Tensor":
         return Tensor(
             tensor=LIB_LLAISYS.tensorSlice(
                 self._tensor, c_size_t(dim), c_size_t(start), c_size_t(end)
