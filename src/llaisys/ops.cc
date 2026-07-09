@@ -9,6 +9,7 @@
 #include "../ops/rearrange/op.hpp"
 #include "../ops/rms_norm/op.hpp"
 #include "../ops/rope/op.hpp"
+#include "../ops/sample/op.hpp"
 #include "../ops/self_attention/op.hpp"
 #include "../ops/swiglu/op.hpp"
 
@@ -33,6 +34,9 @@ __C {
     }
     void llaisysROPE(llaisysTensor_t out, llaisysTensor_t in, llaisysTensor_t pos_ids, float theta) {
         llaisys::ops::rope(out->tensor, in->tensor, pos_ids->tensor, theta);
+    }
+    void llaisysSample(llaisysTensor_t sampled_token, llaisysTensor_t logits, float temperature, int top_k, float top_p) {
+        llaisys::ops::sample(sampled_token->tensor, logits->tensor, temperature, top_k, top_p);
     }
     void llaisysSelfAttention(llaisysTensor_t attn_val, llaisysTensor_t q, llaisysTensor_t k, llaisysTensor_t v, float scale) {
         llaisys::ops::self_attention(attn_val->tensor, q->tensor, k->tensor, v->tensor, scale);

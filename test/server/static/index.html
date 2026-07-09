@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLAISYS Chatbot</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="layout">
+
+    <!-- ── Left sidebar: session list ── -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Chats</span>
+        <button id="newChatBtn" title="New chat">＋</button>
+      </div>
+      <ul class="session-list" id="sessionList"></ul>
+    </aside>
+
+    <!-- ── Right panel: chat window ── -->
+    <div class="app">
+      <header class="header">
+        <span class="header-title" id="chatTitle">LLAISYS Chatbot</span>
+        <button class="settings-btn" id="settingsBtn" title="Settings">⚙</button>
+      </header>
+
+      <div class="settings-panel" id="settingsPanel" hidden>
+        <div class="setting-row">
+          <label>Temperature <span id="tempVal">0.8</span></label>
+          <input type="range" id="temperature" min="0.1" max="2.0" step="0.1" value="0.8" />
+        </div>
+        <div class="setting-row">
+          <label>Top-K <span id="topkVal">50</span></label>
+          <input type="range" id="topK" min="0" max="100" step="1" value="50" />
+        </div>
+        <div class="setting-row">
+          <label>Top-P <span id="toppVal">0.9</span></label>
+          <input type="range" id="topP" min="0.0" max="1.0" step="0.05" value="0.9" />
+        </div>
+        <div class="setting-row">
+          <label>Max tokens</label>
+          <input type="number" id="maxTokens" min="1" max="2048" value="512" />
+        </div>
+      </div>
+
+      <div class="messages" id="messages"></div>
+
+      <div class="input-area">
+        <textarea id="input" placeholder="Type a message..." rows="1"></textarea>
+        <button id="sendBtn">Send</button>
+      </div>
+    </div>
+
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

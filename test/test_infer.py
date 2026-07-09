@@ -25,7 +25,7 @@ def load_hf_model(model_path=None, device_name="cpu"):
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
-        torch_dtype=torch.bfloat16,
+        dtype =torch.bfloat16, 
         device_map=torch_device(device_name),
         trust_remote_code=True,
     )

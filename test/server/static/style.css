@@ -1,0 +1,327 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f5f5f5;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+}
+
+/* ── Overall layout: sidebar + chat panel side by side ── */
+.layout {
+  display: flex;
+  width: 100%;
+  max-width: 1000px;
+  box-shadow: 0 0 20px rgba(0,0,0,0.08);
+}
+
+/* ── Sidebar ── */
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: #1e1e2e;
+  display: flex;
+  flex-direction: column;
+  color: #cdd6f4;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 14px 12px;
+  border-bottom: 1px solid #313244;
+}
+.sidebar-title { font-size: 0.85rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: #a6adc8; }
+.sidebar-header button {
+  background: none;
+  border: none;
+  color: #cdd6f4;
+  font-size: 1.3rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  line-height: 1;
+  transition: background 0.15s;
+}
+.sidebar-header button:hover { background: #313244; }
+
+.session-list {
+  list-style: none;
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.session-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
+  cursor: pointer;
+  border-radius: 6px;
+  margin: 2px 6px;
+  font-size: 0.88rem;
+  color: #cdd6f4;
+  transition: background 0.12s;
+  gap: 8px;
+}
+.session-item:hover { background: #313244; }
+.session-item.active { background: #45475a; color: #fff; }
+
+.session-item-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-delete {
+  background: none;
+  border: none;
+  color: #6c7086;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.session-item:hover .session-delete { opacity: 1; }
+.session-delete:hover { color: #f38ba8; }
+
+/* ── Chat panel ── */
+.app {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  min-width: 0;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid #e5e5e5;
+  background: #fff;
+}
+.header-title { font-size: 1.05rem; font-weight: 600; color: #212529; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-btn {
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  cursor: pointer;
+  color: #666;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.settings-btn:hover { background: #f0f0f0; }
+
+/* Settings panel */
+.settings-panel {
+  padding: 14px 20px;
+  border-bottom: 1px solid #e5e5e5;
+  background: #fafafa;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.setting-row { display: flex; flex-direction: column; gap: 4px; min-width: 140px; }
+.setting-row label { font-size: 0.8rem; color: #555; }
+.setting-row input[type="range"] { width: 100%; accent-color: #007bff; }
+.setting-row input[type="number"] { width: 80px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; }
+
+/* Messages */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.message { display: flex; flex-direction: column; max-width: 75%; animation: fadeIn 0.15s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+
+.message.user { align-self: flex-end; align-items: flex-end; }
+.message.assistant { align-self: flex-start; align-items: flex-start; }
+
+.bubble {
+  padding: 10px 14px;
+  border-radius: 16px;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.message.user .bubble { background: #007bff; color: #fff; border-bottom-right-radius: 4px; }
+.message.assistant .bubble { background: #f1f3f5; color: #212529; border-bottom-left-radius: 4px; }
+.role-label { font-size: 0.72rem; color: #999; margin-bottom: 3px; padding: 0 4px; }
+
+/* Typing indicator */
+.typing .bubble::after { content: "▋"; animation: blink 0.8s step-start infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* Input area */
+.input-area { display: flex; gap: 10px; padding: 14px 20px; border-top: 1px solid #e5e5e5; background: #fff; }
+#input {
+  flex: 1; resize: none; border: 1px solid #ddd; border-radius: 10px;
+  padding: 10px 14px; font-size: 0.95rem; font-family: inherit;
+  outline: none; max-height: 120px; overflow-y: auto; transition: border-color 0.15s;
+}
+#input:focus { border-color: #007bff; }
+#sendBtn {
+  padding: 10px 20px; background: #007bff; color: #fff; border: none;
+  border-radius: 10px; font-size: 0.95rem; cursor: pointer; transition: background 0.15s; white-space: nowrap;
+}
+#sendBtn:hover:not(:disabled) { background: #0069d9; }
+#sendBtn:disabled { background: #aaa; cursor: not-allowed; }
+
+/* Error message */
+.error-msg {
+  color: #dc3545; font-size: 0.85rem; padding: 6px 10px;
+  background: #fff5f5; border-radius: 8px; border: 1px solid #f5c6cb;
+}
+
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid #e5e5e5;
+  background: #fff;
+}
+.header-title { font-size: 1.1rem; font-weight: 600; color: #212529; }
+.settings-btn {
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  cursor: pointer;
+  color: #666;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.settings-btn:hover { background: #f0f0f0; }
+
+/* Settings panel */
+.settings-panel {
+  padding: 14px 20px;
+  border-bottom: 1px solid #e5e5e5;
+  background: #fafafa;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.setting-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 140px;
+}
+.setting-row label { font-size: 0.8rem; color: #555; }
+.setting-row input[type="range"] { width: 100%; accent-color: #007bff; }
+.setting-row input[type="number"] {
+  width: 80px;
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+/* Messages */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.message {
+  display: flex;
+  flex-direction: column;
+  max-width: 75%;
+  animation: fadeIn 0.15s ease;
+}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+
+.message.user { align-self: flex-end; align-items: flex-end; }
+.message.assistant { align-self: flex-start; align-items: flex-start; }
+
+.bubble {
+  padding: 10px 14px;
+  border-radius: 16px;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.message.user .bubble { background: #007bff; color: #fff; border-bottom-right-radius: 4px; }
+.message.assistant .bubble { background: #f1f3f5; color: #212529; border-bottom-left-radius: 4px; }
+
+.role-label { font-size: 0.72rem; color: #999; margin-bottom: 3px; padding: 0 4px; }
+
+/* Typing indicator */
+.typing .bubble::after {
+  content: "▋";
+  animation: blink 0.8s step-start infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* Input area */
+.input-area {
+  display: flex;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid #e5e5e5;
+  background: #fff;
+}
+#input {
+  flex: 1;
+  resize: none;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  outline: none;
+  max-height: 120px;
+  overflow-y: auto;
+  transition: border-color 0.15s;
+}
+#input:focus { border-color: #007bff; }
+#sendBtn {
+  padding: 10px 20px;
+  background: #007bff;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+#sendBtn:hover:not(:disabled) { background: #0069d9; }
+#sendBtn:disabled { background: #aaa; cursor: not-allowed; }
+
+/* Error message */
+.error-msg {
+  color: #dc3545;
+  font-size: 0.85rem;
+  padding: 6px 10px;
+  background: #fff5f5;
+  border-radius: 8px;
+  border: 1px solid #f5c6cb;
+}

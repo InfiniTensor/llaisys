@@ -41,6 +41,16 @@ class Ops:
         )
 
     @staticmethod
+    def sample(sampled_token: Tensor, logits: Tensor, temperature: float, top_k: int, top_p: float):
+        LIB_LLAISYS.llaisysSample(
+            sampled_token.lib_tensor(),
+            logits.lib_tensor(),
+            c_float(temperature),
+            c_int(top_k),
+            c_float(top_p)
+        )
+
+    @staticmethod
     def self_attention(attn_val: Tensor, q: Tensor, k: Tensor, v: Tensor, scale: float):
         LIB_LLAISYS.llaisysSelfAttention(
             attn_val.lib_tensor(),
