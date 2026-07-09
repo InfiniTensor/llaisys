@@ -5,8 +5,11 @@ from .libllaisys import MemcpyKind
 from .libllaisys import llaisysStream_t as Stream
 from .tensor import Tensor
 from .ops import Ops
-from . import models
-from .models import *
+
+try:
+    from . import models
+except ImportError:
+    models = None
 
 __all__ = [
     "RuntimeAPI",
@@ -16,5 +19,7 @@ __all__ = [
     "Stream",
     "Tensor",
     "Ops",
-    "models",
 ]
+
+if models is not None:
+    __all__.append("models")

@@ -1,5 +1,24 @@
+from bootstrap import setup_paths
+
+setup_paths(__file__)
+
 import llaisys
 import torch
+
+_CUDA_TEST_KEEPALIVE = []
+
+
+def _maybe_keepalive_for_cuda_small_tensor(device_name, shape, *objs):
+    # 这些算子测试会在同一进程里先跑小张量、再跑大张量。
+    # NVIDIA 和 MetaX 的 PyTorch 对外都暴露为 torch.cuda 语义，
+    # 小张量过早析构时都可能触发显存复用，导致后续大用例出现假阴性。
+    if device_name not in ("nvidia", "metax"):
+        return
+    numel = 1
+    for dim in shape:
+        numel *= dim
+    if numel <= 4096:
+        _CUDA_TEST_KEEPALIVE.extend(objs)
 
 
 def random_tensor(
@@ -30,6 +49,7 @@ def random_tensor(
         bytes_,
         llaisys.MemcpyKind.D2D,
     )
+    _maybe_keepalive_for_cuda_small_tensor(device_name, shape, torch_tensor, llaisys_tensor)
 
     return torch_tensor, llaisys_tensor
 
@@ -58,6 +78,7 @@ def random_int_tensor(shape, device_name, dtype_name="i64", device_id=0, low=0, 
         bytes_,
         llaisys.MemcpyKind.D2D,
     )
+    _maybe_keepalive_for_cuda_small_tensor(device_name, shape, torch_tensor, llaisys_tensor)
 
     return torch_tensor, llaisys_tensor
 
@@ -86,6 +107,7 @@ def zero_tensor(
         bytes_,
         llaisys.MemcpyKind.D2D,
     )
+    _maybe_keepalive_for_cuda_small_tensor(device_name, shape, torch_tensor, llaisys_tensor)
 
     return torch_tensor, llaisys_tensor
 
@@ -186,7 +208,9 @@ def benchmark(torch_func, llaisys_func, device_name, warmup=10, repeat=100):
 def torch_device(device_name: str, device_id=0):
     if device_name == "cpu":
         return torch.device("cpu")
-    elif device_name == "nvidia":
+    elif device_name in ("nvidia", "metax"):
+        # MetaX 定制版 PyTorch 仍然复用 torch.cuda 命名空间，
+        # 所以测试对照统一走 cuda:N。
         return torch.device(f"cuda:{device_id}")
     else:
         raise ValueError(f"Unsupported device name: {device_name}")
@@ -197,6 +221,8 @@ def llaisys_device(device_name: str):
         return llaisys.DeviceType.CPU
     elif device_name == "nvidia":
         return llaisys.DeviceType.NVIDIA
+    elif device_name == "metax":
+        return llaisys.DeviceType.METAX
     else:
         raise ValueError(f"Unsupported device name: {device_name}")
 
@@ -206,6 +232,8 @@ def device_name(llaisys_device: llaisys.DeviceType):
         return "cpu"
     elif llaisys_device == llaisys.DeviceType.NVIDIA:
         return "nvidia"
+    elif llaisys_device == llaisys.DeviceType.METAX:
+        return "metax"
     else:
         raise ValueError(f"Unsupported llaisys device: {llaisys_device}")
 

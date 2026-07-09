@@ -2,8 +2,12 @@ from calendar import c
 import sys
 import os
 
-parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, parent_dir)
+test_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if test_dir not in sys.path:
+    sys.path.insert(0, test_dir)
+from bootstrap import setup_paths
+
+setup_paths(__file__)
 import llaisys
 import torch
 from test_utils import random_tensor, check_equal, benchmark, zero_tensor
@@ -43,14 +47,14 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia"], type=str)
+    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia", "metax"], type=str)
     parser.add_argument("--profile", action="store_true")
     args = parser.parse_args()
     testShapes = [(4,), (4096,)]
     testDtype = ["f32", "f16", "bf16"]
     print(f"Testing Ops.argmax on {args.device}")
-    for shape in testShapes:
-        for dtype_name in testDtype:
+    for dtype_name in testDtype:
+        for shape in testShapes:
             test_op_argmax(shape, dtype_name, args.device, args.profile)
 
     print("\033[92mTest passed!\033[0m\n")

@@ -1,0 +1,31 @@
+local cuda_root = os.getenv("CUDA_HOME") or os.getenv("CUDA_PATH") or "/usr/local/cuda-12.8"
+
+target("llaisys-device-nvidia")
+    set_kind("static")
+    add_rules("cuda")
+    set_languages("cxx17")
+    set_warnings("all", "error")
+    add_includedirs(path.join(cuda_root, "include"))
+    add_linkdirs(path.join(cuda_root, "lib64"))
+    add_files("../src/device/nvidia/*.cu")
+    add_links("cudart", "cublas")
+    add_cuflags("-Xcompiler=-fPIC")
+
+    on_install(function(target) end)
+target_end()
+
+target("llaisys-ops-nvidia")
+    set_kind("static")
+    add_rules("cuda")
+    add_deps("llaisys-tensor")
+    add_deps("llaisys-device-nvidia")
+    set_languages("cxx17")
+    set_warnings("all", "error")
+    add_includedirs(path.join(cuda_root, "include"))
+    add_linkdirs(path.join(cuda_root, "lib64"))
+    add_files("../src/ops/nvidia/*.cu")
+    add_links("cudart", "cublas")
+    add_cuflags("-Xcompiler=-fPIC")
+
+    on_install(function(target) end)
+target_end()

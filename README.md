@@ -4,7 +4,7 @@
 <a href="README.md" target="README.md">English</a> ｜
 <a href="README_ZN.md" target="README_ZN.md">中文</a>
 </p>
-
+<!-- trigger ci -->
 ## Introduction
 
 LLAISYS (Let's Learn AI SYStem) is an educational project that aims to provide a platform for new and future AI engineers to learn how to build AI systems from scratch. LLAISYS consists of several assignments, which help students learn and build the basic modules, and optional problems that challenge them to add more fancy features to their systems. LLAISYS uses C++ as primary programming language for system backend, and is compiled into shared libraries exposing C language APIs. Frontend codes are written in Python which calls these APIs to provide more convenient testing and interaction with other architectures such as PyTorch.
@@ -433,3 +433,71 @@ Introduce Tensor Parallelism to LLAISYS. Shard your model across multiple device
 ## Optional Problem #5: Support New Models
 
 Support another model type than the one we use for homework in LLAISYS.
+
+## Chinese Submission Docs
+
+- Overview: [docs/submission_zh.md](docs/submission_zh.md)
+- Report: [docs/report_zh.md](docs/report_zh.md)
+- Reproduce: [docs/reproduce_zh.md](docs/reproduce_zh.md)
+- PR Text: [docs/pr_zh.md](docs/pr_zh.md)
+
+## Current Submission Status For This Fork
+
+This section is appended for course submission and does not change the original assignment description above.
+
+### Scope
+
+- This submission is organized as a complete course delivery covering Assignments 1/2/3 and Projects 1/2/3/6
+- Project #2 uses MetaX/MACA as the second backend
+- Project #6 adds Llama/TinyLlama model support through the shared decoder-only path
+- Only implementation code and formal submission docs are tracked for submission
+
+### Verified Environment
+
+- Local CPU dev environment: Python `3.12.3`, xmake `v3.0.7+20260308`
+- MetaX validation environment:
+
+- GPU: `MetaX C500`
+- `mx-smi`: `2.2.9`
+- `MACA`: `3.2.1.10`
+- Driver: `3.0.11`
+- Compiler: `mxcc 1.0.0`
+- Python: `3.10.10`
+- PyTorch: `2.6.0+metax3.2.1.3`
+
+### Verified Commands
+
+```bash
+## Local CPU path
+xmake f --nv-gpu=n --metax-gpu=n -cv
+xmake -r
+
+python test/test_tensor.py
+python test/test_runtime.py --device cpu
+python test/test_ops.py --device cpu
+python test/test_infer.py --device cpu --test --model models/DeepSeek-R1-Distill-Qwen-1.5B --prompt hi --max_steps 1
+
+## Chat service minimal validation
+PYTHONPATH=python python -m llaisys.chat.server --model models/DeepSeek-R1-Distill-Qwen-1.5B --device cpu --host 127.0.0.1 --port 8011
+curl --noproxy '*' -s http://127.0.0.1:8011/health
+curl --noproxy '*' -s -X POST http://127.0.0.1:8011/v1/chat/completions -H 'Content-Type: application/json' -d '{"messages":[{"role":"user","content":"你好"}],"stream":false,"max_tokens":8}'
+
+## New model validation entry
+python test/test_infer.py --device cpu --test --model /path/to/local/llama_or_tinyllama_model --prompt hi --max_steps 1
+
+## MetaX path
+XMAKE_ROOT=y xmake f --metax-gpu=y -cv
+XMAKE_ROOT=y xmake -r
+XMAKE_ROOT=y xmake install
+
+python test/test_runtime.py --device metax
+python test/test_ops.py --device metax
+python test/test_infer.py --device metax --test --model_id trl-internal-testing/tiny-Qwen2ForCausalLM-2.5 --prompt hi --max_steps 1
+```
+
+### Notes
+
+- This section combines verified local CPU commands and verified MetaX commands.
+- MetaX is not a C++-level CUDA drop-in platform, so the backend is adapted separately.
+- Hugging Face verification still uses `torch.cuda` semantics because the local MetaX PyTorch build exposes CUDA-compatible device APIs.
+- The external MetaX PDF in the repo root is intentionally kept untracked and is not part of the git submission.

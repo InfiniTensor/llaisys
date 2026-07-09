@@ -153,7 +153,7 @@ void Tensor::debug() const {
     if (this->deviceType() == LLAISYS_DEVICE_CPU) {
         debug_print(this->data(), this->shape(), this->strides(), this->dtype());
     } else {
-        auto tmp_tensor = create({this->_storage->size()}, this->dtype());
+        auto tmp_tensor = create({this->numel()}, this->dtype());
         core::context().runtime().api()->memcpy_sync(
             tmp_tensor->data(),
             this->data(),
@@ -163,29 +163,99 @@ void Tensor::debug() const {
     }
 }
 
+// 1. Load: 将数据从 Host 拷贝到 Tensor 的存储设备
+void Tensor::load(const void *src) {
+    // 计算总字节数 = 元素个数 * 单个元素大小
+    size_t size = this->numel() * utils::dsize(_meta.dtype);
+
+    // 非 CPU Tensor 必须切到对应 runtime，再做 H2D 拷贝。
+    if (this->deviceType() != LLAISYS_DEVICE_CPU) {
+        core::context().setDevice(this->deviceType(), this->deviceId());
+    }
+    auto api = core::context().runtime().api();
+    auto kind = this->deviceType() == LLAISYS_DEVICE_CPU ? LLAISYS_MEMCPY_H2H : LLAISYS_MEMCPY_H2D;
+    api->memcpy_sync(this->data(), src, size, kind);
+}
+
+// 2. IsContiguous: 判断张量是否在内存中连续紧密排列
 bool Tensor::isContiguous() const {
-    TO_BE_IMPLEMENTED();
+    // strides 是 ptrdiff_t，所以累计 stride 也用 ptrdiff_t
+    ptrdiff_t z = 1;
+
+    // 用 size_t 反向循环，避免 size_t -> int 的警告
+    for (size_t i = _meta.shape.size(); i-- > 0;) {
+        if (_meta.strides[i] != z) {
+            return false;
+        }
+        z *= static_cast<ptrdiff_t>(_meta.shape[i]);
+    }
     return true;
 }
 
+
+
+// 4. Permute: 交换维度
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    ASSERT(order.size() == _meta.shape.size(), "Order size must match ndim");
+    
+    std::vector<size_t> new_shape(order.size());
+    std::vector<ptrdiff_t> new_strides(order.size());
+
+    for (size_t i = 0; i < order.size(); ++i) {
+        new_shape[i] = _meta.shape[order[i]];
+        new_strides[i] = _meta.strides[order[i]];
+    }
+
+    TensorMeta new_meta = _meta;
+    new_meta.shape = new_shape;
+    new_meta.strides = new_strides;
+
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, _offset));
 }
 
+
+// 3. View: 改变形状
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    size_t numel = 1;
+    for (auto s : shape) numel *= s;
+    ASSERT(numel == this->numel(), "View shape must have same number of elements");
+    ASSERT(this->isContiguous(), "Currently only support view on contiguous tensor");
+
+    std::vector<ptrdiff_t> new_strides(shape.size());
+ptrdiff_t stride = 1;
+
+// 用 size_t 反向循环，避免 size_t -> int 的警告
+for (size_t i = shape.size(); i-- > 0;) {
+    new_strides[i] = stride;
+    stride *= static_cast<ptrdiff_t>(shape[i]);
 }
 
+
+    TensorMeta new_meta = _meta;
+    new_meta.shape = shape;
+    new_meta.strides = new_strides;
+
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, _offset));
+}
+
+
+// 5. Slice: 切片
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    ASSERT(dim < _meta.shape.size(), "Dimension out of range");
+    ASSERT(start < end && end <= _meta.shape[dim], "Invalid slice range");
+
+    TensorMeta new_meta = _meta;
+    new_meta.shape[dim] = end - start;
+    
+    size_t inc_offset = start * _meta.strides[dim] * utils::dsize(_meta.dtype);
+    size_t new_offset = _offset + inc_offset;
+
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, new_offset));
 }
 
-void Tensor::load(const void *src_) {
-    TO_BE_IMPLEMENTED();
-}
+
+
+
 
 tensor_t Tensor::contiguous() const {
     TO_BE_IMPLEMENTED();

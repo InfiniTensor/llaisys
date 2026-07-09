@@ -88,3 +88,23 @@ htmlcov/
 Thumbs.db
 ehthumbs.db
 desktop.ini
+
+# 忽略模型大文件
+models/
+!python/llaisys/models/
+!python/llaisys/models/*.py
+*.safetensors
+*.bin
+*.pth
+
+# 忽略编译垃圾
+build/
+.xmake/
+*.o
+*.so
+/libllaisys/
+bin/
+
+# 忽略 Python 缓存
+__pycache__/
+*.pyc
