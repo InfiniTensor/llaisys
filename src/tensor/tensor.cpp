@@ -2,6 +2,7 @@
 
 #include "../utils.hpp"
 
+#include <cstddef>
 #include <cstring>
 #include <numeric>
 #include <sstream>
@@ -17,10 +18,10 @@ tensor_t Tensor::create(const std::vector<size_t> &shape,
                         int device) {
     size_t ndim_ = shape.size();
     std::vector<ptrdiff_t> strides(ndim_);
-    size_t stride = 1;
+    ptrdiff_t stride = 1;
     for (size_t i = 1; i <= ndim_; i++) {
         strides[ndim_ - i] = stride;
-        stride *= shape[ndim_ - i];
+        stride *= static_cast<ptrdiff_t>(shape[ndim_ - i]);
     }
     TensorMeta meta{dtype, shape, strides};
     size_t total_elems = stride;
@@ -164,27 +165,100 @@ void Tensor::debug() const {
 }
 
 bool Tensor::isContiguous() const {
-    TO_BE_IMPLEMENTED();
+    ptrdiff_t stride = 1;
+    auto shape = this->shape();
+    auto strides = this->strides();
+    size_t ndim = this->ndim();
+    for (size_t i = 1; i <= ndim; i++) {
+        if (strides[ndim - i] != stride) {
+            return false;
+        }
+        stride *= static_cast<ptrdiff_t>(shape[ndim - i]);
+    }
     return true;
 }
 
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    size_t n_dim = order.size();
+    std::vector<size_t> shape(n_dim);
+    std::vector<ptrdiff_t> strides(n_dim);
+
+    auto old_shape = this->shape();
+    auto old_strides = this->strides();
+    for (size_t i = 0; i < n_dim; ++i) {
+        int64_t dim = order[i];
+        shape[i] = old_shape[dim];
+        strides[i] = old_strides[dim];
+    }
+    TensorMeta meta{this->dtype(), shape, strides};
+    return std::shared_ptr<Tensor>(new Tensor(meta, _storage));
 }
 
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    // 检查连续性
+    if (!this->isContiguous()) {
+        throw std::runtime_error("Tensor must be contiguous to view()");
+    }
+    // 验证元素总数匹配
+    size_t old_elements = this->numel();
+    size_t new_elements = 1;
+    for (auto s : shape) {
+        new_elements *= s;
+    }
+
+    if (old_elements != new_elements) {
+        throw std::runtime_error("Shape mismatch in view()");
+    }
+    // 计算新的 strides
+    size_t ndim = shape.size();
+    std::vector<ptrdiff_t> strides(ndim);
+    ptrdiff_t stride = 1;
+    for (size_t i = 1; i <= ndim; ++i) {
+        strides[ndim - i] = stride;
+        stride *= static_cast<ptrdiff_t>(shape[ndim - i]);
+    }
+
+    TensorMeta meta{this->dtype(), shape, strides};
+    return std::shared_ptr<Tensor>(new Tensor(meta, _storage, _offset));
 }
 
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    if (dim >= this->ndim()) {
+        throw std::runtime_error("Dimension out of range");
+    }
+    if (start >= end || end > this->shape()[dim]) {
+        throw std::runtime_error("Invalid slice indices");
+    }
+
+    std::vector<size_t> shape = this->shape();
+    shape[dim] = end - start;
+    TensorMeta meta{this->dtype(), shape, this->strides()};
+
+    // `_offset` is in bytes, strides are in elements. Convert to a byte offset.
+    const size_t byte_offset = this->_offset + static_cast<size_t>(start) * static_cast<size_t>(this->strides()[dim]) * this->elementSize();
+
+    return std::shared_ptr<Tensor>(new Tensor(meta, _storage, byte_offset));
 }
 
 void Tensor::load(const void *src_) {
-    TO_BE_IMPLEMENTED();
+    // 判断指针不为空
+    if (!src_) {
+        throw std::runtime_error("Tensor::load: source pointer is null");
+    }
+    // 获取设备类型
+    core::context().setDevice(this->deviceType(), this->deviceId());
+    core::context().runtime().api()->device_synchronize();
+    size_t byte_size = this->numel() * this->elementSize();
+    // 根据设备类型决定如何复制
+    if (this->deviceType() == LLAISYS_DEVICE_CPU) {
+        std::memcpy(this->data(), src_, byte_size);
+    } else {
+        core::context().runtime().api()->memcpy_sync(
+            this->data(),
+            src_,
+            byte_size,
+            LLAISYS_MEMCPY_H2D);
+    }
 }
 
 tensor_t Tensor::contiguous() const {
