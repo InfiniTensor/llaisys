@@ -7,6 +7,7 @@
 #include "../ops/embedding/op.hpp"
 #include "../ops/linear/op.hpp"
 #include "../ops/rearrange/op.hpp"
+#include "../ops/random_sample/op.hpp"
 #include "../ops/rms_norm/op.hpp"
 #include "../ops/rope/op.hpp"
 #include "../ops/self_attention/op.hpp"
@@ -23,7 +24,10 @@ __C {
         llaisys::ops::embedding(out->tensor, index->tensor, weight->tensor);
     }
     void llaisysLinear(llaisysTensor_t out, llaisysTensor_t in, llaisysTensor_t weight, llaisysTensor_t bias) {
-        llaisys::ops::linear(out->tensor, in->tensor, weight->tensor, bias->tensor);
+        if(bias == nullptr) {
+            llaisys::ops::linear(out->tensor, in->tensor, weight->tensor, nullptr);
+        }else
+            llaisys::ops::linear(out->tensor, in->tensor, weight->tensor, bias->tensor);
     }
     void llaisysRearrange(llaisysTensor_t out, llaisysTensor_t in) {
         llaisys::ops::rearrange(out->tensor, in->tensor);
@@ -39,5 +43,10 @@ __C {
     }
     void llaisysSwiGLU(llaisysTensor_t out, llaisysTensor_t gate, llaisysTensor_t up) {
         llaisys::ops::swiglu(out->tensor, gate->tensor, up->tensor);
+    }
+    void llaisysRandomSample(llaisysTensor_t sample_idx, llaisysTensor_t sample_val, llaisysTensor_t logits,
+                             float temperature, int top_k, float top_p, int64_t seed) {
+        llaisys::ops::random_sample(sample_idx->tensor, sample_val->tensor, logits->tensor, temperature, top_k, top_p,
+                                    seed);
     }
 }

@@ -7,14 +7,18 @@ on:
       - 'LICENSE'
 
 jobs:
-  build:
-    name: Build
+  build-cuda:
+    name: Build and test (CUDA, ${{ matrix.target }})
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
-        type: [release]
+        include:
+          - target: ubuntu
+            os: ubuntu-latest
     runs-on: ${{ matrix.os }}
+    env:
+      TMPDIR: ${{ github.workspace }}/.tmp
+      PYTHONUTF8: "1"
     steps:
 
     - name: checkout code
@@ -24,37 +28,144 @@ jobs:
       uses: xmake-io/github-action-setup-xmake@v1
       with:
         xmake-version: latest
-    
-    - name: Xmake Build & Install
-      run: | 
-        xmake
+
+    - name: install cuda toolkit
+      uses: Jimver/cuda-toolkit@v0.2.24
+      with:
+        cuda: "12.8.0"
+
+    - name: prepare tmp (linux)
+      if: matrix.target == 'ubuntu'
+      run: |
+        mkdir -p "$TMPDIR"
+      shell: bash
+
+    - name: prepare tmp (windows)
+      if: matrix.target == 'windows'
+      run: |
+        New-Item -ItemType Directory -Force -Path $env:TMPDIR | Out-Null
+      shell: pwsh
+
+    - name: check toolchain (linux)
+      if: matrix.target == 'ubuntu'
+      run: |
+        command -v python
+        command -v pip
+        command -v xmake
+        command -v nvcc
+        python --version
+        pip --version
+        xmake --version
+        nvcc --version
+      shell: bash
+
+    - name: check toolchain (windows)
+      if: matrix.target == 'windows'
+      run: |
+        Get-Command python
+        Get-Command pip
+        Get-Command xmake
+        if (-not $env:CUDA_PATH) {
+          $nvccCmd = Get-Command nvcc -ErrorAction SilentlyContinue
+          if ($nvccCmd) {
+            $env:CUDA_PATH = Split-Path (Split-Path $nvccCmd.Source -Parent) -Parent
+          }
+        }
+        if (-not $env:CUDA_PATH) {
+          throw "CUDA_PATH is not set and nvcc not found in PATH"
+        }
+        "$env:CUDA_PATH\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        python --version
+        pip --version
+        xmake --version
+        & "$env:CUDA_PATH\bin\nvcc.exe" --version
+      shell: pwsh
+
+    - name: detect nvidia gpu (linux)
+      if: matrix.target == 'ubuntu'
+      run: |
+        if command -v nvidia-smi >/dev/null 2>&1; then
+          nvidia-smi || true
+          echo "HAS_NVIDIA_GPU=1" >> "$GITHUB_ENV"
+        else
+          echo "HAS_NVIDIA_GPU=0" >> "$GITHUB_ENV"
+        fi
+      shell: bash
+
+    - name: detect nvidia gpu (windows)
+      if: matrix.target == 'windows'
+      run: |
+        if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+          nvidia-smi
+          "HAS_NVIDIA_GPU=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        } else {
+          "HAS_NVIDIA_GPU=0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        }
+      shell: pwsh
+
+    - name: Xmake CUDA Build & Install (linux)
+      if: matrix.target == 'ubuntu'
+      run: |
+        xmake f --nv-gpu=y -c -v
+        xmake -v
         xmake install
+      shell: bash
+
+    - name: Xmake CUDA Build & Install (windows)
+      if: matrix.target == 'windows'
+      run: |
+        if (-not $env:CUDA_PATH) {
+          throw "CUDA_PATH is required for windows CUDA build"
+        }
+        $env:Path = "$env:CUDA_PATH\bin;$env:Path"
+        xmake f -p windows -a x64 --toolchain=msvc --cuda="$env:CUDA_PATH" --nv-gpu=y -c -v
+        xmake -v
+        xmake install
+      shell: pwsh
     
-    - name: Install Python
+    - name: Install Python (linux)
+      if: matrix.target == 'ubuntu'
       run: | 
         cd python
-        pip install .
+        pip install ./llaisyscore/
+        pip install ./server-project/
         cd ..
+      shell: bash
 
-    - name: Assignment-0
+    - name: Install Python (windows)
+      if: matrix.target == 'windows'
       run: |
-        python test/test_runtime.py --device cpu
+        Set-Location python
+        pip install ./llaisyscore/
+        pip install ./server-project/
+        Set-Location ..
+      shell: pwsh
 
-    - name: Assignment-1
+    - name: CUDA runtime api test
+      if: env.HAS_NVIDIA_GPU == '1'
       run: |
-        python test/test_tensor.py
-    
-    - name: Assignment-2
-      run: |
-        python test/ops/add.py 
-        python test/ops/argmax.py
-        python test/ops/embedding.py
-        python test/ops/linear.py 
-        python test/ops/rms_norm.py
-        python test/ops/rope.py
-        python test/ops/self_attention.py
-        python test/ops/swiglu.py
+        python test/test_runtime.py --device nvidia
 
-    - name: Assignment-3
+    - name: CUDA ops tests
+      if: env.HAS_NVIDIA_GPU == '1'
       run: |
-        python test/test_infer.py --test
+        python test/ops/add.py --device nvidia
+        python test/ops/argmax.py --device nvidia
+        python test/ops/embedding.py --device nvidia
+        python test/ops/linear.py --device nvidia
+        python test/ops/random_sample.py --device nvidia
+        python test/ops/rms_norm.py --device nvidia
+        python test/ops/rope.py --device nvidia
+        python test/ops/self_attention.py --device nvidia
+        python test/ops/swiglu.py --device nvidia
+
+    - name: CUDA infer test
+      if: env.HAS_NVIDIA_GPU == '1'
+      run: |
+        python test/test_infer.py --device nvidia --test
+
+    - name: skip gpu tests when no gpu
+      if: env.HAS_NVIDIA_GPU != '1'
+      run: |
+        echo "No NVIDIA GPU available on this runner, skipped runtime/ops/infer GPU tests."
+      

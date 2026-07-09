@@ -5,10 +5,14 @@ from test_utils import *
 import argparse
 
 
-def test_tensor():
-    torch_tensor = torch.arange(60, dtype=torch_dtype("i64")).reshape(3, 4, 5)
+def test_tensor(device_name: str = "cpu"):
+    torch_tensor = torch.arange(
+        60,
+        dtype=torch_dtype("i64"),
+        device=torch_device(device_name),
+    ).reshape(3, 4, 5)
     llaisys_tensor = llaisys.Tensor(
-        (3, 4, 5), dtype=llaisys_dtype("i64"), device=llaisys_device("cpu")
+        (3, 4, 5), dtype=llaisys_dtype("i64"), device=llaisys_device(device_name)
     )
 
     # Test load
@@ -50,6 +54,10 @@ def test_tensor():
 
 
 if __name__ == "__main__":
-    test_tensor()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia"], type=str)
+    args = parser.parse_args()
+
+    test_tensor(args.device)
 
     print("\n\033[92mTest passed!\033[0m\n")

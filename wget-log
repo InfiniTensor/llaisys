@@ -1,0 +1,8 @@
+--2026-01-15 01:03:02--  http://github.com/
+Connecting to 192.168.1.16:10809... connected.
+Proxy request sent, awaiting response... 301 Moved Permanently
+Location: https://github.com/ [following]
+--2026-01-15 01:03:02--  https://github.com/
+Connecting to 192.168.1.16:10809... connected.
+OpenSSL: error:0A000126:SSL routines::unexpected eof while reading
+Unable to establish SSL connection.

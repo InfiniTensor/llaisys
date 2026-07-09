@@ -6,6 +6,7 @@ from .libllaisys import llaisysStream_t as Stream
 from .tensor import Tensor
 from .ops import Ops
 from . import models
+from . import backend
 from .models import *
 
 __all__ = [
@@ -17,4 +18,5 @@ __all__ = [
     "Tensor",
     "Ops",
     "models",
+    "backend",
 ]

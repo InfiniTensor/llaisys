@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LLAISYS Chat UI</title>
+    <style>
+      :root {
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+      }
+      body {
+        margin: 0;
+        background: #f5f6f8;
+        color: #111827;
+      }
+      .container {
+        max-width: 900px;
+        margin: 24px auto;
+        padding: 0 16px;
+      }
+      .card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+      }
+      .header {
+        padding: 16px;
+        border-bottom: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+      .title {
+        margin: 0;
+        font-size: 18px;
+      }
+      .session-tools {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .session-tools select {
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 6px 8px;
+        font-size: 13px;
+        max-width: 220px;
+      }
+      .chat {
+        height: 60vh;
+        overflow-y: auto;
+        padding: 16px;
+      }
+      .msg {
+        margin-bottom: 12px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+      }
+      .role {
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      .user .role {
+        color: #2563eb;
+      }
+      .assistant .role {
+        color: #059669;
+      }
+      .role-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 4px;
+      }
+      .msg-tools {
+        display: flex;
+        gap: 6px;
+      }
+      .msg-tools button {
+        padding: 3px 8px;
+        font-size: 12px;
+      }
+      .edit-box {
+        margin-top: 8px;
+        display: grid;
+        gap: 8px;
+      }
+      .edit-box textarea {
+        min-height: 70px;
+      }
+      .assistant-sections {
+        display: grid;
+        gap: 8px;
+      }
+      .assistant-block {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 8px 10px;
+      }
+      .assistant-block-title {
+        font-size: 12px;
+        color: #6b7280;
+        margin-bottom: 4px;
+      }
+      .assistant-block-content {
+        white-space: pre-wrap;
+      }
+      .assistant-block.think {
+        background: #f9fafb;
+      }
+      .assistant-block.reply {
+        background: #ffffff;
+      }
+      .composer {
+        padding: 16px;
+        border-top: 1px solid #e5e7eb;
+      }
+      textarea {
+        width: 100%;
+        min-height: 88px;
+        resize: vertical;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 10px;
+        font-size: 14px;
+        box-sizing: border-box;
+      }
+      .actions {
+        margin-top: 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .switch {
+        margin-left: auto;
+        font-size: 13px;
+        color: #374151;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      button {
+        border: 1px solid #d1d5db;
+        background: #ffffff;
+        border-radius: 8px;
+        padding: 8px 14px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      button.primary {
+        background: #111827;
+        color: #ffffff;
+        border-color: #111827;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .status {
+        font-size: 13px;
+        color: #6b7280;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <div class="header">
+          <h1 class="title">LLAISYS Chat</h1>
+          <div class="session-tools">
+            <select id="session-select"></select>
+            <button id="new-session">新会话</button>
+            <button id="delete-session">删除会话</button>
+          </div>
+          <div id="status" class="status">就绪</div>
+        </div>
+        <div id="chat" class="chat"></div>
+        <div class="composer">
+          <textarea id="input" placeholder="输入问题，按 Ctrl+Enter 发送"></textarea>
+          <div class="actions">
+            <button id="send" class="primary">发送</button>
+            <button id="clear">清空对话</button>
+            <label class="switch">
+              <input id="stream-toggle" type="checkbox" checked />
+              流式显示
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const chatEl = document.getElementById('chat');
+      const inputEl = document.getElementById('input');
+      const sendBtn = document.getElementById('send');
+      const clearBtn = document.getElementById('clear');
+      const statusEl = document.getElementById('status');
+      const streamToggleEl = document.getElementById('stream-toggle');
+      const sessionSelectEl = document.getElementById('session-select');
+      const newSessionBtn = document.getElementById('new-session');
+      const deleteSessionBtn = document.getElementById('delete-session');
+
+      const sessions = [];
+      let currentSessionId = null;
+      let pending = false;
+      let editingIndex = null;
+      let editingDraft = '';
+
+      function currentSession() {
+        return sessions.find((item) => item.id === currentSessionId);
+      }
+
+      function addLocalSession(id, initialMessages = [], activate = true) {
+        sessions.push({
+          id,
+          title: `会话 ${sessions.length + 1}`,
+          messages: [...initialMessages],
+        });
+        if (activate) {
+          currentSessionId = id;
+          editingIndex = null;
+          editingDraft = '';
+          renderSessionOptions();
+          renderChat();
+        }
+      }
+
+      async function fetchSessionMessages(sessionId) {
+        try {
+          const resp = await fetch(`/v1/sessions/${encodeURIComponent(sessionId)}`);
+          if (!resp.ok) {
+            return [];
+          }
+          const data = await resp.json();
+          return Array.isArray(data.messages) ? data.messages : [];
+        } catch {
+          return [];
+        }
+      }
+
+      async function createSession(initialMessages = [], explicitId = null) {
+        let sessionId = explicitId;
+        try {
+          const resp = await fetch('/v1/sessions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: explicitId })
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            sessionId = data.session_id;
+          }
+        } catch {
+          // Fallback to local-only session id if server session API is unavailable.
+        }
+
+        if (!sessionId) {
+          sessionId = `sess-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+        }
+        addLocalSession(sessionId, initialMessages);
+      }
+
+      async function loadSessionsFromServer() {
+        try {
+          const resp = await fetch('/v1/sessions');
+          if (!resp.ok) {
+            throw new Error('failed to list sessions');
+          }
+          const data = await resp.json();
+          const ids = Array.isArray(data.sessions) ? data.sessions : [];
+          sessions.length = 0;
+          for (const id of ids) {
+            const messages = await fetchSessionMessages(id);
+            addLocalSession(id, messages, false);
+          }
+
+          if (sessions.length === 0) {
+            await createSession();
+          } else {
+            currentSessionId = sessions[0].id;
+            renderSessionOptions();
+            renderChat();
+          }
+        } catch {
+          if (sessions.length === 0) {
+            await createSession();
+          }
+        }
+      }
+
+      function updateSessionTitle(session) {
+        const firstUser = session.messages.find((item) => item.role === 'user');
+        if (firstUser && firstUser.content) {
+          session.title = firstUser.content.slice(0, 12);
+          return;
+        }
+        session.title = `会话 ${sessions.indexOf(session) + 1}`;
+      }
+
+      function renderSessionOptions() {
+        sessionSelectEl.innerHTML = '';
+        sessions.forEach((session) => {
+          updateSessionTitle(session);
+          const opt = document.createElement('option');
+          opt.value = session.id;
+          opt.textContent = session.title;
+          if (session.id === currentSessionId) {
+            opt.selected = true;
+          }
+          sessionSelectEl.appendChild(opt);
+        });
+      }
+
+      function setStatus(text) {
+        statusEl.textContent = text;
+      }
+
+      function addMessage(role, content) {
+        const wrapper = document.createElement('div');
+        wrapper.className = `msg ${role}`;
+
+        const roleEl = document.createElement('div');
+        roleEl.className = 'role';
+        roleEl.textContent = role === 'user' ? '你' : '助手';
+
+        const contentEl = document.createElement('div');
+        contentEl.textContent = content;
+
+        wrapper.appendChild(roleEl);
+        wrapper.appendChild(contentEl);
+        chatEl.appendChild(wrapper);
+        chatEl.scrollTop = chatEl.scrollHeight;
+
+        return contentEl;
+      }
+
+      function createUserMessageView(index, content) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'msg user';
+
+        const roleRow = document.createElement('div');
+        roleRow.className = 'role-row';
+
+        const roleEl = document.createElement('div');
+        roleEl.className = 'role';
+        roleEl.textContent = '你';
+
+        const tools = document.createElement('div');
+        tools.className = 'msg-tools';
+        const editBtn = document.createElement('button');
+        editBtn.textContent = '编辑重生成';
+        editBtn.disabled = pending;
+        editBtn.addEventListener('click', () => {
+          if (pending) return;
+          editingIndex = index;
+          editingDraft = content;
+          renderChat();
+        });
+        tools.appendChild(editBtn);
+
+        roleRow.appendChild(roleEl);
+        roleRow.appendChild(tools);
+
+        const contentEl = document.createElement('div');
+        contentEl.textContent = content;
+
+        wrapper.appendChild(roleRow);
+        wrapper.appendChild(contentEl);
+
+        if (editingIndex === index) {
+          const editBox = document.createElement('div');
+          editBox.className = 'edit-box';
+
+          const editInput = document.createElement('textarea');
+          editInput.value = editingDraft;
+          editInput.addEventListener('input', () => {
+            editingDraft = editInput.value;
+          });
+
+          const actionRow = document.createElement('div');
+          actionRow.className = 'msg-tools';
+
+          const saveBtn = document.createElement('button');
+          saveBtn.className = 'primary';
+          saveBtn.textContent = '保存并重生成';
+          saveBtn.disabled = pending;
+          saveBtn.addEventListener('click', async () => {
+            const session = currentSession();
+            if (!session) return;
+            const nextText = editingDraft.trim();
+            if (!nextText) return;
+
+            session.messages = session.messages.slice(0, index + 1);
+            session.messages[index] = { role: 'user', content: nextText };
+            editingIndex = null;
+            editingDraft = '';
+            renderSessionOptions();
+            renderChat();
+            await requestAssistantReply();
+          });
+
+          const cancelBtn = document.createElement('button');
+          cancelBtn.textContent = '取消';
+          cancelBtn.disabled = pending;
+          cancelBtn.addEventListener('click', () => {
+            editingIndex = null;
+            editingDraft = '';
+            renderChat();
+          });
+
+          actionRow.appendChild(saveBtn);
+          actionRow.appendChild(cancelBtn);
+          editBox.appendChild(editInput);
+          editBox.appendChild(actionRow);
+          wrapper.appendChild(editBox);
+        }
+
+        chatEl.appendChild(wrapper);
+      }
+
+      function createAssistantMessageView() {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'msg assistant';
+
+        const roleEl = document.createElement('div');
+        roleEl.className = 'role';
+        roleEl.textContent = '助手';
+
+        const sectionsEl = document.createElement('div');
+        sectionsEl.className = 'assistant-sections';
+
+        const thinkBlock = document.createElement('div');
+        thinkBlock.className = 'assistant-block think';
+        const thinkTitle = document.createElement('div');
+        thinkTitle.className = 'assistant-block-title';
+        thinkTitle.textContent = '思考';
+        const thinkContent = document.createElement('div');
+        thinkContent.className = 'assistant-block-content';
+        thinkBlock.appendChild(thinkTitle);
+        thinkBlock.appendChild(thinkContent);
+
+        const replyBlock = document.createElement('div');
+        replyBlock.className = 'assistant-block reply';
+        const replyTitle = document.createElement('div');
+        replyTitle.className = 'assistant-block-title';
+        replyTitle.textContent = '回复';
+        const replyContent = document.createElement('div');
+        replyContent.className = 'assistant-block-content';
+        replyBlock.appendChild(replyTitle);
+        replyBlock.appendChild(replyContent);
+
+        sectionsEl.appendChild(thinkBlock);
+        sectionsEl.appendChild(replyBlock);
+        wrapper.appendChild(roleEl);
+        wrapper.appendChild(sectionsEl);
+        chatEl.appendChild(wrapper);
+
+        const state = {
+          inThinking: false,
+          carry: '',
+          thinkText: '',
+          replyText: '',
+          rawText: ''
+        };
+
+        function longestSuffixPrefix(value, token) {
+          const upper = Math.min(value.length, token.length - 1);
+          for (let n = upper; n > 0; n -= 1) {
+            if (value.endsWith(token.slice(0, n))) {
+              return n;
+            }
+          }
+          return 0;
+        }
+
+        function commitText(text) {
+          if (!text) return;
+          if (state.inThinking) {
+            state.thinkText += text;
+          } else {
+            state.replyText += text;
+          }
+        }
+
+        function processBuffer(bufferValue) {
+          const startTag = '<think>';
+          const endTag = '</think>';
+          let source = bufferValue;
+
+          while (source.length > 0) {
+            const startIdx = source.indexOf(startTag);
+            const endIdx = source.indexOf(endTag);
+
+            let nextIdx = -1;
+            let tagType = '';
+            if (startIdx !== -1 && (endIdx === -1 || startIdx < endIdx)) {
+              nextIdx = startIdx;
+              tagType = 'start';
+            } else if (endIdx !== -1) {
+              nextIdx = endIdx;
+              tagType = 'end';
+            }
+
+            if (nextIdx === -1) {
+              const keep = Math.max(
+                longestSuffixPrefix(source, startTag),
+                longestSuffixPrefix(source, endTag)
+              );
+              if (keep > 0) {
+                commitText(source.slice(0, source.length - keep));
+                state.carry = source.slice(source.length - keep);
+              } else {
+                commitText(source);
+                state.carry = '';
+              }
+              return;
+            }
+
+            commitText(source.slice(0, nextIdx));
+            source = source.slice(nextIdx + (tagType === 'start' ? startTag.length : endTag.length));
+
+            if (tagType === 'start') {
+              state.inThinking = true;
+            } else {
+              state.inThinking = false;
+            }
+          }
+
+          state.carry = '';
+        }
+
+        function render() {
+          thinkContent.textContent = state.thinkText;
+          replyContent.textContent = state.replyText;
+          thinkBlock.style.display = state.thinkText ? 'block' : 'none';
+          replyBlock.style.display = state.replyText ? 'block' : 'none';
+          chatEl.scrollTop = chatEl.scrollHeight;
+        }
+
+        function appendChunk(text) {
+          if (!text) return;
+          state.rawText += text;
+          const merged = state.carry + text;
+          state.carry = '';
+          processBuffer(merged);
+          render();
+        }
+
+        function finish() {
+          if (state.carry) {
+            commitText(state.carry);
+            state.carry = '';
+          }
+          if (!state.replyText && !state.thinkText) {
+            replyContent.textContent = '';
+            replyBlock.style.display = 'block';
+          }
+          render();
+          return state.rawText || state.replyText || state.thinkText;
+        }
+
+        render();
+        return {
+          wrapper,
+          appendChunk,
+          finish,
+          setFullText(text) {
+            state.inThinking = false;
+            state.carry = '';
+            state.thinkText = '';
+            state.replyText = '';
+            state.rawText = text || '';
+            processBuffer(text || '');
+            return finish();
+          },
+        };
+      }
+
+      function renderChat() {
+        const session = currentSession();
+        chatEl.innerHTML = '';
+        if (!session) return;
+
+        session.messages.forEach((message, index) => {
+          if (message.role === 'user') {
+            createUserMessageView(index, message.content || '');
+            return;
+          }
+          const assistantView = createAssistantMessageView();
+          assistantView.setFullText(message.content || '');
+        });
+        chatEl.scrollTop = chatEl.scrollHeight;
+      }
+
+      async function readStreamingReply(resp, assistantView) {
+        if (!resp.body) {
+          throw new Error('流式响应不可读');
+        }
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const events = buffer.split('\n\n');
+          buffer = events.pop() || '';
+
+          for (const eventText of events) {
+            const lines = eventText.split('\n');
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) {
+                continue;
+              }
+              const payload = line.slice(6);
+              if (payload === '[DONE]') {
+                continue;
+              }
+
+              let item;
+              try {
+                item = JSON.parse(payload);
+              } catch {
+                continue;
+              }
+
+              const piece = item.choices?.[0]?.delta?.content || '';
+              if (piece) {
+                assistantView.appendChunk(piece);
+              }
+            }
+          }
+        }
+
+        return assistantView.finish();
+      }
+
+      async function requestAssistantReply() {
+        const session = currentSession();
+        if (!session) return;
+        pending = true;
+        sendBtn.disabled = true;
+        clearBtn.disabled = true;
+        streamToggleEl.disabled = true;
+        sessionSelectEl.disabled = true;
+        newSessionBtn.disabled = true;
+        deleteSessionBtn.disabled = true;
+        setStatus('生成中...');
+
+        try {
+          const useStream = streamToggleEl.checked;
+          renderChat();
+
+          const resp = await fetch('/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              session_id: session.id,
+              messages: session.messages,
+              stream: useStream
+            })
+          });
+
+          if (!resp.ok) {
+            throw new Error(`HTTP ${resp.status}`);
+          }
+
+          const assistantView = createAssistantMessageView();
+          let reply = '';
+
+          if (useStream) {
+            reply = await readStreamingReply(resp, assistantView);
+          } else {
+            const data = await resp.json();
+            reply = assistantView.setFullText(data.choices?.[0]?.message?.content ?? '');
+          }
+
+          session.messages.push({ role: 'assistant', content: reply });
+          renderSessionOptions();
+          setStatus('就绪');
+        } catch (err) {
+          addMessage('assistant', `请求失败：${err.message}`);
+          setStatus('请求失败');
+        } finally {
+          pending = false;
+          sendBtn.disabled = false;
+          clearBtn.disabled = false;
+          streamToggleEl.disabled = false;
+          sessionSelectEl.disabled = false;
+          newSessionBtn.disabled = false;
+          deleteSessionBtn.disabled = false;
+          renderChat();
+        }
+      }
+
+      async function sendMessage() {
+        if (pending) return;
+        const text = inputEl.value.trim();
+        if (!text) return;
+
+        const session = currentSession();
+        if (!session) return;
+
+        session.messages.push({ role: 'user', content: text });
+        inputEl.value = '';
+        editingIndex = null;
+        editingDraft = '';
+        renderSessionOptions();
+        renderChat();
+        await requestAssistantReply();
+      }
+
+      sendBtn.addEventListener('click', sendMessage);
+      clearBtn.addEventListener('click', () => {
+        const session = currentSession();
+        if (!session) return;
+        session.messages = [];
+        editingIndex = null;
+        editingDraft = '';
+        renderSessionOptions();
+        renderChat();
+        setStatus('已清空');
+      });
+      newSessionBtn.addEventListener('click', async () => {
+        if (pending) return;
+        await createSession();
+        setStatus('已创建新会话');
+      });
+      deleteSessionBtn.addEventListener('click', async () => {
+        if (pending) return;
+        const session = currentSession();
+        if (!session) return;
+
+        if (sessions.length <= 1) {
+          if (session) {
+            session.messages = [];
+            renderSessionOptions();
+            renderChat();
+            setStatus('已清空当前会话');
+          }
+          return;
+        }
+
+        try {
+          await fetch(`/v1/sessions/${encodeURIComponent(session.id)}`, { method: 'DELETE' });
+        } catch {
+          // Keep local deletion behavior when server API is unavailable.
+        }
+
+        const idx = sessions.findIndex((item) => item.id === currentSessionId);
+        if (idx !== -1) {
+          sessions.splice(idx, 1);
+        }
+        currentSessionId = sessions[Math.max(0, idx - 1)]?.id || sessions[0]?.id || null;
+        editingIndex = null;
+        editingDraft = '';
+        renderSessionOptions();
+        renderChat();
+        setStatus('已删除会话');
+      });
+      sessionSelectEl.addEventListener('change', () => {
+        if (pending) return;
+        currentSessionId = sessionSelectEl.value;
+        editingIndex = null;
+        editingDraft = '';
+        renderChat();
+        setStatus('已切换会话');
+      });
+      inputEl.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && event.ctrlKey) {
+          event.preventDefault();
+          sendMessage();
+        }
+      });
+
+      loadSessionsFromServer();
+    </script>
+  </body>
+</html>

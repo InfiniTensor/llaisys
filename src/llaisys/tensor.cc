@@ -93,4 +93,17 @@ __C {
         size_t end) {
         return new LlaisysTensor{tensor->tensor->slice(dim, start, end)};
     }
+    llaisysTensor_t tensorReshape(
+        llaisysTensor_t tensor,
+        size_t * shape,
+        size_t ndim) {
+        std::vector<size_t> shape_vec(shape, shape + ndim);
+        return new LlaisysTensor{tensor->tensor->reshape(shape_vec)};
+    }
+    llaisysTensor_t tensorTo(
+        llaisysTensor_t tensor,
+        llaisysDeviceType_t device_type,
+        int device_id) {
+        return new LlaisysTensor{tensor->tensor->to(device_type, device_id)};
+    }
 }
