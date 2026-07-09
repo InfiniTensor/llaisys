@@ -16,6 +16,10 @@ target("llaisys-ops-cpu")
     add_deps("llaisys-tensor")
     set_languages("cxx17")
     set_warnings("all", "error")
+    
+    -- 添加 OpenMP 支持
+    add_packages("openmp")
+    
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end
@@ -24,4 +28,3 @@ target("llaisys-ops-cpu")
 
     on_install(function (target) end)
 target_end()
-
