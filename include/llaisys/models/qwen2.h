@@ -37,6 +37,29 @@ __C {
 
     __export struct LlaisysQwen2Weights *llaisysQwen2ModelWeights(struct LlaisysQwen2Model * model);
 
+    // Set a named weight tensor into the model. Returns 0 on success.
+    __export int llaisysQwen2ModelSetWeight(struct LlaisysQwen2Model * model, const char * name, llaisysTensor_t tensor);
+
+    // Optional finalize call after all weights are set.
+    __export int llaisysQwen2ModelFinalize(struct LlaisysQwen2Model * model);
+
+    // Check whether a named weight has been set. Returns 1 if present, 0 otherwise.
+    __export uint8_t llaisysQwen2ModelHasWeight(struct LlaisysQwen2Model * model, const char * name);
+
     __export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model * model, int64_t * token_ids, size_t ntoken);
+    __export int64_t llaisysQwen2ModelInferSample(
+        struct LlaisysQwen2Model * model,
+        int64_t * token_ids,
+        size_t ntoken,
+        float temperature,
+        size_t top_k,
+        float top_p,
+        uint64_t seed);
+
+    // KV cache APIs
+    __export void *llaisysQwen2KVCreat(struct LlaisysQwen2Model * model, size_t max_tokens);
+    __export void llaisysQwen2KVDestroy(void *kv);
+    __export int llaisysQwen2KVAppend(void *kv, llaisysTensor_t k, llaisysTensor_t v);
+    __export size_t llaisysQwen2KVLen(void *kv);
 }
 #endif // LLAISYS_MODELS_QWEN2_H

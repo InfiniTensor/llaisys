@@ -4,6 +4,7 @@
 
 #include "../ops/add/op.hpp"
 #include "../ops/argmax/op.hpp"
+#include "../ops/random_sample/op.hpp"
 #include "../ops/embedding/op.hpp"
 #include "../ops/linear/op.hpp"
 #include "../ops/rearrange/op.hpp"
@@ -19,11 +20,26 @@ __C {
     void llaisysArgmax(llaisysTensor_t max_idx, llaisysTensor_t max_val, llaisysTensor_t vals) {
         llaisys::ops::argmax(max_idx->tensor, max_val->tensor, vals->tensor);
     }
+    void llaisysRandomSample(
+        llaisysTensor_t out_idx,
+        llaisysTensor_t logits,
+        float temperature,
+        size_t top_k,
+        float top_p,
+        uint64_t seed) {
+        llaisys::ops::random_sample(
+            out_idx->tensor,
+            logits->tensor,
+            temperature,
+            top_k,
+            top_p,
+            seed);
+    }
     void llaisysEmbedding(llaisysTensor_t out, llaisysTensor_t index, llaisysTensor_t weight) {
         llaisys::ops::embedding(out->tensor, index->tensor, weight->tensor);
     }
     void llaisysLinear(llaisysTensor_t out, llaisysTensor_t in, llaisysTensor_t weight, llaisysTensor_t bias) {
-        llaisys::ops::linear(out->tensor, in->tensor, weight->tensor, bias->tensor);
+        llaisys::ops::linear(out->tensor, in->tensor, weight->tensor, bias ? bias->tensor : nullptr);
     }
     void llaisysRearrange(llaisysTensor_t out, llaisysTensor_t in) {
         llaisys::ops::rearrange(out->tensor, in->tensor);

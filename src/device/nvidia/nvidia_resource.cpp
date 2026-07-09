@@ -3,5 +3,6 @@
 namespace llaisys::device::nvidia {
 
 Resource::Resource(int device_id) : llaisys::device::DeviceResource(LLAISYS_DEVICE_NVIDIA, device_id) {}
+Resource::~Resource() = default;
 
 } // namespace llaisys::device::nvidia
