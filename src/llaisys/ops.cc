@@ -6,6 +6,7 @@
 #include "../ops/argmax/op.hpp"
 #include "../ops/embedding/op.hpp"
 #include "../ops/linear/op.hpp"
+#include "../ops/rand_sample/op.hpp"
 #include "../ops/rearrange/op.hpp"
 #include "../ops/rms_norm/op.hpp"
 #include "../ops/rope/op.hpp"
@@ -18,6 +19,10 @@ __C {
     }
     void llaisysArgmax(llaisysTensor_t max_idx, llaisysTensor_t max_val, llaisysTensor_t vals) {
         llaisys::ops::argmax(max_idx->tensor, max_val->tensor, vals->tensor);
+    }
+    void llaisysRandSample(llaisysTensor_t sample_idx, llaisysTensor_t sample_val, llaisysTensor_t vals,
+                           float temperature, size_t topK, float topP, int64_t seed) {
+        llaisys::ops::rand_sample(sample_idx->tensor, sample_val->tensor, vals->tensor, temperature, topK, topP, seed);
     }
     void llaisysEmbedding(llaisysTensor_t out, llaisysTensor_t index, llaisysTensor_t weight) {
         llaisys::ops::embedding(out->tensor, index->tensor, weight->tensor);

@@ -164,27 +164,194 @@ void Tensor::debug() const {
 }
 
 bool Tensor::isContiguous() const {
-    TO_BE_IMPLEMENTED();
+    //first initial expected stride(from lastdim to 0)
+    //test
+    ptrdiff_t expected_stride = 1;
+    for(int i = (int)ndim()-1; i >= 0; i--)
+    {
+        size_t current_shape = shape()[i];
+        if(current_shape == 0) return true;
+        if(current_shape > 1)
+        {
+            if(strides()[i] != expected_stride)
+                return false;
+            expected_stride *= current_shape;
+        }
+    }
     return true;
 }
 
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    // valid order.size() == this->ndim()
+    CHECK_ARGUMENT(order.size() == this->ndim(), "Permute: order size mismatch.");
+    std::vector<bool> seen(order.size(), false);
+    std::vector<size_t> new_shape(order.size());
+    std::vector<ptrdiff_t> new_strides(order.size());
+    for(int i = 0; i < (int)order.size(); ++i)
+    {
+        size_t dim = order[i];
+        CHECK_ARGUMENT(dim < this->ndim(), "Permute: order index out of range.");
+        CHECK_ARGUMENT(!seen[dim], "Permute: order index duplicated.");
+        seen[dim] = true;
+        new_shape[i] = this->shape()[dim];
+        new_strides[i] = this->strides()[dim];
+    } 
+    TensorMeta meta{this->dtype(), new_shape, new_strides};
+    return std::shared_ptr<Tensor>(new Tensor(meta, _storage, _offset));
 }
 
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+
+    // calculate new_shape's numel, must be the same as the old
+    size_t new_numel = 1;
+    for(auto s : shape)
+        new_numel *= s;
+    CHECK_ARGUMENT(new_numel == this->numel(), "View: total elements mismatch.");
+    std::vector<ptrdiff_t> new_strides(shape.size(),0);
+
+    //filter size = 1 shape in old_shape
+    std::vector<size_t> old_shape;
+    std::vector<ptrdiff_t> old_strides;
+    old_shape.reserve(this->shape().size());
+    old_strides.reserve(this->strides().size());
+    for(size_t i = 0; i < this->shape().size(); ++i)
+    {
+        if(this->shape()[i] > 1)
+        {
+            old_shape.push_back(this->shape()[i]);
+            old_strides.push_back(this->strides()[i]);
+        }
+    }
+
+    // filter size = 1 shape in new_shape
+    std::vector<size_t> new_shape;
+    std::vector<size_t> new_indices;
+    new_shape.reserve(shape.size());
+    new_indices.reserve(shape.size());
+    for(size_t i = 0; i < shape.size(); ++i)
+    {
+        if(shape[i] > 1)
+        {
+            new_shape.push_back(shape[i]);
+            new_indices.push_back(i);
+        }
+    }
+
+    // if no size > 1 in old_shape or new_shape
+    // no need to spilt blocks, generate continual new_strides
+    if(old_shape.empty() || new_shape.empty())
+    {
+        for(int i = (int)shape.size()-1; i>=0; --i)
+        {
+            if(i+1 < (int)shape.size())
+            {
+                new_strides[i] = new_strides[i+1]*shape[i+1];
+            }
+            else
+            {
+                new_strides[i] = 1;
+            }
+        }
+        TensorMeta meta{this->dtype(), shape, new_strides};
+        return std::shared_ptr<Tensor>(new Tensor(meta, _storage));
+    }
+    // spilt blocks
+    struct Block
+    {
+        size_t numel;
+        ptrdiff_t inner_stride;
+    };
+
+    std::vector<Block> blocks;
+    for(int i = (int)old_shape.size() - 1; i >= 0; --i)
+    {
+        if(blocks.empty())
+        {
+            blocks.push_back({old_shape[i], old_strides[i]});
+        }
+        else
+        {
+            //continual add to current block
+            if(old_strides[i] == (ptrdiff_t)old_shape[i+1] * old_strides[i+1])
+            {
+                blocks.back().numel *= old_shape[i];
+            }
+            //break, spilt new block
+            else
+            {
+                blocks.push_back({old_shape[i], old_strides[i]});
+            }
+        }
+    }
+    // for every block, judge which dims can cover it
+    size_t dim_pos = 0;
+    for(int b = (int)blocks.size() - 1; b >= 0; --b)
+    {
+        const auto &block = blocks[b];
+        size_t start = dim_pos;
+        size_t prod = 1;
+        while(dim_pos < new_shape.size() && prod < block.numel)
+        {
+            prod *= new_shape[dim_pos];
+            dim_pos++;
+        }
+        CHECK_ARGUMENT(prod == block.numel, "View: shape is not compatible with storage.");
+        // set new_strides for this block
+        ptrdiff_t stride = block.inner_stride;
+        for(int j = (int)dim_pos - 1; j >= (int)start; --j)
+        {
+            new_strides[new_indices[j]] = stride;
+            stride *= (ptrdiff_t)new_shape[j];
+        }
+    }
+    CHECK_ARGUMENT(dim_pos == new_shape.size(), "View: shape is not compatible with storage.");
+    // for size = 1 dims, set new_strides[i] = new_strides[i+1] * shape[i+1]
+    for(int i = (int)shape.size() - 1; i >= 0; --i)
+    {
+        if(shape[i] == 1)
+        {
+            if(i + 1 < (int)shape.size())
+            {
+                new_strides[i] = new_strides[i+1] * shape[i+1];
+            }
+            else
+            {
+                new_strides[i] = 1;
+            }
+        }
+    }
+    TensorMeta meta{this->dtype(), shape, new_strides};
+    return std::shared_ptr<Tensor>(new Tensor(meta, _storage, _offset));
 }
 
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    CHECK_ARGUMENT(dim < this->ndim(), "Slice: dim out of range.");
+    CHECK_ARGUMENT(start <= end, "Slice: start must be less than or equal to end.");
+    CHECK_ARGUMENT(end <= this->shape()[dim], "Slice: end out of range.");
+    std::vector<size_t> new_shape = this->shape();
+    new_shape[dim] = end - start;
+    std::vector<ptrdiff_t> new_strides = this->strides();
+    size_t byte_offset = _offset + start * (size_t)new_strides[dim] * this->elementSize();
+    TensorMeta meta{this->dtype(), new_shape, new_strides};
+    return std::shared_ptr<Tensor>(new Tensor(meta, _storage, byte_offset));
 }
 
 void Tensor::load(const void *src_) {
-    TO_BE_IMPLEMENTED();
+    CHECK_ARGUMENT(src_ != nullptr, "Load: src is null.");
+    size_t size = this->numel() * this->elementSize();
+    core::context().setDevice(this->deviceType(), this->deviceId());
+    if (!_storage || _offset + size > _storage->size()) {
+        if (this->deviceType() == LLAISYS_DEVICE_CPU) {
+            _storage = core::context().runtime().allocateHostStorage(size);
+        } else {
+            _storage = core::context().runtime().allocateDeviceStorage(size);
+        }
+        _offset = 0;
+    }
+    ASSERT(this->isContiguous(), "Load: tensor must be contiguous.");
+    core::context().runtime().api()->memcpy_sync(
+        this->data(), src_, size,
+        this->deviceType() == LLAISYS_DEVICE_CPU ? LLAISYS_MEMCPY_H2H : LLAISYS_MEMCPY_H2D);
 }
 
 tensor_t Tensor::contiguous() const {

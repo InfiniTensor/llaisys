@@ -1,7 +1,10 @@
+#models
+/models/
 # Xmake cache
 .xmake/
 build/
-
+# md docs
+*.md
 # Binaries
 bin/
 lib/

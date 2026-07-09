@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LLAISYS Chat UI</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; background: #0f1115; color: #e6e6e6; height: 100vh; }
+      .app { display: grid; grid-template-columns: 260px 1fr; height: 100vh; }
+      .sidebar { background: #141720; border-right: 1px solid #222635; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+      .sidebar h1 { margin: 0; font-size: 16px; font-weight: 600; }
+      .session-list { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+      .session-item { background: #1a1f2b; border: 1px solid transparent; border-radius: 8px; padding: 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+      .session-item.active { border-color: #4c7dff; background: #1d2434; }
+      .session-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .badge { background: #2a2f3d; border-radius: 999px; padding: 2px 8px; font-size: 12px; color: #9aa0b0; }
+      .main { display: flex; flex-direction: column; height: 100vh; }
+      .topbar { padding: 12px 16px; border-bottom: 1px solid #222635; display: flex; align-items: center; gap: 12px; }
+      .topbar h2 { margin: 0; font-size: 16px; font-weight: 600; }
+      .settings { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+      .settings label { font-size: 12px; color: #a7adbd; display: flex; align-items: center; gap: 6px; }
+      .settings input[type="number"], .settings input[type="text"] { width: 72px; background: #0f1115; border: 1px solid #2a2f3d; color: #e6e6e6; border-radius: 6px; padding: 4px 6px; }
+      .settings input[type="checkbox"] { transform: translateY(1px); }
+      .messages { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+      .msg { background: #151a24; border: 1px solid #222635; border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+      .msg.user { background: #182035; border-color: #273457; }
+      .msg.assistant { background: #151a24; }
+      .msg-header { font-size: 12px; color: #8f97aa; display: flex; justify-content: space-between; align-items: center; }
+      .msg-actions { display: flex; gap: 6px; }
+      .content { white-space: pre-wrap; line-height: 1.5; }
+      .composer { border-top: 1px solid #222635; padding: 12px 16px; display: flex; gap: 8px; }
+      textarea { flex: 1; min-height: 54px; max-height: 180px; resize: vertical; background: #0f1115; color: #e6e6e6; border: 1px solid #2a2f3d; border-radius: 8px; padding: 10px; font-size: 14px; }
+      button { background: #4c7dff; color: white; border: none; border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 13px; }
+      button.secondary { background: #2a2f3d; color: #c5cbda; }
+      button.ghost { background: transparent; border: 1px solid #2a2f3d; color: #c5cbda; }
+      .hint { font-size: 12px; color: #7e8598; }
+      .empty { text-align: center; color: #6f768a; margin-top: 40px; }
+      .edit-box { display: flex; flex-direction: column; gap: 8px; }
+      .edit-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <h1>LLAISYS Chat</h1>
+        <button id="newSessionBtn">新建对话</button>
+        <div class="session-list" id="sessionList"></div>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <h2 id="activeTitle">新对话</h2>
+          <div class="settings">
+            <label>Max
+              <input id="maxTokens" type="number" min="1" value="128" />
+            </label>
+            <label>T
+              <input id="temperature" type="number" step="0.1" value="1.0" />
+            </label>
+            <label>TopP
+              <input id="topP" type="number" step="0.05" value="0.8" />
+            </label>
+            <label>TopK
+              <input id="topK" type="number" step="1" value="50" />
+            </label>
+            <label>流式
+              <input id="streaming" type="checkbox" checked />
+            </label>
+          </div>
+        </div>
+        <div class="messages" id="messages"></div>
+        <div class="composer">
+          <textarea id="userInput" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+          <button id="sendBtn">发送</button>
+        </div>
+      </main>
+    </div>
+    <script>
+      const sessionListEl = document.getElementById("sessionList");
+      const messagesEl = document.getElementById("messages");
+      const userInputEl = document.getElementById("userInput");
+      const sendBtn = document.getElementById("sendBtn");
+      const newSessionBtn = document.getElementById("newSessionBtn");
+      const activeTitleEl = document.getElementById("activeTitle");
+      const maxTokensEl = document.getElementById("maxTokens");
+      const temperatureEl = document.getElementById("temperature");
+      const topPEl = document.getElementById("topP");
+      const topKEl = document.getElementById("topK");
+      const streamingEl = document.getElementById("streaming");
+
+      const state = {
+        sessions: [],
+        activeId: null,
+        sending: false,
+        editIndex: null
+      };
+
+      function createId() {
+        if (crypto && crypto.randomUUID) return crypto.randomUUID();
+        return String(Date.now()) + "-" + Math.random().toString(16).slice(2);
+      }
+
+      function createSession(title = "新对话") {
+        const id = createId();
+        state.sessions.unshift({ id, title, messages: [] });
+        state.activeId = id;
+        state.editIndex = null;
+        render();
+      }
+
+      function getActiveSession() {
+        return state.sessions.find(s => s.id === state.activeId);
+      }
+
+      function setActiveSession(id) {
+        state.activeId = id;
+        state.editIndex = null;
+        render();
+      }
+
+      function updateTitleFromFirstUser(session) {
+        const firstUser = session.messages.find(m => m.role === "user");
+        if (!firstUser) return;
+        if (session.title === "新对话" || session.title.startsWith("对话")) {
+          const trimmed = firstUser.content.trim();
+          session.title = trimmed.slice(0, 16) || "新对话";
+        }
+      }
+
+      function renderSessions() {
+        sessionListEl.innerHTML = "";
+        state.sessions.forEach(session => {
+          const item = document.createElement("div");
+          item.className = "session-item" + (session.id === state.activeId ? " active" : "");
+          const title = document.createElement("div");
+          title.className = "session-title";
+          title.textContent = session.title;
+          const badge = document.createElement("div");
+          badge.className = "badge";
+          badge.textContent = session.messages.length;
+          item.appendChild(title);
+          item.appendChild(badge);
+          item.onclick = () => setActiveSession(session.id);
+          sessionListEl.appendChild(item);
+        });
+      }
+
+      function renderMessages() {
+        const session = getActiveSession();
+        messagesEl.innerHTML = "";
+        if (!session || session.messages.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "empty";
+          empty.textContent = "开始一个新对话";
+          messagesEl.appendChild(empty);
+          return;
+        }
+        session.messages.forEach((msg, index) => {
+          const wrap = document.createElement("div");
+          wrap.className = "msg " + msg.role;
+          wrap.dataset.index = index;
+          const header = document.createElement("div");
+          header.className = "msg-header";
+          header.textContent = msg.role === "user" ? "用户" : "助手";
+          wrap.appendChild(header);
+          if (msg.role === "user" && index === state.editIndex) {
+            const box = document.createElement("div");
+            box.className = "edit-box";
+            const textarea = document.createElement("textarea");
+            textarea.value = msg.content;
+            const actions = document.createElement("div");
+            actions.className = "edit-actions";
+            const saveBtn = document.createElement("button");
+            saveBtn.textContent = "保存并重答";
+            const cancelBtn = document.createElement("button");
+            cancelBtn.textContent = "取消";
+            cancelBtn.className = "secondary";
+            saveBtn.onclick = () => saveEdit(index, textarea.value);
+            cancelBtn.onclick = () => { state.editIndex = null; renderMessages(); };
+            actions.appendChild(cancelBtn);
+            actions.appendChild(saveBtn);
+            box.appendChild(textarea);
+            box.appendChild(actions);
+            wrap.appendChild(box);
+          } else {
+            const content = document.createElement("div");
+            content.className = "content";
+            content.textContent = msg.content;
+            wrap.appendChild(content);
+            if (msg.role === "user") {
+              const actions = document.createElement("div");
+              actions.className = "msg-actions";
+              const editBtn = document.createElement("button");
+              editBtn.className = "ghost";
+              editBtn.textContent = "编辑";
+              editBtn.onclick = () => { if (!state.sending) { state.editIndex = index; renderMessages(); } };
+              actions.appendChild(editBtn);
+              wrap.appendChild(actions);
+            }
+          }
+          messagesEl.appendChild(wrap);
+        });
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      function render() {
+        const session = getActiveSession();
+        activeTitleEl.textContent = session ? session.title : "新对话";
+        renderSessions();
+        renderMessages();
+      }
+
+      function appendMessage(role, content) {
+        const session = getActiveSession();
+        if (!session) return null;
+        session.messages.push({ role, content });
+        renderMessages();
+        return session.messages.length - 1;
+      }
+
+      function updateMessageContent(index, content) {
+        const session = getActiveSession();
+        if (!session || index == null) return;
+        session.messages[index].content = content;
+        const el = messagesEl.querySelector('.msg[data-index="' + index + '"] .content');
+        if (el) el.textContent = content;
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      async function sendMessage() {
+        if (state.sending) return;
+        const text = userInputEl.value.trim();
+        if (!text) return;
+        userInputEl.value = "";
+        const session = getActiveSession();
+        if (!session) return;
+        state.editIndex = null;
+        appendMessage("user", text);
+        const assistantIndex = appendMessage("assistant", "");
+        updateTitleFromFirstUser(session);
+        renderSessions();
+        state.sending = true;
+        await requestCompletion(session.messages, assistantIndex);
+        state.sending = false;
+      }
+
+      async function saveEdit(index, content) {
+        if (state.sending) return;
+        const trimmed = content.trim();
+        if (!trimmed) return;
+        const session = getActiveSession();
+        if (!session) return;
+        session.messages[index].content = trimmed;
+        session.messages = session.messages.slice(0, index + 1);
+        state.editIndex = null;
+        renderMessages();
+        const assistantIndex = appendMessage("assistant", "");
+        state.sending = true;
+        await requestCompletion(session.messages, assistantIndex);
+        state.sending = false;
+      }
+
+      function buildRequest(messages) {
+        return {
+          model: null,
+          messages: messages.map(m => ({ role: m.role, content: m.content })),
+          max_tokens: Number(maxTokensEl.value) || 128,
+          temperature: Number(temperatureEl.value) || 1.0,
+          top_p: Number(topPEl.value) || 0.8,
+          top_k: Number(topKEl.value) || 50,
+          stream: streamingEl.checked,
+          seed: 0
+        };
+      }
+
+      function safeParseJson(data) {
+        try {
+          return JSON.parse(data);
+        } catch (err) {
+          const first = data.indexOf("{");
+          const last = data.lastIndexOf("}");
+          if (first !== -1 && last !== -1 && last > first) {
+            try {
+              return JSON.parse(data.slice(first, last + 1));
+            } catch (innerErr) {
+              return null;
+            }
+          }
+          return null;
+        }
+      }
+
+      async function requestCompletion(messages, assistantIndex) {
+        const payload = buildRequest(messages);
+        try {
+          if (!payload.stream) {
+            const res = await fetch("/v1/chat/completions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload)
+            });
+            if (!res.ok) throw new Error("请求失败: " + res.status);
+            const text = await res.text();
+            const data = safeParseJson(text);
+            if (!data) throw new Error("响应不是合法JSON");
+            const content = data.choices?.[0]?.message?.content || "";
+            updateMessageContent(assistantIndex, content);
+            return;
+          }
+          const res = await fetch("/v1/chat/completions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          if (!res.ok || !res.body) throw new Error("流式请求失败: " + res.status);
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let current = "";
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+            const parts = buffer.split("\n\n");
+            buffer = parts.pop();
+            for (const part of parts) {
+              const lines = part.split("\n");
+              for (const line of lines) {
+                if (!line.startsWith("data: ")) continue;
+                const data = line.slice(6).trim();
+                if (data === "[DONE]") {
+                  updateMessageContent(assistantIndex, current);
+                  return;
+                }
+                const payload = safeParseJson(data);
+                if (!payload) continue;
+                const delta = payload.choices?.[0]?.delta?.content || "";
+                if (delta) {
+                  current += delta;
+                  updateMessageContent(assistantIndex, current);
+                }
+              }
+            }
+          }
+        } catch (err) {
+          updateMessageContent(assistantIndex, String(err));
+        }
+      }
+
+      userInputEl.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          sendMessage();
+        }
+      });
+      sendBtn.onclick = sendMessage;
+      newSessionBtn.onclick = () => createSession("新对话");
+
+      createSession("新对话");
+    </script>
+  </body>
+</html>

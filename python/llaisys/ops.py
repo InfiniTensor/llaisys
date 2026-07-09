@@ -1,6 +1,6 @@
 from .libllaisys import LIB_LLAISYS
 from .tensor import Tensor
-from ctypes import c_float, c_int
+from ctypes import c_float, c_int, c_int64, c_size_t
 
 
 class Ops:
@@ -11,6 +11,26 @@ class Ops:
     @staticmethod
     def argmax(max_idx: Tensor, max_val: Tensor, vals: Tensor):
         LIB_LLAISYS.llaisysArgmax(max_idx.lib_tensor(), max_val.lib_tensor(), vals.lib_tensor())
+
+    @staticmethod
+    def rand_sample(
+        sample_idx: Tensor,
+        sample_val: Tensor,
+        vals: Tensor,
+        temperature: float,
+        top_k: int,
+        top_p: float,
+        seed: int,
+    ):
+        LIB_LLAISYS.llaisysRandSample(
+            sample_idx.lib_tensor(),
+            sample_val.lib_tensor(),
+            vals.lib_tensor(),
+            c_float(temperature),
+            c_size_t(top_k),
+            c_float(top_p),
+            c_int64(seed),
+        )
 
     @staticmethod
     def embedding(out: Tensor, index: Tensor, weight: Tensor):

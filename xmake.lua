@@ -15,7 +15,6 @@ option_end()
 
 if has_config("nv-gpu") then
     add_defines("ENABLE_NVIDIA_API")
-    includes("xmake/nvidia.lua")
 end
 
 target("llaisys-utils")
@@ -25,6 +24,10 @@ target("llaisys-utils")
     set_warnings("all", "error")
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
+    end
+    if has_config("nv-gpu") then
+        add_cuflags("-Xcompiler=-fPIC")
+        add_cuflags("-rdc=true")
     end
 
     add_files("src/utils/*.cpp")
@@ -37,13 +40,11 @@ target("llaisys-device")
     set_kind("static")
     add_deps("llaisys-utils")
     add_deps("llaisys-device-cpu")
-
     set_languages("cxx17")
     set_warnings("all", "error")
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end
-
     add_files("src/device/*.cpp")
 
     on_install(function (target) end)
@@ -83,7 +84,6 @@ target_end()
 target("llaisys-ops")
     set_kind("static")
     add_deps("llaisys-ops-cpu")
-
     set_languages("cxx17")
     set_warnings("all", "error")
     if not is_plat("windows") then
@@ -103,7 +103,20 @@ target("llaisys")
     add_deps("llaisys-tensor")
     add_deps("llaisys-ops")
 
-    set_languages("cxx17")
+    if has_config("nv-gpu") then
+        set_languages("cxx17", "cuda")
+        add_syslinks("cudart")
+        add_links("cudadevrt")
+        set_policy("build.cuda.devlink", true)
+        add_cuflags("-rdc=true")
+        add_cuflags("-Xcompiler=-fPIC")
+        add_files("src/device/nvidia/*.cu")
+        add_files("src/device/nvidia/*.cpp")
+        add_files("src/ops/*/nvidia/*.cu")
+        add_files("src/ops/*/nvidia/*.cpp")
+    else
+        set_languages("cxx17")
+    end
     set_warnings("all", "error")
     add_files("src/llaisys/*.cc")
     set_installdir(".")

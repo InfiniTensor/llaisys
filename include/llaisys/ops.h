@@ -6,6 +6,8 @@
 __C {
     __export void llaisysAdd(llaisysTensor_t c, llaisysTensor_t a, llaisysTensor_t b);
     __export void llaisysArgmax(llaisysTensor_t max_idx, llaisysTensor_t max_val, llaisysTensor_t vals);
+    __export void llaisysRandSample(llaisysTensor_t sample_idx, llaisysTensor_t sample_val, llaisysTensor_t vals,
+                                    float temperature, size_t topK, float topP, int64_t seed);
     __export void llaisysEmbedding(llaisysTensor_t out, llaisysTensor_t index, llaisysTensor_t weight);
     __export void llaisysLinear(llaisysTensor_t out, llaisysTensor_t in, llaisysTensor_t weight, llaisysTensor_t bias);
     __export void llaisysRearrange(llaisysTensor_t out, llaisysTensor_t in);
