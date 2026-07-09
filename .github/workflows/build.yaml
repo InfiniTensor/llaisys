@@ -27,9 +27,15 @@ jobs:
     
     - name: Xmake Build & Install
       run: | 
-        xmake
-        xmake install
-    
+        xmake -y
+        xmake install -y
+
+    - name: Install System Dependencies (Ubuntu)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libopenblas-dev
+        
     - name: Install Python
       run: | 
         cd python

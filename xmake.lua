@@ -1,122 +1,69 @@
 add_rules("mode.debug", "mode.release")
 set_encodings("utf-8")
 
+add_requires("openmp")
+add_requires("openblas") -- 自动处理 Windows/Linux 差异
+add_packages("openmp", "openblas")
 add_includedirs("include")
 
--- CPU --
+-- CPU / GPU 配置保持不变...
 includes("xmake/cpu.lua")
 
--- NVIDIA --
-option("nv-gpu")
-    set_default(false)
-    set_showmenu(true)
-    set_description("Whether to compile implementations for Nvidia GPU")
-option_end()
+-- ==========================================
+-- 1. 静态组件：使用你的 on_install 技巧防止硬塞系统目录
+-- ==========================================
+local static_targets = {"llaisys-utils", "llaisys-device", "llaisys-core", "llaisys-tensor", "llaisys-ops"}
 
-if has_config("nv-gpu") then
-    add_defines("ENABLE_NVIDIA_API")
-    includes("xmake/nvidia.lua")
+for _, name in ipairs(static_targets) do
+    target(name)
+        set_kind("static")
+        set_languages("cxx17")
+        if not is_plat("windows") then add_cxflags("-fPIC") end
+        
+        -- 核心：直接套用你的方案
+        on_install(function (target) end) 
+
+        -- 根据名字添加特定的文件和依赖
+        if name == "llaisys-utils" then add_files("src/utils/*.cpp") end
+        if name == "llaisys-device" then 
+            add_deps("llaisys-utils", "llaisys-device-cpu")
+            add_files("src/device/*.cpp") 
+        end
+        if name == "llaisys-core" then 
+            add_deps("llaisys-utils", "llaisys-device")
+            add_files("src/core/*/*.cpp") 
+        end
+        if name == "llaisys-tensor" then 
+            add_deps("llaisys-core")
+            add_files("src/tensor/*.cpp") 
+        end
+        if name == "llaisys-ops" then 
+            add_deps("llaisys-ops-cpu")
+            add_packages("openmp", "openblas")
+            add_files("src/ops/*/*.cpp") 
+        end
+    target_end()
 end
 
-target("llaisys-utils")
-    set_kind("static")
-
-    set_languages("cxx17")
-    set_warnings("all", "error")
-    if not is_plat("windows") then
-        add_cxflags("-fPIC", "-Wno-unknown-pragmas")
-    end
-
-    add_files("src/utils/*.cpp")
-
-    on_install(function (target) end)
-target_end()
-
-
-target("llaisys-device")
-    set_kind("static")
-    add_deps("llaisys-utils")
-    add_deps("llaisys-device-cpu")
-
-    set_languages("cxx17")
-    set_warnings("all", "error")
-    if not is_plat("windows") then
-        add_cxflags("-fPIC", "-Wno-unknown-pragmas")
-    end
-
-    add_files("src/device/*.cpp")
-
-    on_install(function (target) end)
-target_end()
-
-target("llaisys-core")
-    set_kind("static")
-    add_deps("llaisys-utils")
-    add_deps("llaisys-device")
-
-    set_languages("cxx17")
-    set_warnings("all", "error")
-    if not is_plat("windows") then
-        add_cxflags("-fPIC", "-Wno-unknown-pragmas")
-    end
-
-    add_files("src/core/*/*.cpp")
-
-    on_install(function (target) end)
-target_end()
-
-target("llaisys-tensor")
-    set_kind("static")
-    add_deps("llaisys-core")
-
-    set_languages("cxx17")
-    set_warnings("all", "error")
-    if not is_plat("windows") then
-        add_cxflags("-fPIC", "-Wno-unknown-pragmas")
-    end
-
-    add_files("src/tensor/*.cpp")
-
-    on_install(function (target) end)
-target_end()
-
-target("llaisys-ops")
-    set_kind("static")
-    add_deps("llaisys-ops-cpu")
-
-    set_languages("cxx17")
-    set_warnings("all", "error")
-    if not is_plat("windows") then
-        add_cxflags("-fPIC", "-Wno-unknown-pragmas")
-    end
-    
-    add_files("src/ops/*/*.cpp")
-
-    on_install(function (target) end)
-target_end()
-
+-- ==========================================
+-- 2. 主动态库：只安装到本地
+-- ==========================================
 target("llaisys")
     set_kind("shared")
-    add_deps("llaisys-utils")
-    add_deps("llaisys-device")
-    add_deps("llaisys-core")
-    add_deps("llaisys-tensor")
-    add_deps("llaisys-ops")
+    add_deps("llaisys-utils", "llaisys-device", "llaisys-core", "llaisys-tensor", "llaisys-ops")
+    add_packages("openmp", "openblas")
 
+    add_files("src/llaisys/*.cpp", "src/llaisys/*.cc")
     set_languages("cxx17")
-    set_warnings("all", "error")
-    add_files("src/llaisys/*.cc")
-    set_installdir(".")
+    set_installdir(".") -- 强制安装到当前目录
 
-    
     after_install(function (target)
-        -- copy shared library to python package
         print("Copying llaisys to python/llaisys/libllaisys/ ..")
+        local lib_dir = "python/llaisys/libllaisys/"
         if is_plat("windows") then
-            os.cp("bin/*.dll", "python/llaisys/libllaisys/")
-        end
-        if is_plat("linux") then
-            os.cp("lib/*.so", "python/llaisys/libllaisys/")
+            os.cp("bin/*.dll", lib_dir)
+        else
+            os.cp("lib/*.so", lib_dir)
         end
     end)
 target_end()

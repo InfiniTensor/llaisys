@@ -164,27 +164,114 @@ void Tensor::debug() const {
 }
 
 bool Tensor::isContiguous() const {
-    TO_BE_IMPLEMENTED();
+    size_t accumulated = 1;
+    int ndim = static_cast<int>(this->shape().size());
+
+    for (int i = ndim - 1; i >= 0; i--) {
+        size_t cnt_stride = this->strides()[i]; // 当前实际步长
+        size_t cnt_shape = this->shape()[i];    // 当前维度的形状大小
+        if (cnt_stride != accumulated) {
+            return false;
+        }
+        accumulated *= cnt_shape;
+    }
     return true;
 }
 
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+
+    if (order.size() != this->ndim()) {
+        throw std::runtime_error("Permute order size mismatch");
+    }
+    std::vector<size_t> new_shape;
+    std::vector<ptrdiff_t> new_strides;
+
+    new_shape.reserve(this->ndim());
+    new_strides.reserve(this->ndim());
+
+    for (size_t original_dim_index : order) {
+        new_shape.push_back(this->shape()[original_dim_index]);
+        new_strides.push_back(this->strides()[original_dim_index]);
+    }
+
+    TensorMeta meta{this->dtype(), new_shape, new_strides};
+
+    return std::shared_ptr<Tensor>(new Tensor(std::move(meta), this->_storage, this->_offset));
 }
 
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    // 检查连续
+    if (!this->isContiguous()) {
+        throw std::runtime_error("View: tensors is not contiguous");
+    }
+    // 新形状元素总数
+    size_t new_numel = 1;
+    for (size_t s : shape) {
+        new_numel *= s;
+    }
+    if (new_numel != this->numel()) {
+        throw std::runtime_error("Shape mismatch");
+    }
+
+    int ndim_ = static_cast<int>(shape.size());
+    std::vector<ptrdiff_t> new_strides(ndim_);
+    size_t new_stride = 1;
+    for (int i = ndim_ - 1; i >= 0; i--) {
+        new_strides[i] = new_stride;
+        new_stride *= shape[i];
+    }
+    // 构建新元数据
+    TensorMeta meta{this->dtype(), shape, new_strides};
+
+    return std::shared_ptr<Tensor>(new Tensor(std::move(meta), this->_storage, this->_offset));
 }
 
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+
+    if (dim >= this->ndim()) {
+        throw std::runtime_error("Slice dimension is out of bounds");
+    }
+
+    // 检查切片范围是否合法
+    size_t dim_size = this->shape()[dim];
+    if (start > end) {
+        throw std::runtime_error("Slice start must be less than end");
+    }
+    if (end > dim_size) {
+        throw std::runtime_error("Slice end must be less than or equal to dimension size");
+    }
+
+    // 计算新形状
+    std::vector<size_t> new_shape = this->shape();
+    new_shape[dim] = end - start;
+
+    std::vector<ptrdiff_t> new_strides = this->strides();
+
+    // 计算新的偏移量
+    size_t skipped_elements = start * new_strides[dim];
+    size_t shift_bytes = skipped_elements * this->elementSize();
+    // 新的偏移量
+    size_t new_offset = this->_offset + shift_bytes;
+
+    TensorMeta meta{this->dtype(), new_shape, new_strides};
+    return std::shared_ptr<Tensor>(new Tensor(std::move(meta), this->_storage, new_offset));
 }
 
 void Tensor::load(const void *src_) {
-    TO_BE_IMPLEMENTED();
+
+    size_t total_bytes = this->numel() * this->elementSize(); // 数据总大小
+    void *dst_ = this->data();
+    if (this->deviceType() == LLAISYS_DEVICE_CPU) {
+        std::memcpy(dst_, src_, total_bytes);
+    } // 目标在CPU上
+    else {
+        core::context().setDevice(this->deviceType(), this->deviceId());
+        core::context().runtime().api()->memcpy_sync(
+            dst_, // 目标地址
+            src_, // 源地址
+            total_bytes,
+            LLAISYS_MEMCPY_H2D);
+    }
 }
 
 tensor_t Tensor::contiguous() const {
@@ -192,9 +279,9 @@ tensor_t Tensor::contiguous() const {
     return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
 }
 
-tensor_t Tensor::reshape(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+tensor_t Tensor::reshape(const std::vector<size_t>& shape) const {
+    
+    return this->view(shape);
 }
 
 tensor_t Tensor::to(llaisysDeviceType_t device_type, int device) const {
