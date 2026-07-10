@@ -7,7 +7,7 @@
 
 ## Introduction
 
-LLAISYS (Let's Learn AI SYStem) is an educational project that aims to provide a platform for new and future AI engineers to learn how to build AI systems from scratch. LLAISYS consists of several assignments, which help students learn and build the basic modules, and optional problems that challenge them to add more fancy features to their systems. LLAISYS uses C++ as primary programming language for system backend, and is compiled into shared libraries exposing C language APIs. Frontend codes are written in Python which calls these APIs to provide more convenient testing and interaction with other architectures such as PyTorch.
+LLAISYS (Let's Learn AI SYStem) is an educational project that aims to provide a platform for new and future AI engineers to learn how to build AI systems from scratch. LLAISYS consists of assignments that help students learn and build the basic modules, followed by a project stage in which qualified students contribute to the InfiniLM inference engine. LLAISYS uses C++ as primary programming language for system backend, and is compiled into shared libraries exposing C language APIs. Frontend codes are written in Python which calls these APIs to provide more convenient testing and interaction with other architectures such as PyTorch.
 
 ### Project Structure Overview
 
@@ -291,16 +291,6 @@ python test/test_ops.py
 
 You should see all tests passed. Commit and push your changes. You should see the auto tests for assignment #2 passed.
 
-### Task-2.9 (Optional) rearrange
-
-This is a bonus task. You may or may not need it for model inference.
-
-```c++
-void rearrange(tensor_t out, tensor_t in);
-```
-
-This operator is used to copy data from a tensor to another tensor with the same shape but different strides. With this, you can easily implement `contiguous` functionality for tensors.
-
 ## Assignment #3: Large Language Model Inference
 
 Finally, it is the time for you to achieve text generation with LLAISYS.
@@ -371,65 +361,32 @@ python test/test_infer.py --model [dir_path/to/model] --test --device nvidia
 
 Commit and push your changes. You should see the auto tests for assignment #4 passed.
 
-## Optional Problems
+## Project Stage: Contribute to InfiniLM
 
-After finishing all required assignments, you must choose at least one optional problem to complete.
+Only students who pass the assignment-stage evaluation and are approved to advance may enter the project stage.
 
-## Optional Problem #1: Optimize LLAISYS for CPU
-You probably have already noticed that your model inference is very slow compared to PyTorch. This is mostly because your operators are not optimized. Run your operater test scripts with "--profile" flag to see how your operators perform. You would probably see that `linear` operation is much slower than PyTorch. This operator is mainly a matrix multiplication, and is the most time consuming operation in transformer-based models.
+All projects must be implemented in [InfiniLM](https://github.com/InfiniTensor/InfiniLM), our inference engine. The project scope should be agreed upon with the mentors before development begins, and the result should provide practical, upstreamable value to InfiniLM. Evaluation considers correctness, engineering quality, tests, documentation, reproducible results, and actual impact. The expected depth varies with the complexity of the selected topic.
 
-There are several ways to optimize your operators for CPU:
+The following project directions are available:
 
-### SIMD instructions
+### Project #1: Support New Models and Architectures
 
-SIMD (Single Instruction Multiple Data) instructions are instructions that can perform the same operation on multiple data elements in a single instruction. Modern CPUs have support for SIMD instructions. Look for online materials to learn about compiler intrinsics (such as AVX2, AVX-512, NEON, SVE) to vectorize your operations.
+Add support for a new model in InfiniLM. The evaluation depends on the model's complexity, the amount of reusable infrastructure introduced, and the completeness of the implementation and tests. Models that require new architectures or mechanisms—such as MLA, MTP, MoE, NSA, Mamba, RWKV, UltraMem, Titans, or MiniMax architectures—are valued differently from variants that reuse an existing implementation almost unchanged.
 
-### Use OpenMP for parallelism
+### Project #2: Performance Optimization
 
-You can use multi-threading to parallelize your operators. OpenMP is a popular library for multi-threading in C/C++. Add OpenMP support for LLAISYS to parallelize your `linear` and other operators.
+Improve InfiniLM's offline inference performance, serving performance, or both. Possible work includes operator and kernel optimization, model execution optimization, memory-access optimization, and communication optimization. Evaluation is based on reproducible end-to-end improvements, maintained correctness, the range of workloads covered, and the number and relevance of hardware platforms that benefit from the optimization.
 
-### 3rd-party Libraries
+### Project #3: Inference Features and Serving Capabilities
 
-There are several libraries that can help you optimize your operators for CPU. Look for libraries like Eigen, OpenBLAS, MKL, etc. to optimize your linear algebra operations. Note that some libraries are supported only for certain hardware platforms. Check their documentations and use them in your codes with care. You can also try to dig out how PyTorch implement these operators and see if you can use them.
+Improve InfiniLM's inference and serving capabilities, such as streaming output, API compatibility, structured output, service observability, and diagnostic tools. Evaluation is based on the completeness of the design and implementation, usability, compatibility, tests, and documentation.
 
-Optimize your implementation with any methods you like and report your performance improvement.
+### Project #4: Quantization and Low-Precision Inference
 
-## Optional Problem #2: Build an AI chatbot
+Add or improve weight, activation, or KV-cache quantization; mixed-precision execution; or support for new low-precision data formats. Evaluation focuses on accuracy, performance and memory improvements, hardware coverage, usability, and the completeness of tests and benchmarks.
 
-In this optional problem you will build an AI chatbot that can do live conversations with single user with LLAISYS.
+### Project #5: Reliability and Engineering Tooling
 
-### Random Sampling
+Improve InfiniLM's reliability and development efficiency through work such as benchmark and regression infrastructure, profiling and tracing tools, model conversion and validation tools, compatibility tests, or better error diagnosis. Evaluation depends on the scope of real problems addressed, maintainability, platform coverage, and measurable improvements to development or debugging workflows.
 
-So far we have been testing our model with argmax sampling. This is good enough for testing, but a chatbot should be able to generate more natural responses. Implement a random sample operator. Try to add supports for **Temperature**, **Top-K** and **Top-P**.
-
-### Build a Chatbot Server
-
-In your Python frontend, implement a server that can receive http requests from user and send responses back. You can use frameworks like FastAPI to build the server. You should follow the OpenAI chat-completion APIs. Try to support streaming responses if you can. You can assume, for now, that the server is only serving one user, and block the endpoint until the previous request is served.
-
-
-### Interactive Chat UI
-
-Build a UI that send requests to and receive responses from the chatbot server. You can build a simple command-line interface or a fancy web interface. You should be able to keep a conversation going with the chatbot by sending messages and receiving responses consecutively.
-
-### (Optional) Chat Session Management
-
-In real-world AI applications, users are allowed to start new conversations and switch between them. Users can also edit a past question and let the AI regenerate an answer. Enhance your UI to support these features. Implement a KV-Cache pool with prefix matching to reuse past results as much as possible.
-
-
-## Optional Problem #3: Multi-user Inference Service
-
-You need to finish **Optional Problem #2** and achieve streaming response first before proceeding to this optional problem.
-
-### Serving Multiple Users
-
-In real-world scenarios, an inference service will serve multiple users. Requests can come in at any time, and the service should be able to handle them concurrently. Your endpoint should add a new request to a request pool or queue and have a another looping process or thread to serve the requests. 
-
-### Continous Batching
-To maximize the throughput of your inference service, you need to batch your requests instead of serving them one by one. Since each request can have different length, you will need a continous and iteration-level batching mechanism. For each interation you extract several requests from pool to form a batch, do one round of batch inference, and then return the unfinished requests back to the pool. Use batched matrix multiplication when possible to speed up your inference. Note that every request in the batch need to bind with a different KV-Cache. You should build a KV-Cache pool with prefix matching to reuse past results as much as possible.
-
-## Optional Problem #4: Distributed Inference
-Introduce Tensor Parallelism to LLAISYS. Shard your model across multiple devices and implement distributed model inference. Support NCCL in LLAISYS if your are uing Nvidia GPUs, or MPI if you are using CPUs.
-
-## Optional Problem #5: Support New Models
-
-Support another model type than the one we use for homework in LLAISYS.
+Students may also propose another topic. It must be approved in advance and should solve a real InfiniLM problem with a clearly defined, measurable deliverable.
