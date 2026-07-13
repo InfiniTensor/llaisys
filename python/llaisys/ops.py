@@ -21,7 +21,7 @@ class Ops:
     @staticmethod
     def linear(out: Tensor, inp: Tensor, weight: Tensor, bias: Tensor):
         LIB_LLAISYS.llaisysLinear(
-            out.lib_tensor(), inp.lib_tensor(), weight.lib_tensor(), bias.lib_tensor()
+            out.lib_tensor(), inp.lib_tensor(), weight.lib_tensor(), None if bias is None else bias.lib_tensor()
         )
 
     @staticmethod

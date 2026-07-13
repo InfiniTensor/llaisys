@@ -1,4 +1,5 @@
 from .runtime import RuntimeAPI
+from .runtime import DistributedContext
 from .libllaisys import DeviceType
 from .libllaisys import DataType
 from .libllaisys import MemcpyKind
@@ -10,6 +11,7 @@ from .models import *
 
 __all__ = [
     "RuntimeAPI",
+    "DistributedContext",
     "DeviceType",
     "DataType",
     "MemcpyKind",

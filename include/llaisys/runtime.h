@@ -2,6 +2,7 @@
 #define LLAISYS_RUNTIME_H
 
 #include "../llaisys.h"
+#include "tensor.h"
 
 __C {
     // Runtime API Functions
@@ -42,6 +43,18 @@ __C {
 
     // Llaisys API for switching device context
     __export void llaisysSetContextRuntime(llaisysDeviceType_t, int);
+
+    // Distributed runtime APIs
+    __export void llaisysInitDistributed(int rank, int world_size);
+    __export void llaisysFinalizeDistributed();
+    __export uint8_t llaisysDistributedIsInitialized();
+    __export int llaisysDistributedRank();
+    __export int llaisysDistributedWorldSize();
+
+    __export void llaisysDistAllReduce(llaisysTensor_t tensor);
+    __export llaisysTensor_t llaisysDistAllGather(llaisysTensor_t tensor);
+    __export void llaisysDistBroadcast(llaisysTensor_t tensor, int root);
+    __export void llaisysDistBarrier();
 }
 
 #endif // LLAISYS_RUNTIME_H

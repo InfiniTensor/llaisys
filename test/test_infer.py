@@ -55,7 +55,7 @@ def hf_infer(
 
 
 def load_llaisys_model(model_path, device_name):
-    model = llaisys.models.Qwen2(model_path, llaisys_device(device_name))
+    model = llaisys.models.Qwen2(model_path, llaisys_device(device_name), device_id=0, rank=0, world_size=1)
     return model
 
 

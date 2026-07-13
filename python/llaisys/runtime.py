@@ -1,6 +1,7 @@
 from . import libllaisys
 from .libllaisys import LIB_LLAISYS
 from ctypes import c_void_p
+from .tensor import Tensor
 
 
 class RuntimeAPI:
@@ -66,3 +67,32 @@ class RuntimeAPI:
         self._api.contents.memcpy_async(
             dst, src, size, libllaisys.llaisysMemcpyKind_t(kind), stream
         )
+
+
+class DistributedContext:
+    def init(self, rank: int, world_size: int) -> None:
+        LIB_LLAISYS.llaisysInitDistributed(rank, world_size)
+
+    def finalize(self) -> None:
+        LIB_LLAISYS.llaisysFinalizeDistributed()
+
+    def is_initialized(self) -> bool:
+        return bool(LIB_LLAISYS.llaisysDistributedIsInitialized())
+
+    def rank(self) -> int:
+        return int(LIB_LLAISYS.llaisysDistributedRank())
+
+    def world_size(self) -> int:
+        return int(LIB_LLAISYS.llaisysDistributedWorldSize())
+
+    def all_reduce(self, tensor: Tensor) -> None:
+        LIB_LLAISYS.llaisysDistAllReduce(tensor.lib_tensor())
+
+    def all_gather(self, tensor: Tensor) -> Tensor:
+        return Tensor(tensor=LIB_LLAISYS.llaisysDistAllGather(tensor.lib_tensor()))
+
+    def broadcast(self, tensor: Tensor, root: int = 0) -> None:
+        LIB_LLAISYS.llaisysDistBroadcast(tensor.lib_tensor(), root)
+
+    def barrier(self) -> None:
+        LIB_LLAISYS.llaisysDistBarrier()
