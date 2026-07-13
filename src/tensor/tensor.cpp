@@ -5,6 +5,7 @@
 #include <cstring>
 #include <numeric>
 #include <sstream>
+#include <stdexcept>
 
 namespace llaisys {
 
@@ -164,27 +165,69 @@ void Tensor::debug() const {
 }
 
 bool Tensor::isContiguous() const {
-    TO_BE_IMPLEMENTED();
+    size_t stride = 1;
+    for (ptrdiff_t i = ndim() - 1; i >= 0; i--) {
+        if (_meta.shape[i] == 1) {
+            continue;
+        }
+        if (_meta.strides[i] != static_cast<ptrdiff_t>(stride)) {
+            return false;
+        }
+        stride *= _meta.shape[i];
+    }
     return true;
 }
 
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    std::vector<size_t> new_shape(ndim());
+    std::vector<ptrdiff_t> new_strides(ndim(), 1);
+    for (size_t i = 0; i < ndim(); i++) {
+        new_shape[i] = _meta.shape[order[i]];
+        new_strides[i] = _meta.strides[order[i]];
+    }
+    TensorMeta new_meta{_meta.dtype, new_shape, new_strides};
+    return std::shared_ptr<Tensor>(new Tensor(std::move(new_meta), _storage, _offset));
 }
 
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    // 1. check if #num if ok
+    size_t numelems = 1;
+    for (auto s : shape)
+        numelems *= s;
+    if (numelems != this->numel())
+        throw std::runtime_error("Reshape with different number of elements");
+
+    // 2. check if contiguous
+    if (!this->isContiguous())
+        throw std::runtime_error("Reshape on non-contiguous tensor is not supported");
+
+    // 3. compute strides
+    std::vector<ptrdiff_t> strides(shape.size(), 1);
+    size_t stride = 1;
+    for (int i = int(shape.size()) - 1; i >= 0; i--) {
+        strides[i] = stride;
+        stride *= shape[i];
+    }
+
+    TensorMeta new_meta{this->dtype(), shape, strides};
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, _offset));
 }
 
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    size_t new_offset = _offset + _meta.strides[dim] * start * this->elementSize();
+    std::vector<size_t> new_shape = _meta.shape;
+    new_shape[dim] = end - start;
+    TensorMeta new_meta{_meta.dtype, new_shape, _meta.strides};
+    return std::shared_ptr<Tensor>(new Tensor(std::move(new_meta), _storage, new_offset));
 }
 
 void Tensor::load(const void *src_) {
-    TO_BE_IMPLEMENTED();
+    core::context().setDevice(this->deviceType(), this->deviceId());
+    core::context().runtime().api()->memcpy_sync(
+        this->data(),
+        src_,
+        this->numel() * this->elementSize(),
+        LLAISYS_MEMCPY_H2D);
 }
 
 tensor_t Tensor::contiguous() const {

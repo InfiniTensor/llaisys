@@ -34,7 +34,13 @@ def load_hf_model(model_path=None, device_name="cpu"):
 
 
 def hf_infer(
-    prompt, tokenizer, model, max_new_tokens=128, top_p=0.8, top_k=50, temperature=0.8
+    prompt,
+    tokenizer,
+    model,
+    max_new_tokens=128,
+    top_p=0.8,
+    top_k=50,
+    temperature=0.8,
 ):
     input_content = tokenizer.apply_chat_template(
         conversation=[{"role": "user", "content": prompt}],
@@ -68,6 +74,7 @@ def llaisys_infer(
         tokenize=False,
     )
     inputs = tokenizer.encode(input_content)
+    print(f"Input tokens: {inputs}")
     outputs = model.generate(
         inputs,
         max_new_tokens=max_new_tokens,

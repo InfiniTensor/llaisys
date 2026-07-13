@@ -7,6 +7,7 @@ from .tensor import Tensor
 from .ops import Ops
 from . import models
 from .models import *
+from .libllaisys import LIB_LLAISYS
 
 __all__ = [
     "RuntimeAPI",
@@ -17,4 +18,5 @@ __all__ = [
     "Tensor",
     "Ops",
     "models",
+    "LIB_LLAISYS"
 ]

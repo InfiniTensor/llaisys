@@ -1,6 +1,6 @@
 from .libllaisys import LIB_LLAISYS
 from .tensor import Tensor
-from ctypes import c_float, c_int
+from ctypes import c_float, c_int, c_uint64
 
 
 class Ops:
@@ -53,3 +53,16 @@ class Ops:
     @staticmethod
     def swiglu(out: Tensor, gate: Tensor, up: Tensor):
         LIB_LLAISYS.llaisysSwiGLU(out.lib_tensor(), gate.lib_tensor(), up.lib_tensor())
+
+    @staticmethod
+    def sample(out: Tensor, logits: Tensor, top_k: int = 0, top_p: float = 1.0, temperature: float = 1.0):
+        """Sample a token from logits. out must be shape (1,) int64."""
+        LIB_LLAISYS.llaisysSample(
+            out.lib_tensor(), logits.lib_tensor(),
+            c_int(top_k), c_float(top_p), c_float(temperature),
+        )
+
+    @staticmethod
+    def sample_set_seed(seed: int):
+        """Set the per-thread RNG seed used by Ops.sample for reproducible results."""
+        LIB_LLAISYS.llaisysSampleSetSeed(c_uint64(seed))

@@ -34,3 +34,10 @@ def load_ops(lib):
 
     lib.llaisysSwiGLU.argtypes = [llaisysTensor_t, llaisysTensor_t, llaisysTensor_t]
     lib.llaisysSwiGLU.restype = None
+
+    from ctypes import c_int, c_uint64
+    lib.llaisysSample.argtypes = [llaisysTensor_t, llaisysTensor_t, c_int, c_float, c_float]
+    lib.llaisysSample.restype = None
+
+    lib.llaisysSampleSetSeed.argtypes = [c_uint64]
+    lib.llaisysSampleSetSeed.restype = None

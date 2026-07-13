@@ -9,6 +9,7 @@ from .llaisys_types import llaisysDeviceType_t, DeviceType
 from .llaisys_types import llaisysDataType_t, DataType
 from .llaisys_types import llaisysMemcpyKind_t, MemcpyKind
 from .llaisys_types import llaisysStream_t
+from .qwen2 import LlaisysQwen2Meta, load_qwen2_model
 from .tensor import llaisysTensor_t
 from .tensor import load_tensor
 from .ops import load_ops
@@ -31,13 +32,15 @@ def load_shared_library():
     if not os.path.isfile(lib_path):
         raise FileNotFoundError(f"Shared library not found: {lib_path}")
 
-    return ctypes.CDLL(str(lib_path))
+    lib = ctypes.CDLL(str(lib_path))
+    return lib
 
 
 LIB_LLAISYS = load_shared_library()
 load_runtime(LIB_LLAISYS)
 load_tensor(LIB_LLAISYS)
 load_ops(LIB_LLAISYS)
+load_qwen2_model(LIB_LLAISYS)
 
 
 __all__ = [
@@ -52,4 +55,5 @@ __all__ = [
     "llaisysMemcpyKind_t",
     "MemcpyKind",
     "llaisysStream_t",
+    "LlaisysQwen2Meta",
 ]
