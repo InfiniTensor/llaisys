@@ -15,7 +15,7 @@ def test_basic_runtime_api(device_name: str = "cpu"):
         return
 
     for i in range(ndev):
-        print("Testing device {i}...")
+        print(f"Testing device {i}...")
         api.set_device(i)
         test_memcpy(api, 1024 * 1024)
 
