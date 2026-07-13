@@ -361,6 +361,17 @@ python test/test_infer.py --model [dir_path/to/model] --test --device nvidia
 
 提交并推送你的更改。你应该看到作业#4的自动测试通过了。
 
+## 作业提交要求
+
+将作业代码以 Pull Request 的形式提交到 [wooway777/llaisys-26s](https://github.com/wooway777/llaisys-26s)。
+
+Pull Request 必须满足以下要求：
+
+- CI 必须通过。
+- 提交简要报告，说明复现流程并记录复现结果。
+- 逐个平台说明支持的平台及其状态。
+- 报告可以写在 Pull Request 描述中，也可以作为 Markdown 文件随 Pull Request 提交。
+
 ## 项目阶段：参与 InfiniLM 推理引擎开发
 
 只有通过作业阶段考核并获准晋级的学员，才能进入项目阶段。
@@ -390,3 +401,15 @@ python test/test_infer.py --model [dir_path/to/model] --test --device nvidia
 通过性能评测与回归基础设施、性能分析与追踪工具、模型转换与校验工具、兼容性测试或错误诊断等工作，提升 InfiniLM 的可靠性和开发效率。评判依据包括解决实际问题的范围、可维护性、平台覆盖，以及对开发或调试流程带来的可度量改进。
 
 学员也可以提出其他项目方向，但须提前获得导师认可，并针对 InfiniLM 的真实问题给出边界清晰、可度量的交付目标。
+
+## 项目提交要求
+
+将项目代码以 Pull Request 的形式提交到 [InfiniLM](https://github.com/InfiniTensor/InfiniLM) 主仓库。
+
+Pull Request 必须满足以下要求：
+
+- CI 必须通过。
+- 提交简要报告，说明项目内容、实现思路、复现流程和结果。
+- 逐个平台说明支持的平台及其状态。
+- 性能优化方向必须提供可复现的优化效果，包括优化前后的对比数据。
+- 报告可以写在 Pull Request 描述中，也可以作为 Markdown 文件随 Pull Request 提交。

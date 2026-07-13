@@ -361,6 +361,17 @@ python test/test_infer.py --model [dir_path/to/model] --test --device nvidia
 
 Commit and push your changes. You should see the auto tests for assignment #4 passed.
 
+## Assignment Submission Requirements
+
+Submit your assignment work as a pull request to [wooway777/llaisys-26s](https://github.com/wooway777/llaisys-26s).
+
+The pull request must meet the following requirements:
+
+- CI must pass.
+- Include a brief report describing the reproduction procedure and recording the results.
+- Describe the supported platforms and the status of each platform.
+- The report may be included in the pull request description or provided as a Markdown file in the pull request.
+
 ## Project Stage: Contribute to InfiniLM
 
 Only students who pass the assignment-stage evaluation and are approved to advance may enter the project stage.
@@ -390,3 +401,15 @@ Add or improve weight, activation, or KV-cache quantization; mixed-precision exe
 Improve InfiniLM's reliability and development efficiency through work such as benchmark and regression infrastructure, profiling and tracing tools, model conversion and validation tools, compatibility tests, or better error diagnosis. Evaluation depends on the scope of real problems addressed, maintainability, platform coverage, and measurable improvements to development or debugging workflows.
 
 Students may also propose another topic. It must be approved in advance and should solve a real InfiniLM problem with a clearly defined, measurable deliverable.
+
+## Project Submission Requirements
+
+Submit your project as a pull request to the [InfiniLM](https://github.com/InfiniTensor/InfiniLM) main repository.
+
+The pull request must meet the following requirements:
+
+- CI must pass.
+- Include a brief report describing the project content, implementation approach, reproduction procedure, and results.
+- Describe the supported platforms and the status of each platform.
+- Performance optimization projects must report the optimization effect with reproducible before-and-after measurements.
+- The report may be included in the pull request description or provided as a Markdown file in the pull request.
