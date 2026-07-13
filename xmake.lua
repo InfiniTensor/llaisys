@@ -118,5 +118,8 @@ target("llaisys")
         if is_plat("linux") then
             os.cp("lib/*.so", "python/llaisys/libllaisys/")
         end
+        if is_plat("macosx") then
+            os.cp("lib/*.dylib", "python/llaisys/libllaisys/")
+        end
     end)
 target_end()
