@@ -3,6 +3,7 @@
 
 #include "../../device/runtime_api.hpp"
 #include "../allocator/allocator.hpp"
+#include "../../device/device_resource.hpp"
 
 namespace llaisys::core {
 class Runtime {
@@ -11,6 +12,7 @@ private:
     int _device_id;
     const LlaisysRuntimeAPI *_api;
     MemoryAllocator *_allocator;
+    llaisys::device::DeviceResource *_device_resource = nullptr;
     bool _is_active;
     void _activate();
     void _deactivate();
@@ -35,7 +37,7 @@ public:
     bool isActive() const;
 
     const LlaisysRuntimeAPI *api() const;
-
+    llaisys::device::DeviceResource *deviceResource() const { return _device_resource; }
     storage_t allocateDeviceStorage(size_t size);
     ;
     storage_t allocateHostStorage(size_t size);

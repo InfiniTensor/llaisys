@@ -16,6 +16,11 @@ option_end()
 if has_config("nv-gpu") then
     add_defines("ENABLE_NVIDIA_API")
     includes("xmake/nvidia.lua")
+
+    if is_plat("linux") then
+        add_sysincludedirs("/usr/local/cuda/include")
+        add_linkdirs("/usr/local/cuda/lib64")
+    end
 end
 
 target("llaisys-utils")
@@ -37,6 +42,9 @@ target("llaisys-device")
     set_kind("static")
     add_deps("llaisys-utils")
     add_deps("llaisys-device-cpu")
+    if(has_config("nv-gpu")) then
+        add_deps("llaisys-device-nvidia")
+    end
 
     set_languages("cxx17")
     set_warnings("all", "error")
@@ -53,6 +61,9 @@ target("llaisys-core")
     set_kind("static")
     add_deps("llaisys-utils")
     add_deps("llaisys-device")
+    if(has_config("nv-gpu"))then
+        add_deps("llaisys-device-nvidia")
+    end
 
     set_languages("cxx17")
     set_warnings("all", "error")
@@ -83,6 +94,9 @@ target_end()
 target("llaisys-ops")
     set_kind("static")
     add_deps("llaisys-ops-cpu")
+    if has_config("nv-gpu") then
+        add_deps("llaisys-ops-nvidia")
+    end
 
     set_languages("cxx17")
     set_warnings("all", "error")
@@ -95,6 +109,22 @@ target("llaisys-ops")
     on_install(function (target) end)
 target_end()
 
+target("llaisys-models")
+    set_kind("static")
+    add_deps("llaisys-tensor")
+    add_deps("llaisys-ops")
+
+    set_languages("cxx17")
+    set_warnings("all", "error")
+    if not is_plat("windows") then
+        add_cxflags("-fPIC", "-Wno-unknown-pragmas")
+    end
+
+    add_files("src/models/*/**.cpp")
+
+    on_install(function (target) end)
+target_end()
+
 target("llaisys")
     set_kind("shared")
     add_deps("llaisys-utils")
@@ -102,10 +132,32 @@ target("llaisys")
     add_deps("llaisys-core")
     add_deps("llaisys-tensor")
     add_deps("llaisys-ops")
+    add_deps("llaisys-models")
+    add_deps("llaisys-device-cpu")
+    add_deps("llaisys-ops-cpu")
 
     set_languages("cxx17")
     set_warnings("all", "error")
-    add_files("src/llaisys/*.cc")
+    if has_config("nv-gpu") then
+        add_deps("llaisys-device-nvidia")
+        add_deps("llaisys-ops-nvidia")
+        if is_plat("linux") then
+           add_syslinks("cudart", "cublas")
+           add_shflags("-Xcompiler -fPIC") 
+       end
+
+        set_toolset("sh", "nvcc")
+
+        add_syslinks("cudart", "cublas")
+        
+        if not is_plat("windows") then
+             add_cxflags("-fPIC")
+             add_shflags("-Xcompiler -fPIC") 
+             add_shflags("-shared")
+        end
+    end
+
+    add_files("src/llaisys/**.cc")
     set_installdir(".")
 
     
