@@ -95,6 +95,23 @@ target("llaisys-ops")
     on_install(function (target) end)
 target_end()
 
+target("llaisys-models")
+    set_kind("static")
+    add_deps("llaisys-ops")
+    add_deps("llaisys-tensor")
+    add_deps("llaisys-core")
+
+    set_languages("cxx17")
+    set_warnings("all", "error")
+    if not is_plat("windows") then
+        add_cxflags("-fPIC", "-Wno-unknown-pragmas")
+    end
+    
+    add_files("src/models/*/*.cpp")
+
+    on_install(function (target) end)
+target_end()
+
 target("llaisys")
     set_kind("shared")
     add_deps("llaisys-utils")
@@ -102,9 +119,19 @@ target("llaisys")
     add_deps("llaisys-core")
     add_deps("llaisys-tensor")
     add_deps("llaisys-ops")
-
-    set_languages("cxx17")
+    add_deps("llaisys-models")
+    if has_config("nv-gpu") then
+        add_nvidia_build_settings()
+        add_nvidia_source_files()
+    else
+        set_languages("cxx17")
+    end
     set_warnings("all", "error")
+    if not is_plat("windows") then
+        add_ldflags("-Wl,--no-as-needed")
+        add_syslinks("gomp")
+    end
+    add_cpu_blas_settings()
     add_files("src/llaisys/*.cc")
     set_installdir(".")
 

@@ -67,6 +67,7 @@ if __name__ == "__main__":
     parser.add_argument("--profile", action="store_true")
     args = parser.parse_args()
     testShapes = [
+        ((1, 4, 8), (7, 8)),
         ((2, 1, 4), (0, 2)), 
         ((512, 4, 4096), (512, 1024))]
     testDtypePrec = [

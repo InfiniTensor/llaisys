@@ -2,7 +2,6 @@ import ctypes
 from enum import IntEnum
 
 
-# Device Type enum
 class DeviceType(IntEnum):
     CPU = 0
     NVIDIA = 1
@@ -12,7 +11,6 @@ class DeviceType(IntEnum):
 llaisysDeviceType_t = ctypes.c_int
 
 
-# Data Type enum
 class DataType(IntEnum):
     INVALID = 0
     BYTE = 1
@@ -39,7 +37,6 @@ class DataType(IntEnum):
 llaisysDataType_t = ctypes.c_int
 
 
-# Memory Copy Kind enum
 class MemcpyKind(IntEnum):
     H2H = 0
     H2D = 1
@@ -48,8 +45,13 @@ class MemcpyKind(IntEnum):
 
 
 llaisysMemcpyKind_t = ctypes.c_int
+llaisysTensor_t = ctypes.c_void_p
 
-# Stream type (opaque pointer)
+class LlaisysQwen2Model(ctypes.Structure):
+    pass
+llaisysQwen2ModelHandle = ctypes.POINTER(LlaisysQwen2Model)
+llaisysQwen2Weights_p = ctypes.c_void_p 
+
 llaisysStream_t = ctypes.c_void_p
 
 __all__ = [

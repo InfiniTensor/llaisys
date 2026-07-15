@@ -6,6 +6,7 @@
 #include "../ops/argmax/op.hpp"
 #include "../ops/embedding/op.hpp"
 #include "../ops/linear/op.hpp"
+#include "../ops/sample/op.hpp"
 #include "../ops/rearrange/op.hpp"
 #include "../ops/rms_norm/op.hpp"
 #include "../ops/rope/op.hpp"
@@ -23,7 +24,10 @@ __C {
         llaisys::ops::embedding(out->tensor, index->tensor, weight->tensor);
     }
     void llaisysLinear(llaisysTensor_t out, llaisysTensor_t in, llaisysTensor_t weight, llaisysTensor_t bias) {
-        llaisys::ops::linear(out->tensor, in->tensor, weight->tensor, bias->tensor);
+        llaisys::ops::linear(out->tensor, in->tensor, weight->tensor, bias ? bias->tensor : nullptr);
+    }
+    int64_t llaisysSample(llaisysTensor_t logits, int top_k, float top_p, float temperature) {
+        return llaisys::ops::sample(logits->tensor, top_k, top_p, temperature);
     }
     void llaisysRearrange(llaisysTensor_t out, llaisysTensor_t in) {
         llaisys::ops::rearrange(out->tensor, in->tensor);

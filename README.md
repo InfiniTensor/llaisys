@@ -1,5 +1,7 @@
 # Welcome to LLAISYS
 
+> Implementation summary, experiment results, and reproduction steps for the completed extension tasks are documented in [doc/implementation_report.md](doc/implementation_report.md).
+
 <p align="center">
 <a href="README.md" target="README.md">English</a> ｜
 <a href="README_ZN.md" target="README_ZN.md">中文</a>

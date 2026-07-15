@@ -4,6 +4,7 @@
 #include "../../utils.hpp"
 
 #include "cpu/add_cpu.hpp"
+#include "nvidia/add_nvidia.cuh"
 
 namespace llaisys::ops {
 void add(tensor_t c, tensor_t a, tensor_t b) {
@@ -25,8 +26,7 @@ void add(tensor_t c, tensor_t a, tensor_t b) {
         return cpu::add(c->data(), a->data(), b->data(), c->dtype(), c->numel());
 #ifdef ENABLE_NVIDIA_API
     case LLAISYS_DEVICE_NVIDIA:
-        TO_BE_IMPLEMENTED();
-        return;
+        return nvidia::add(c->data(), a->data(), b->data(), c->dtype(), c->numel());
 #endif
     default:
         EXCEPTION_UNSUPPORTED_DEVICE;

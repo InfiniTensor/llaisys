@@ -21,7 +21,21 @@ class Ops:
     @staticmethod
     def linear(out: Tensor, inp: Tensor, weight: Tensor, bias: Tensor):
         LIB_LLAISYS.llaisysLinear(
-            out.lib_tensor(), inp.lib_tensor(), weight.lib_tensor(), bias.lib_tensor()
+            out.lib_tensor(),
+            inp.lib_tensor(),
+            weight.lib_tensor(),
+            bias.lib_tensor() if bias is not None else None,
+        )
+
+    @staticmethod
+    def sample(logits: Tensor, top_k: int = 1, top_p: float = 1.0, temperature: float = 1.0) -> int:
+        return int(
+            LIB_LLAISYS.llaisysSample(
+                logits.lib_tensor(),
+                c_int(top_k),
+                c_float(top_p),
+                c_float(temperature),
+            )
         )
 
     @staticmethod
