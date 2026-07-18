@@ -86,3 +86,9 @@
             }                                                    \
         }                                                        \
     } while (0)
+
+#define EXCEPTION_TRANSFORM_SHAPE                                                                \
+    do {                                                                                         \
+        std::cerr << "[ERROR] Failed to transform shape" << EXCEPTION_LOCATION_MSG << std::endl; \
+        throw std::invalid_argument("Numel mismatch or not contiguous");                         \
+    } while (0)

@@ -1,0 +1,9 @@
+#include "../nvidia/nvidia_runtime_api.cu"
+
+namespace llaisys::device::metax {
+
+const LlaisysRuntimeAPI *getRuntimeAPI() {
+    return nvidia::getRuntimeAPI();
+}
+
+} // namespace llaisys::device::metax

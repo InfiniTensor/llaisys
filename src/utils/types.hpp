@@ -2,6 +2,14 @@
 
 #include <iostream>
 #include <stdexcept>
+#include <cstring>
+
+#if defined(__CUDACC__) || defined(__CUDA_ARCH__)
+#define LLAISYS_HOST_DEVICE __host__ __device__
+#include <cuda_fp16.h>
+#else
+#define LLAISYS_HOST_DEVICE
+#endif
 
 namespace llaisys {
 struct CustomFloat16 {
@@ -107,35 +115,88 @@ inline const char *dtype_to_str(llaisysDataType_t dtype) {
     }
 }
 
+// Host-only functions (implemented in types.cpp)
 float _f16_to_f32(fp16_t val);
 fp16_t _f32_to_f16(float val);
-
 float _bf16_to_f32(bf16_t val);
 bf16_t _f32_to_bf16(float val);
 
+// Device-compatible conversion functions
+LLAISYS_HOST_DEVICE inline float _f16_to_f32_device(fp16_t val) {
+#if defined(__CUDA_ARCH__) || defined(__CUDACC__)
+    // Use CUDA half arithmetic on device
+    half h = __ushort_as_half(val._v);
+    return __half2float(h);
+#else
+    // Fall back to host implementation
+    return _f16_to_f32(val);
+#endif
+}
+
+LLAISYS_HOST_DEVICE inline fp16_t _f32_to_f16_device(float val) {
+#if defined(__CUDA_ARCH__) || defined(__CUDACC__)
+    // Use CUDA half arithmetic on device
+    half h = __float2half(val);
+    return fp16_t{__half_as_ushort(h)};
+#else
+    // Fall back to host implementation
+    return _f32_to_f16(val);
+#endif
+}
+
+LLAISYS_HOST_DEVICE inline float _bf16_to_f32_device(bf16_t val) {
+#if defined(__CUDA_ARCH__) || defined(__CUDACC__)
+    // bf16 is stored as upper 16 bits of float32
+    uint32_t bits = static_cast<uint32_t>(val._v) << 16;
+    return *reinterpret_cast<float*>(&bits);
+#else
+    // Fall back to host implementation
+    return _bf16_to_f32(val);
+#endif
+}
+
+LLAISYS_HOST_DEVICE inline bf16_t _f32_to_bf16_device(float val) {
+#if defined(__CUDA_ARCH__) || defined(__CUDACC__)
+    // Convert float to bf16 by taking upper 16 bits (with rounding)
+    uint32_t bits = *reinterpret_cast<uint32_t*>(&val);
+    uint32_t rounding_bias = 0x00007FFF + ((bits >> 16) & 1);
+    return bf16_t{static_cast<uint16_t>((bits + rounding_bias) >> 16)};
+#else
+    // Fall back to host implementation
+    return _f32_to_bf16(val);
+#endif
+}
+
+// Device-compatible cast function
 template <typename TypeTo, typename TypeFrom>
-TypeTo cast(TypeFrom val) {
+LLAISYS_HOST_DEVICE TypeTo cast_device(TypeFrom val) {
     if constexpr (std::is_same<TypeTo, TypeFrom>::value) {
         return val;
     } else if constexpr (std::is_same<TypeTo, fp16_t>::value && std::is_same<TypeFrom, float>::value) {
-        return _f32_to_f16(val);
+        return _f32_to_f16_device(val);
     } else if constexpr (std::is_same<TypeTo, fp16_t>::value && !std::is_same<TypeFrom, float>::value) {
-        return _f32_to_f16(static_cast<float>(val));
+        return _f32_to_f16_device(static_cast<float>(val));
     } else if constexpr (std::is_same<TypeFrom, fp16_t>::value && std::is_same<TypeTo, float>::value) {
-        return _f16_to_f32(val);
+        return _f16_to_f32_device(val);
     } else if constexpr (std::is_same<TypeFrom, fp16_t>::value && !std::is_same<TypeTo, float>::value) {
-        return static_cast<TypeTo>(_f16_to_f32(val));
+        return static_cast<TypeTo>(_f16_to_f32_device(val));
     } else if constexpr (std::is_same<TypeTo, bf16_t>::value && std::is_same<TypeFrom, float>::value) {
-        return _f32_to_bf16(val);
+        return _f32_to_bf16_device(val);
     } else if constexpr (std::is_same<TypeTo, bf16_t>::value && !std::is_same<TypeFrom, float>::value) {
-        return _f32_to_bf16(static_cast<float>(val));
+        return _f32_to_bf16_device(static_cast<float>(val));
     } else if constexpr (std::is_same<TypeFrom, bf16_t>::value && std::is_same<TypeTo, float>::value) {
-        return _bf16_to_f32(val);
+        return _bf16_to_f32_device(val);
     } else if constexpr (std::is_same<TypeFrom, bf16_t>::value && !std::is_same<TypeTo, float>::value) {
-        return static_cast<TypeTo>(_bf16_to_f32(val));
+        return static_cast<TypeTo>(_bf16_to_f32_device(val));
     } else {
         return static_cast<TypeTo>(val);
     }
+}
+
+// Original host-only cast function (for backward compatibility)
+template <typename TypeTo, typename TypeFrom>
+TypeTo cast(TypeFrom val) {
+    return cast_device<TypeTo, TypeFrom>(val);
 }
 
 } // namespace utils
