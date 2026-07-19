@@ -31,12 +31,26 @@ __C {
 
     struct LlaisysQwen2Model;
 
-    __export struct LlaisysQwen2Model *llaisysQwen2ModelCreate(const LlaisysQwen2Meta *meta, llaisysDeviceType_t device, int *device_ids, int ndevice);
+    __export struct LlaisysQwen2Model *llaisysQwen2ModelCreate(const LlaisysQwen2Meta *meta, llaisysDeviceType_t device, int *device_ids, int ndevice,llaisysDataType_t dtype);
 
     __export void llaisysQwen2ModelDestroy(struct LlaisysQwen2Model * model);
 
     __export struct LlaisysQwen2Weights *llaisysQwen2ModelWeights(struct LlaisysQwen2Model * model);
 
-    __export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model * model, int64_t * token_ids, size_t ntoken);
+    __export void llaisysQwen2LoadWeight(
+        struct LlaisysQwen2Model * model,
+        const char * name,
+        void * data,
+        size_t * shape,
+        size_t ndim,
+        llaisysDataType_t dtype);
+
+    __export void *llaisysQwen2ModelForward(
+        struct LlaisysQwen2Model * model,
+        int64_t * token_ids,
+        size_t seq_len,
+        size_t start_pos);
+
+    __export int llaisysQwen2Sample(void * logits_ptr);
 }
 #endif // LLAISYS_MODELS_QWEN2_H

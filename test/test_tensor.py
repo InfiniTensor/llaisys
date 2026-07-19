@@ -1,5 +1,4 @@
 import llaisys
-
 import torch
 from test_utils import *
 import argparse

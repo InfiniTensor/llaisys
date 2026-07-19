@@ -3,6 +3,41 @@ set_encodings("utf-8")
 
 add_includedirs("include")
 
+-- 全局开启 OpenMP 支持、最高级别优化
+-- native 模式 (服务器): 使用 -march=native, 编译器自动启用 AVX-512 等本机指令集
+-- 默认模式 (本地):       显式指定 -mavx2 -mfma, 兼容大多数 x86-64 CPU
+add_cxflags("-fopenmp", "-O3")
+add_ldflags("-fopenmp")
+add_shflags("-fopenmp")
+add_syslinks("gomp") -- 显式链接 GNU OpenMP 库
+
+option("native")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Use -march=native for best performance on current CPU (enables AVX-512 on supported CPUs)")
+option_end()
+
+if has_config("native") then
+    add_cxflags("-march=native")
+else
+    add_cxflags("-mavx2", "-mfma")
+end
+
+-- OpenBLAS 集成: 从源码编译安装到 ~/openblas
+option("openblas")
+    set_default(true)
+    set_showmenu(true)
+    set_description("Whether to use OpenBLAS for linear algebra acceleration")
+option_end()
+
+if has_config("openblas") then
+    add_defines("USE_OPENBLAS")
+    add_includedirs(os.getenv("HOME") .. "/openblas/include")
+    add_linkdirs(os.getenv("HOME") .. "/openblas/lib")
+    add_links("openblas")
+    add_rpathdirs(os.getenv("HOME") .. "/openblas/lib")
+end
+
 -- CPU --
 includes("xmake/cpu.lua")
 
@@ -106,6 +141,7 @@ target("llaisys")
     set_languages("cxx17")
     set_warnings("all", "error")
     add_files("src/llaisys/*.cc")
+    add_files("src/models/*.cpp")
     set_installdir(".")
 
     

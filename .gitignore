@@ -88,3 +88,6 @@ htmlcov/
 Thumbs.db
 ehthumbs.db
 desktop.ini
+# Windows Zone.Identifier (invalid path on Windows if committed)
+*:Zone.Identifier
+*.Identifier

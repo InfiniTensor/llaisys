@@ -1,7 +1,6 @@
 #include "tensor.hpp"
-
+#include "../ops/rearrange/op.hpp"
 #include "../utils.hpp"
-
 #include <cstring>
 #include <numeric>
 #include <sstream>
@@ -164,32 +163,138 @@ void Tensor::debug() const {
 }
 
 bool Tensor::isContiguous() const {
-    TO_BE_IMPLEMENTED();
+    size_t Rank=this->ndim();
+    const auto&Cur_strides=this->strides();
+    const auto&Shapes=this->shape();
+    ptrdiff_t accumulate_stride=1;
+    if(Rank==0) return true;
+    for(size_t i=Rank;i>0;--i){
+        size_t index=i-1;
+        if(accumulate_stride!=Cur_strides[index]) return false;
+        accumulate_stride*=Shapes[index];
+    }
     return true;
 }
 
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    if(order.size()!=this->ndim()){
+        throw std::runtime_error("Order Error!");
+    }
+    const auto&old_shape=this->shape();
+    const auto&old_strides=this->strides();
+    std::vector<size_t> new_shape(old_shape.size());
+    std::vector<ptrdiff_t> new_strides(old_strides.size());
+    for(size_t i=0;i<order.size();i++){
+        size_t order_index=order[i];
+        if(order_index>=this->ndim()){
+            throw std::runtime_error("Index Error!");
+        }
+        new_shape[i]=old_shape[order_index];
+        new_strides[i]=old_strides[order_index];
+    }
+    TensorMeta _meta{this->dtype(),std::move(new_shape),std::move(new_strides)};
+    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage,this->_offset));
 }
 
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    auto target_numel=std::accumulate(shape.begin(), shape.end(), size_t(1), std::multiplies<size_t>());
+    if(this->numel()!=target_numel) throw std::runtime_error("size error");
+    if (this->isContiguous()) {
+        std::vector<ptrdiff_t> new_strides(shape.size());
+        size_t stride = 1;
+        for (size_t i = shape.size(); i-- > 0;) {
+            new_strides[i] = static_cast<ptrdiff_t>(stride);
+            stride *= shape[i];
+        }
+        TensorMeta meta{this->dtype(), shape, new_strides};
+        return std::shared_ptr<Tensor>(new Tensor(meta, this->_storage, this->_offset));
+    }
+    std::vector<ptrdiff_t> new_strides;new_strides.reserve(shape.size());
+    const auto&old_strides=this->strides();
+    const auto&old_shape=this->shape();
+    size_t old_dim_index=0,split_divisor=1;
+    for(size_t new_dim_index=0;new_dim_index<shape.size();new_dim_index++){
+        if(shape[new_dim_index]==1){
+            new_strides.emplace_back(1);
+            continue;
+        }
+        size_t target_dim=shape[new_dim_index];
+        if(old_dim_index>=old_shape.size()){
+            throw std::runtime_error("Dim Error!");
+        }
+        size_t available_dim_size=old_shape[old_dim_index]/split_divisor;
+        size_t original_stride=old_strides[old_dim_index];
+        if(target_dim<available_dim_size){
+            if(available_dim_size%target_dim!=0) throw std::runtime_error("Split Error!");
+            ptrdiff_t new_strides_val=(available_dim_size/target_dim)*original_stride;
+            new_strides.emplace_back(new_strides_val);
+            split_divisor*=target_dim;
+            continue;
+        }
+        size_t accumulated_size=available_dim_size;
+        split_divisor=1;
+        old_dim_index++;
+        while(accumulated_size<target_dim){
+            if(old_dim_index>=old_shape.size()){
+                throw std::runtime_error("Dim Error!");
+            }
+            if(accumulated_size>1){
+                if(old_strides[old_dim_index-1]!=static_cast<ptrdiff_t>(old_shape[old_dim_index]*old_strides[old_dim_index])){
+                    throw std::runtime_error("Transform Error!");
+                }
+            }  
+            accumulated_size*=old_shape[old_dim_index++];
+        }
+        if(accumulated_size!=target_dim){ 
+            throw std::runtime_error("Match Error!");
+        }
+        new_strides.emplace_back(old_strides[old_dim_index-1]);
+    }
+    TensorMeta _meta{this->dtype(),shape,std::move(new_strides)};
+    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage,this->_offset));
 }
 
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    if(dim>=this->ndim()) throw std::runtime_error("Dim Error!");
+    if(start>=end) throw std::runtime_error("Index Error!");
+    if(end>this->shape()[dim]) throw std::runtime_error("End Error!");
+    auto new_shape=this->shape();
+    new_shape[dim]=end-start;
+    auto new_offset=this->_offset+start*this->strides()[dim]*this->elementSize();
+    TensorMeta _meta{this->dtype(),std::move(new_shape),this->strides()};
+    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage,new_offset));
 }
 
 void Tensor::load(const void *src_) {
-    TO_BE_IMPLEMENTED();
+    std::byte* dis_ptr=this->data();
+    size_t Elemsize_in_bytes=this->elementSize()*this->numel();
+    llaisysMemcpyKind_t CurKind=this->deviceType()==LLAISYS_DEVICE_CPU?LLAISYS_MEMCPY_H2H:LLAISYS_MEMCPY_H2D;
+    core::context().runtime().api()->memcpy_sync(dis_ptr,src_,Elemsize_in_bytes,CurKind);
 }
 
 tensor_t Tensor::contiguous() const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    // 1. 如果已经是连续的，仿照 slice 的实现，返回一个指向相同存储的浅拷贝
+    if (this->isContiguous()) {
+        //
+        return std::shared_ptr<Tensor>(new Tensor(this->_meta, this->_storage, this->_offset));
+    }
+
+    // 2. 如果不连续，创建一个形状相同、物理连续的新 Tensor
+    //
+    auto out = Tensor::create(this->shape(), this->dtype(), this->deviceType(), this->deviceId());
+
+    // 3. 【核心技巧】由于 rearrange 需要 tensor_t (shared_ptr<Tensor>)
+    // 我们将 const this 指针临时包装成一个不拥有所有权的 shared_ptr
+    // 加上 const_cast 是因为 rearrange 的输入参数类型要求
+    tensor_t self_wrapper(const_cast<Tensor*>(this), [](Tensor*){
+        // 空删除器：防止这个临时 shared_ptr 析构时误删 this 
+    });
+
+    // 4. 调用你定义的 rearrange 算子进行物理搬运
+    //
+    llaisys::ops::rearrange(out, self_wrapper);
+
+    return out;
 }
 
 tensor_t Tensor::reshape(const std::vector<size_t> &shape) const {
